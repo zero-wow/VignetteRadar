@@ -53,15 +53,15 @@ local function AddDescription(parent, title, x, y, width)
 end
 
 local function AddCheckbox(parent, key, title, x, y, subkey, labelWidth, presentationOnly)
-    local checkbox = CreateFrame("CheckButton", nil, parent, "UICheckButtonTemplate")
+    local checkbox = addon.VignetteRadarControls.Checkbox(parent)
     checkbox:SetPoint("TOPLEFT", parent, "TOPLEFT", x, y)
-    checkbox:SetSize(26, 26)
     local label = parent:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
     label:SetPoint("LEFT", checkbox, "RIGHT", 5, 0)
     label:SetWidth(labelWidth or (496 - x - 31))
     label:SetWordWrap(false)
     label:SetText(title)
     checkbox.label, checkbox.optionKey, checkbox.subkey = label, key, subkey
+    checkbox:RefreshAppearance()
     checkbox:SetScript("OnClick", function(self)
         local enabled = Checked(self:GetChecked())
         if key == "vignetteRadarEnabled" then
@@ -217,7 +217,7 @@ local function BuildPanel()
     AddButton(layout, "Preview layout", 24, -264, 144, function()
         addon.ToggleVignetteRadarPreview()
     end)
-    AddFooter(layout, "Layouts keep your range, filters, and saved positions.")
+    AddFooter(layout, "Drag the radar's edges or corners to resize it. Your size is saved.")
 
     local alerts = AddPage("Alerts", 3)
     AddCheckbox(alerts, "vignetteRadarAlerts", "Pulse for newly seen vignettes", 18, -118)

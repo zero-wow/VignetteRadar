@@ -38,7 +38,7 @@ local defaults = fresh.GetSettings()
 assert(defaults.vignetteRadarEnabled == true and defaults.vignetteRadarHideWhenEmpty == true
     and defaults.vignetteRadarLauncherVisible == true and defaults.vignetteRadarRange == 450
     and defaults.vignetteRadarWorldMap == true and defaults.vignetteRadarLayout == "classic"
-    and defaults.vignetteRadarNorthUp == false,
+    and defaults.vignetteRadarNorthUp == false and defaults.vignetteRadarScale == 1,
     "the radar must work without either optional addon installed")
 local expectedRanges = { 150, 300, 450, 600, 1200, 2400, 4800 }
 assert(#fresh.VignetteRadarRanges == #expectedRanges, "all selectable ranges must be published")
@@ -57,14 +57,18 @@ defaults.vignetteRadarRange = 999
 defaults.vignetteRadarWorldMap = "bad"
 defaults.vignetteRadarLayout = "unsupported"
 defaults.vignetteRadarNorthUp = "bad"
+defaults.vignetteRadarScale = "bad"
 fresh.GetSettings()
 assert(defaults.vignetteRadarRange == 450 and defaults.vignetteRadarWorldMap == true
-    and defaults.vignetteRadarLayout == "classic" and defaults.vignetteRadarNorthUp == false,
+    and defaults.vignetteRadarLayout == "classic" and defaults.vignetteRadarNorthUp == false
+    and defaults.vignetteRadarScale == 1,
     "invalid range, mode, layout, and north-up values must reset to safe defaults")
 defaults.vignetteRadarWorldMap = false
 defaults.vignetteRadarNorthUp = true
+defaults.vignetteRadarScale = 1.35
 fresh.GetSettings()
 assert(defaults.vignetteRadarNorthUp == true, "north-up preference must persist when enabled")
+assert(defaults.vignetteRadarScale == 1.35, "user frame scale must persist")
 for _, layout in ipairs({ "classic", "squat", "compact" }) do
     defaults.vignetteRadarLayout = layout
     fresh.GetSettings()
@@ -88,8 +92,10 @@ assert(type(defaults.vignetteRadarFavorites) == "table" and type(defaults.vignet
 defaults.vignetteRadarAlertCooldown = -100
 defaults.vignetteRadarLastSeenSeconds = 10000
 defaults.vignetteRadarMarkerSize = 100
+defaults.vignetteRadarScale = 99
 fresh.GetSettings()
 assert(defaults.vignetteRadarAlertCooldown == 5 and defaults.vignetteRadarLastSeenSeconds == 60
-    and defaults.vignetteRadarMarkerSize == 9, "numeric preferences must stay inside supported bounds")
+    and defaults.vignetteRadarMarkerSize == 9 and defaults.vignetteRadarScale == 1.8,
+    "numeric preferences must stay inside supported bounds")
 
 io.write("vignette radar settings migration tests passed\n")

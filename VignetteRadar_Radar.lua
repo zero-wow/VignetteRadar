@@ -712,6 +712,31 @@ local function UpdateRingLabels(range)
     panel.outerLabel:SetText(math.floor((range * 2) / 3) .. "y")
 end
 
+local function PanelScale(value)
+    local maximum = 1.8
+    if UIParent and UIParent.GetWidth and UIParent.GetHeight then
+        local width, height = UIParent:GetWidth(), UIParent:GetHeight()
+        if SafeNumber(width) and SafeNumber(height) and width > 0 and height > 0 then
+            maximum = math.min(maximum, (width - 8) / panel:GetWidth(), (height - 8) / panel:GetHeight())
+            -- Reserve room for the wider target picker beside the panel on small screens.
+            maximum = math.min(maximum, (width - 274) / panel:GetWidth())
+        end
+    end
+    return math.max(0.8, math.min(value, maximum))
+end
+
+local function PlacePanel(left, top, scale)
+    if not (UIParent and UIParent.GetWidth and UIParent.GetHeight) then return end
+    local width, height = UIParent:GetWidth(), UIParent:GetHeight()
+    if not (SafeNumber(width) and SafeNumber(height) and width > 0 and height > 0) then return end
+    scale = PanelScale(scale)
+    panel:SetScale(scale)
+    left = math.max(4, math.min(left, width - panel:GetWidth() * scale - 4))
+    top = math.max(panel:GetHeight() * scale + 4, math.min(top, height - 4))
+    panel:ClearAllPoints()
+    panel:SetPoint("TOPLEFT", UIParent, "TOPLEFT", left, top - height)
+end
+
 local function ApplyPanelLayout(focused)
     local name = Settings().vignetteRadarLayout or "classic"
     if not LAYOUTS[name] then name = "classic" end
@@ -723,14 +748,7 @@ local function ApplyPanelLayout(focused)
     panel.fieldRadius = layout.field / 2 - 9
     panel.plotRadius = panel.fieldRadius - 15
     panel:SetSize(layout.width, layout.height + (focused and layout.focus or 0))
-    -- Resizing a dragged or bottom-adjacent panel must leave the entire new view on screen.
-    if left and top and UIParent and UIParent.GetWidth and UIParent.GetHeight then
-        local width, height = UIParent:GetWidth(), UIParent:GetHeight()
-        left = math.max(4, math.min(left, width - panel:GetWidth() - 4))
-        top = math.max(panel:GetHeight() + 4, math.min(top, height - 4))
-        panel:ClearAllPoints()
-        panel:SetPoint("TOPLEFT", UIParent, "TOPLEFT", left, top - height)
-    end
+    if left and top then PlacePanel(left, top, Settings().vignetteRadarScale or 1) end
     panel.field:SetSize(layout.field, layout.field)
     panel.field.halo:SetSize(layout.field + 4, layout.field + 4)
     ResizeRing(panel.outerRing, panel.field, panel.fieldRadius)
@@ -745,7 +763,9 @@ local function ApplyPanelLayout(focused)
     end
     Place(panel.innerLabel, "CENTER", 0, -panel.plotRadius / 3)
     Place(panel.outerLabel, "CENTER", 0, -panel.plotRadius * 2 / 3)
-    panel.layoutHint:SetShown(name == "squat" and not focused)
+    panel.layoutHint:SetShown(false)
+    panel.sideCaption:SetShown(name == "squat")
+    panel.sideGuide:SetShown(name == "squat")
     if name == "squat" then
         -- A circular plotting area beside the readout keeps this view short even while focused.
         Place(panel.field, "BOTTOMLEFT", 10, 38)
@@ -753,7 +773,10 @@ local function ApplyPanelLayout(focused)
         Place(panel.summary, "TOPLEFT", 214, -35, 148, 10)
         Place(panel.drag, "TOPLEFT", 208, -8, 158, 47)
         Place(panel.focusDivider, "BOTTOMLEFT", 202, 42, 1, 174)
-        Place(panel.focusReadout, "TOPLEFT", 214, -76, 148, 50)
+        Place(panel.sideCaption, "TOPLEFT", 214, -68, 148, 12)
+        Place(panel.focusReadout, "TOPLEFT", 214, -91, 148, 68)
+        Place(panel.layoutHint, "TOPLEFT", 214, -91, 148, 54)
+        Place(panel.sideGuide, "TOPLEFT", 214, -173, 148, 14)
         Place(panel.zoomOut, "BOTTOMLEFT", 12, 8)
         Place(panel.zoomLabel, "BOTTOMLEFT", 42, 12, 110, 12)
         Place(panel.zoomIn, "BOTTOMLEFT", 160, 8)
@@ -796,6 +819,14 @@ local function ApplyPanelLayout(focused)
     local textWidth = panel.focusReadout:GetWidth() - 24
     panel.focusName:SetWidth(textWidth)
     panel.focusMeta:SetSize(textWidth, name == "classic" and 12 or 28)
+    panel.focusName:SetHeight(name == "squat" and 26 or 13)
+    panel.focusName:SetWordWrap(name == "squat")
+    if panel.resizeGrips then
+        panel.resizeGrips.top:SetWidth(layout.width - 20)
+        panel.resizeGrips.bottom:SetWidth(layout.width - 20)
+        panel.resizeGrips.left:SetHeight(panel:GetHeight() - 20)
+        panel.resizeGrips.right:SetHeight(panel:GetHeight() - 20)
+    end
     if changed then
         -- Close pop-outs; opening them again chooses the side that fits the resized panel.
         local legend, picker = LegendAPI(), TargetPickerAPI()
@@ -810,17 +841,27 @@ local function ApplyPanelLayout(focused)
     end
 end
 
-local function UpdateFocusReadout(target, player)
-    local focused = target ~= nil
-    ApplyPanelLayout(focused)
-    panel.focusReadout:SetShown(focused)
-    panel.focusDivider:SetShown(focused or panel.layout == "squat")
+local function UpdateFocusReadout(target, player, selected)
+    ApplyPanelLayout(selected)
+    local squat = panel.layout == "squat"
+    panel.focusReadout:SetShown(target ~= nil)
+    panel.focusDivider:SetShown(selected or squat)
+    panel.layoutHint:SetShown(squat and target == nil)
+    if squat then
+        local outside = target and target.distance and target.distance > Settings().vignetteRadarRange
+        panel.sideCaption:SetText(selected and "TRACKING" or (outside and "OUTSIDE RADAR RANGE"
+            or (target and "NEAREST DETECTION" or "NO DETECTIONS")))
+        panel.sideGuide:SetText(selected and "CLICK AGAIN TO SHOW ALL" or (outside and "ZOOM OUT TO SEE IT"
+            or (target and "CLICK TO FOCUS" or "MOVE OR CHECK THE MAP")))
+        if not target then panel.layoutHint:SetText("Nothing detected here yet.") end
+    end
     panel.edgeArrow:Hide()
-    if not focused then return end
+    if not target then return end
     panel.focusReadout.target = target
     panel.focusName:SetText((Favorite(target) and "* " or "") .. (target.name or "Detected vignette"))
     local age = target.stale and math.floor(math.max(0, Now() - target.lastSeenAt)) or nil
-    local detail = target.isWorldBoss and "BOSS | " or (target.category == "rare" and "RARE | " or "")
+    local kind = target.isWorldBoss and "BOSS" or (target.category or "other"):upper()
+    local detail = kind .. " | "
     detail = detail .. (target.distance and (math.floor(target.distance + 0.5) .. " yd") or "Distance unavailable")
     local separator = panel.layout == "classic" and " | " or "\n"
     if age then detail = detail .. separator .. "seen " .. age .. "s ago"
@@ -835,6 +876,8 @@ local function UpdateFocusReadout(target, player)
     end
     panel.focusMeta:SetText(detail)
     local r, g, b = TargetColor(target)
+    if squat then panel.focusName:SetTextColor(r, g, b, 1)
+    else panel.focusName:SetTextColor(0.88, 0.90, 0.92, 1) end
     local x, y
     if target.sample then x, y = PreviewPosition(target.x, target.y)
     elseif player and (player.headingAvailable or Settings().vignetteRadarNorthUp == true) then
@@ -845,7 +888,7 @@ local function UpdateFocusReadout(target, player)
     if x and y then
         DrawArrow(panel.focusArrow, x, y, r, g, b)
         local range = tonumber(Settings().vignetteRadarRange) or 450
-        if not target.stale and target.distance and target.distance > range then
+        if selected and not target.stale and target.distance and target.distance > range then
             local magnitude = math.sqrt(x * x + y * y)
             if magnitude > 0 then
                 panel.edgeArrow:ClearAllPoints()
@@ -881,8 +924,27 @@ Render = function()
     for _, target in ipairs(targets) do
         if target.key == FocusedTargetKey() then focusedTarget = target; break end
     end
-    local player = not preview and PlayerSnapshot(CurrentMapID()) or nil
-    UpdateFocusReadout(focusedTarget, player)
+    local player = not preview and PlayerSnapshot(mapID) or nil
+    local sidebarTarget = focusedTarget
+    if not sidebarTarget and Settings().vignetteRadarLayout == "squat" then
+        if preview then
+            for _, candidate in ipairs(PREVIEW_TARGETS) do
+                if TargetVisible(candidate) then sidebarTarget = candidate; break end
+            end
+            if sidebarTarget then sidebarTarget.distance = range * sidebarTarget.distanceFactor end
+        elseif player then
+            local fallback
+            for _, candidate in ipairs(targets) do
+                if TargetVisible(candidate)
+                    and not (player.instanceID and candidate.instanceID and player.instanceID ~= candidate.instanceID) then
+                    if candidate.distance and candidate.distance <= range then sidebarTarget = candidate; break end
+                    if not fallback then fallback = candidate end
+                end
+            end
+            sidebarTarget = sidebarTarget or fallback
+        end
+    end
+    UpdateFocusReadout(sidebarTarget, player, focusedTarget ~= nil)
 
     if preview then
         panel.summary:SetText(FocusedTargetKey() and "PREVIEW FOCUS" or "PREVIEW")
@@ -899,9 +961,13 @@ Render = function()
         return
     end
 
-    player = PlayerSnapshot(mapID)
     if not player then
         panel.summary:SetText("POSITION UNAVAILABLE")
+        if panel.layout == "squat" then
+            panel.sideCaption:SetText("POSITION UNAVAILABLE")
+            panel.layoutHint:SetText("Waiting for your map position.")
+            panel.sideGuide:SetText("CHECK YOUR CURRENT MAP")
+        end
         RenderCardinals(0)
         panel.direction:Hide()
         EndBlips()
@@ -944,6 +1010,103 @@ local function SavePosition()
     local left, top = panel:GetLeft(), panel:GetTop()
     if SafeNumber(left) and SafeNumber(top) and UIParent and UIParent.GetHeight then
         Settings().vignetteRadarPosition = { x = left, y = top - UIParent:GetHeight() }
+    end
+end
+
+local function AddResizeGrips()
+    local grips = {}
+    panel.resizeGrips = grips
+    local definitions = {
+        { "top", "TOP", 0, 1, panel:GetWidth() - 20, 5 },
+        { "bottom", "BOTTOM", 0, -1, panel:GetWidth() - 20, 5 },
+        { "left", "LEFT", -1, 0, 5, panel:GetHeight() - 20 },
+        { "right", "RIGHT", 1, 0, 5, panel:GetHeight() - 20 },
+        { "topLeft", "TOPLEFT", -1, 1, 10, 10 },
+        { "topRight", "TOPRIGHT", 1, 1, 5, 5 },
+        { "bottomLeft", "BOTTOMLEFT", -1, -1, 10, 10 },
+        { "bottomRight", "BOTTOMRIGHT", 1, -1, 10, 10 },
+    }
+    for _, definition in ipairs(definitions) do
+        local key, point, horizontal, vertical, width, height = Unpack(definition)
+        local grip = CreateFrame("Frame", nil, panel)
+        grip:SetPoint(point, panel, point, 0, 0)
+        grip:SetSize(width, height)
+        grip:SetFrameLevel(panel:GetFrameLevel() + 3)
+        grip:EnableMouse(true)
+        grip:RegisterForDrag("LeftButton")
+        local highlight = grip:CreateTexture(nil, "BACKGROUND")
+        highlight:SetAllPoints()
+        highlight:SetColorTexture(ACCENT[1], ACCENT[2], ACCENT[3], 0.18)
+        highlight:SetAlpha(0)
+        grip.highlight = highlight
+        grip:SetScript("OnEnter", function(self)
+            self.highlight:SetAlpha(1)
+            if GameTooltip then
+                GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+                GameTooltip:SetText("Drag to resize radar", 1, 1, 1)
+                GameTooltip:AddLine("The panel grows or shrinks together, keeping its layout and controls aligned.",
+                    0.7, 0.8, 0.8, true)
+                GameTooltip:Show()
+            end
+        end)
+        grip:SetScript("OnLeave", function(self)
+            self.highlight:SetAlpha(0)
+            if GameTooltip then GameTooltip:Hide() end
+        end)
+        grip:SetScript("OnDragStart", function(self)
+            if type(GetCursorPosition) ~= "function" then return end
+            local x, y = GetCursorPosition()
+            local factor = UIParent.GetEffectiveScale and UIParent:GetEffectiveScale() or 1
+            if not (SafeNumber(x) and SafeNumber(y) and SafeNumber(factor) and factor > 0) then return end
+            local left, top = SafeNumber(panel:GetLeft()), SafeNumber(panel:GetTop())
+            if not (left and top) then return end
+            self.resize = { x = x / factor, y = y / factor, left = left, top = top,
+                scale = panel:GetScale(), width = panel:GetWidth(), height = panel:GetHeight(), factor = factor }
+            local legend, picker = LegendAPI(), TargetPickerAPI()
+            if legend and legend.Hide then legend.Hide() end
+            if picker and picker.Hide then picker.Hide() end
+            self:SetScript("OnUpdate", function(active)
+                local cursorX, cursorY = GetCursorPosition()
+                local start = active.resize
+                if not (start and SafeNumber(cursorX) and SafeNumber(cursorY)) then return end
+                local change, axes = 0, 0
+                if horizontal ~= 0 then
+                    change, axes = horizontal * ((cursorX / start.factor) - start.x) / start.width, axes + 1
+                end
+                if vertical ~= 0 then
+                    change, axes = change + vertical * ((cursorY / start.factor) - start.y) / start.height, axes + 1
+                end
+                local scale = PanelScale(start.scale + change / axes)
+                local oldWidth, oldHeight = start.width * start.scale, start.height * start.scale
+                local newWidth, newHeight = start.width * scale, start.height * scale
+                local newLeft = horizontal < 0 and start.left + oldWidth - newWidth
+                    or (horizontal > 0 and start.left or start.left + (oldWidth - newWidth) / 2)
+                local newTop = vertical > 0 and start.top - oldHeight + newHeight
+                    or (vertical < 0 and start.top or start.top + (newHeight - oldHeight) / 2)
+                PlacePanel(newLeft, newTop, scale)
+            end)
+        end)
+        grip:SetScript("OnDragStop", function(self)
+            self:SetScript("OnUpdate", nil)
+            if not self.resize then return end
+            self.resize = nil
+            Settings().vignetteRadarScale = panel:GetScale()
+            SavePosition()
+        end)
+        grip:SetScript("OnHide", function(self)
+            self:SetScript("OnUpdate", nil)
+            self.resize = nil
+        end)
+        if key == "bottomRight" then
+            for _, stroke in ipairs({ { -3, -4, 4, 3 }, { 1, -4, 4, -1 } }) do
+                local line = grip:CreateLine(nil, "ARTWORK")
+                line:SetThickness(1)
+                line:SetColorTexture(ACCENT[1], ACCENT[2], ACCENT[3], 0.8)
+                line:SetStartPoint("CENTER", grip, "CENTER", stroke[1], stroke[2])
+                line:SetEndPoint("CENTER", grip, "CENTER", stroke[3], stroke[4])
+            end
+        end
+        grips[key] = grip
     end
 end
 
@@ -1281,11 +1444,18 @@ local function EnsurePanel()
     panel.summary:SetJustifyH("LEFT")
     panel.summary:SetWidth(120)
 
-    panel.layoutHint = Text(panel, 10, "Click a marker to focus.\nScroll to zoom.")
+    panel.layoutHint = Text(panel, 10, "Nothing detected here yet.")
     panel.layoutHint:SetPoint("TOPLEFT", 214, -76)
     panel.layoutHint:SetSize(148, 40)
     panel.layoutHint:SetTextColor(0.65, 0.69, 0.71, 1)
     panel.layoutHint:Hide()
+    panel.sideCaption = Text(panel, 8, "NEAREST DETECTION", true)
+    panel.sideCaption:SetSize(148, 12)
+    panel.sideCaption:Hide()
+    panel.sideGuide = Text(panel, 8, "CLICK TO FOCUS")
+    panel.sideGuide:SetSize(148, 14)
+    panel.sideGuide:SetTextColor(0.55, 0.70, 0.67, 1)
+    panel.sideGuide:Hide()
 
     panel.drag = CreateFrame("Frame", nil, panel)
     panel.drag:SetPoint("TOPLEFT", 4, -3)
@@ -1531,6 +1701,8 @@ local function EnsurePanel()
         GameTooltip:Show()
     end)
     panel.compass:HookScript("OnLeave", function() if GameTooltip then GameTooltip:Hide() end end)
+
+    AddResizeGrips()
 
     panel:SetScript("OnUpdate", function(self, elapsed)
         self._renderElapsed = (self._renderElapsed or 0) + elapsed

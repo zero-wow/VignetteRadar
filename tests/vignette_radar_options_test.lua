@@ -15,6 +15,9 @@ function methods:SetBackdropColor(...) self.backdropColor = { ... } end
 function methods:SetBackdropBorderColor(...) self.backdropBorderColor = { ... } end
 function methods:SetAlpha(value) self.alpha = value end
 function methods:SetColorTexture(...) self.color = { ... } end
+function methods:SetThickness(value) self.thickness = value end
+function methods:SetStartPoint(...) self.startPoint = { ... } end
+function methods:SetEndPoint(...) self.endPoint = { ... } end
 function methods:SetWordWrap(value) self.wordWrap = value end
 function methods:SetJustifyH(value) self.justifyH = value end
 function methods:SetChecked(value) self.checked = value end
@@ -34,6 +37,11 @@ function methods:CreateTexture()
     local texture = setmetatable({ kind = "Texture", parent = self }, { __index = methods })
     objects[#objects + 1] = texture
     return texture
+end
+function methods:CreateLine()
+    local line = setmetatable({ kind = "Line", parent = self }, { __index = methods })
+    objects[#objects + 1] = line
+    return line
 end
 function methods:CreateFontString()
     local label = setmetatable({ kind = "FontString", parent = self }, { __index = methods })
@@ -178,6 +186,19 @@ assert(byKey["vignetteRadarAlertCategories.rare"].label.text == "Rares and bosse
     and byKey["vignetteRadarShapes"].label.text == "Recognizable icons"
     and byKey["vignetteRadarWorldMap"].label.text == "Include world-map detections",
     "rare alerts and icon settings must use recognizable player-facing names")
+local themedCheck = byKey.vignetteRadarAlertSound
+assert(themedCheck.backdrop and #themedCheck.mark == 2 and not themedCheck.mark[1]:IsShown(),
+    "every settings checkbox must use the addon surface and a recognizable empty state")
+local oldBorder = themedCheck.backdropBorderColor[4]
+themedCheck.scripts.OnEnter(themedCheck)
+assert(themedCheck.backdropBorderColor[4] > oldBorder,
+    "hovering a checkbox must visibly strengthen its border")
+themedCheck:SetChecked(true)
+assert(themedCheck.mark[1]:IsShown() and themedCheck.mark[2]:IsShown()
+    and themedCheck.backdropBorderColor[2] > themedCheck.backdropBorderColor[1],
+    "checked state needs a visible tick as well as an accent color")
+themedCheck.scripts.OnLeave(themedCheck)
+themedCheck:SetChecked(false)
 local rangeReadout
 for _, object in ipairs(objects) do
     if object.parent == panel.pages.Radar and object.kind == "FontString" and object.text == "450 yd" then

@@ -11,7 +11,7 @@ function methods:SetWidth(width) self.width = width end
 function methods:SetHeight(height) self.height = height end
 function methods:GetWidth() return self.width or 0 end
 function methods:GetHeight() return self.height or 0 end
-function methods:GetRight() return self.right or ((self:GetLeft() or 0) + self:GetWidth()) end
+function methods:GetRight() return self.right or ((self:GetLeft() or 0) + self:GetWidth() * self:GetScale()) end
 function methods:SetPoint(...) self.point = { ... }; self.points = self.points or {}; self.points[#self.points + 1] = self.point end
 function methods:ClearAllPoints() self.point, self.points = nil, {} end
 function methods:SetAllPoints(...) self.allPoints = { ... } end
@@ -50,6 +50,9 @@ function methods:SetColorTexture(...) self.color = { ... } end
 function methods:SetVertexColor(...) self.vertexColor = { ... } end
 function methods:SetAlpha(value) self.alpha = value end
 function methods:GetAlpha() return self.alpha == nil and 1 or self.alpha end
+function methods:SetScale(value) self.scale = value end
+function methods:GetScale() return self.scale or 1 end
+function methods:GetEffectiveScale() return 1 end
 function methods:SetThickness(value) self.thickness = value end
 function methods:SetStartPoint(...) self.startPoint = { ... } end
 function methods:SetEndPoint(...) self.endPoint = { ... } end
@@ -65,9 +68,17 @@ function methods:Show() self.shown = true end
 function methods:Hide() self.shown = false; if self.scripts and self.scripts.OnHide then self.scripts.OnHide(self) end end
 function methods:StartMoving() self.moving = true end
 function methods:StopMovingOrSizing() self.moving = false end
-function methods:GetLeft() return self.left or 30 end
-function methods:GetTop() return self.top or 380 end
-function methods:GetBottom() return self.bottom or (self:GetTop() - self:GetHeight()) end
+function methods:GetLeft()
+    if self.left then return self.left end
+    if self.name == "VignetteRadarPanel" and self.point then return self.point[4] end
+    return 30
+end
+function methods:GetTop()
+    if self.top then return self.top end
+    if self.name == "VignetteRadarPanel" and self.point then return UIParent:GetHeight() + self.point[5] end
+    return 380
+end
+function methods:GetBottom() return self.bottom or (self:GetTop() - self:GetHeight() * self:GetScale()) end
 function methods:CreateTexture()
     local texture = setmetatable({ kind = "Texture", parent = self }, { __index = methods })
     objects[#objects + 1] = texture
@@ -165,9 +176,13 @@ SlashCmdList.VIGNETTERADAR("config")
 assert(openedCategory == 517, "config command must open the standalone AddOns settings category")
 
 settings.vignetteRadarEnabled = false
+settings.vignetteRadarScale = 1.35
 SlashCmdList.VIGNETTERADAR("preview")
 local panel = assert(_G.VignetteRadarPanel, "preview must construct the radar panel")
 local launcher = assert(_G.VignetteRadarLauncher, "preview must construct the draggable launcher")
+assert(panel:GetScale() == 1.35, "a saved frame size must be restored when the radar is first created")
+settings.vignetteRadarScale = 1
+panel:SetScale(1)
 assert(settings.vignetteRadarEnabled == false, "layout preview must not silently enable live tracking")
 assert(panel:IsShown() and panel.width == 220 and panel.height == 278, "preview must reserve space for zoom controls")
 assert(panel.field.width == 200 and panel.field.height == 200 and panel.field.point[1] == "BOTTOM"
@@ -495,6 +510,23 @@ local function checkLayout(focused)
         inside(panel.layoutHint, panel, 4)
         separate(panel.layoutHint, panel.field.halo, 6, "hint/radar")
     end
+    if panel.layout == "squat" then
+        inside(panel.sideCaption, panel, 4)
+        inside(panel.sideGuide, panel, 4)
+        separate(panel.sideCaption, panel.focusReadout, 8, "right-rail caption/details")
+        separate(panel.sideGuide, panel.focusReadout, 8, "right-rail details/action")
+        separate(panel.sideCaption, panel.field.halo, 6, "right-rail caption/radar")
+        separate(panel.sideGuide, panel.field.halo, 6, "right-rail action/radar")
+    end
+    assert(panel.resizeGrips and panel.resizeGrips.top.width == panel.width - 20
+        and panel.resizeGrips.left.height == panel.height - 20,
+        "each layout must keep all edge resize hit areas on its current borders")
+    for _, grip in pairs(panel.resizeGrips) do
+        inside(grip, panel, 0)
+        for _, control in ipairs(controls) do
+            separate(grip, control, 0, "resize border/button hit targets")
+        end
+    end
     assert(panel.field.width == panel.field.height, "layout must preserve circular radar geometry")
     for _, line in ipairs(panel.rangeRing) do
         local x, y = line.startPoint[4], line.startPoint[5]
@@ -526,11 +558,30 @@ for _, name in ipairs({ "squat", "compact", "classic", "compact", "squat", "clas
         and settings.vignetteRadarCategories == savedCategories, "view changes must preserve range, filters and position")
     checkLayout(false)
     local far = assert(panel.blipByKey.far)
+    if name == "squat" then
+        assert(panel.focusReadout:IsShown() and panel.focusReadout.target.key == "far"
+            and panel.sideCaption.text == "NEAREST DETECTION"
+            and panel.focusName.text == "Far map treasure" and panel.focusMeta.text:find("3000 yd", 1, true)
+            and panel.focusMeta.text:find("TREASURE", 1, true)
+            and panel.sideGuide.text == "CLICK TO FOCUS",
+            "Squat must show actionable current detection details without a manual focus")
+        panel.focusReadout.scripts.OnClick(panel.focusReadout, "LeftButton")
+        assert(addon.VignetteRadarTargetPicker.GetFocus() == "far" and panel.sideCaption.text == "TRACKING",
+            "clicking automatic details must focus that exact detection")
+        panel.focusReadout.scripts.OnClick(panel.focusReadout, "LeftButton")
+        assert(addon.VignetteRadarTargetPicker.GetFocus() == nil
+            and panel.sideCaption.text == "NEAREST DETECTION",
+            "clicking the tracked details again must restore the automatic view")
+    end
     local x, y = far.point[4], far.point[5]
     assert(math.abs(math.sqrt(x*x+y*y) - panel.plotRadius * 3000 / 4800) < 0.001,
         "live target distances must project to the resized plotting area")
     far.scripts.OnClick(far, "LeftButton")
     local baseHeight = panel.height
+    if name == "squat" then
+        assert(panel.sideCaption.text == "TRACKING" and panel.sideGuide.text == "CLICK AGAIN TO SHOW ALL",
+            "the right side must clearly distinguish tracking from an automatic detection")
+    end
     checkLayout(true)
     assert(panel.focusMeta.text:find("3000 yd", 1, true), "focus must retain actual yard distances in every layout")
     for _, other in ipairs({ "squat", "compact", "classic", name }) do
@@ -544,6 +595,12 @@ for _, name in ipairs({ "squat", "compact", "classic", "compact", "squat", "clas
     x, y = panel.edgeArrow.point[4], panel.edgeArrow.point[5]
     assert(math.abs(math.sqrt(x*x+y*y) - panel.plotRadius) < 0.001
         and math.sqrt(x*x+y*y) + 7 < panel.fieldRadius, "rim arrow must track the resized plotting radius")
+    if name == "squat" then
+        addon.VignetteRadarTargetPicker.ClearFocus()
+        assert(panel.focusReadout:IsShown() and panel.sideCaption.text == "OUTSIDE RADAR RANGE"
+            and panel.sideGuide.text == "ZOOM OUT TO SEE IT",
+            "automatic details must identify a reported detection beyond the selected radius")
+    end
     addon.SetVignetteRadarRange(4800)
     for _, right in ipairs({ 400, 1590 }) do
         panel.right, panel.left = right, right - panel.width
@@ -560,6 +617,10 @@ for _, name in ipairs({ "squat", "compact", "classic", "compact", "squat", "clas
     panel.right, panel.left = nil, nil
     addon.VignetteRadarTargetPicker.ClearFocus()
     assert(name ~= "squat" or panel.height == baseHeight, "Squat must not grow taller when focusing a target")
+    if name == "squat" then
+        assert(panel.focusReadout:IsShown() and panel.sideCaption.text == "NEAREST DETECTION",
+            "clearing focus should return to useful automatic details")
+    end
     checkLayout(false)
 end
 assert(not addon.SetVignetteRadarLayout("invalid") and settings.vignetteRadarLayout == "classic")
@@ -577,6 +638,12 @@ SlashCmdList.VIGNETTERADAR("preview")
 for _, name in ipairs({ "squat", "compact", "classic" }) do
     addon.SetVignetteRadarLayout(name)
     checkLayout(false)
+    if name == "squat" then
+        addon.VignetteRadarLegend.SetCategoryEnabled("rare", false)
+        assert(panel.focusReadout.target.category == "treasure",
+            "automatic preview details must follow the enabled categories")
+        addon.VignetteRadarLegend.SetCategoryEnabled("rare", true)
+    end
     for _, blip in pairs(panel.blipByKey) do
         local x, y = blip.point[4], blip.point[5]
         assert(math.sqrt(x*x+y*y) + blip.width / 2 < panel.fieldRadius,
@@ -614,7 +681,8 @@ for _, object in ipairs(objects) do
 end
 assert(northOption, "north-up must also be available in Layout settings")
 local function near(actual, expected, message)
-    assert(math.abs(actual - expected) < 0.001, message)
+    assert(math.abs(actual - expected) < 0.001,
+        message .. ": got " .. tostring(actual) .. ", expected " .. tostring(expected))
 end
 for _, name in ipairs({ "classic", "squat", "compact" }) do
     addon.SetVignetteRadarLayout(name)
@@ -682,5 +750,96 @@ assert(panel.compass._selected and settings.vignetteRadarNorthUp)
 SlashCmdList.VIGNETTERADAR("preview")
 near(panel.cardinals[1].point[4], 0, "preview must honor fixed north")
 near(panel.direction.endPoint[4], -math.sin(0.65) * 21, "preview must demonstrate the rotating player cue")
+
+-- Border dragging uniformly scales the panel and keeps the opposite edge stable.
+UIParent:SetSize(800, 600)
+local cursorX, cursorY = 400, 300
+GetCursorPosition = function() return cursorX, cursorY end
+local resizeDirections = {
+    { "left", -1, 0 }, { "right", 1, 0 }, { "top", 0, 1 }, { "bottom", 0, -1 },
+    { "topLeft", -1, 1 }, { "topRight", 1, 1 },
+    { "bottomLeft", -1, -1 }, { "bottomRight", 1, -1 },
+}
+for _, name in ipairs({ "squat", "compact", "classic" }) do
+    settings.vignetteRadarScale = 1
+    panel:SetScale(1)
+    addon.SetVignetteRadarLayout(name)
+    panel:ClearAllPoints()
+    panel:SetPoint("TOPLEFT", UIParent, "TOPLEFT", 100, -100)
+    checkLayout(false)
+    for _, direction in ipairs(resizeDirections) do
+        local key, horizontal, vertical = direction[1], direction[2], direction[3]
+        local grip = assert(panel.resizeGrips[key])
+        panel:SetScale(1)
+        settings.vignetteRadarScale = 1
+        panel:ClearAllPoints()
+        panel:SetPoint("TOPLEFT", UIParent, "TOPLEFT", 100, -100)
+        cursorX, cursorY = 400, 300
+        local left, top = panel:GetLeft(), panel:GetTop()
+        local right, bottom = left + panel.width, top - panel.height
+        grip.scripts.OnDragStart(grip)
+        assert(grip.resize and grip.scripts.OnUpdate, "every edge and corner must start a resize gesture")
+        cursorX, cursorY = cursorX + horizontal * 24, cursorY + vertical * 24
+        grip.scripts.OnUpdate(grip)
+        assert(panel:GetScale() > 1 and panel:GetScale() < 1.3, "outward edge dragging must grow the full panel")
+        if horizontal < 0 then near(panel:GetLeft() + panel.width * panel:GetScale(), right,
+            name .. " " .. key .. " resize must hold the right edge") end
+        if horizontal > 0 then near(panel:GetLeft(), left, "right resize must hold the left edge") end
+        if vertical > 0 then near(panel:GetBottom(), bottom, "top resize must hold the bottom edge") end
+        if vertical < 0 then near(panel:GetTop(), top, "bottom resize must hold the top edge") end
+        local x, panelTop = panel:GetLeft(), panel:GetTop()
+        assert(x >= 4 and x + panel.width * panel:GetScale() <= 796
+            and panelTop <= 596 and panelTop - panel.height * panel:GetScale() >= 4,
+            "resizing must keep all layout states inside an 800x600 screen")
+        grip.scripts.OnDragStop(grip)
+        assert(grip.scripts.OnUpdate == nil and settings.vignetteRadarScale == panel:GetScale(),
+            "stopping a drag must save the scale and stop updating")
+        checkLayout(false)
+    end
+end
+local rightGrip = panel.resizeGrips.right
+panel:SetScale(1)
+cursorX, cursorY = 400, 300
+rightGrip.scripts.OnDragStart(rightGrip)
+cursorX = cursorX + 1000
+rightGrip.scripts.OnUpdate(rightGrip)
+assert(panel:GetScale() <= 1.8 and panel:GetLeft() + panel.width * panel:GetScale() <= 796,
+    "oversized drags must stop before the panel clips off screen")
+rightGrip.scripts.OnDragStop(rightGrip)
+local savedScale = settings.vignetteRadarScale
+addon.SetVignetteRadarLayout("squat")
+assert(settings.vignetteRadarScale == savedScale
+    and math.abs(panel:GetScale() - math.min(savedScale, (800 - 274) / panel.width)) < 0.001,
+    "saved size must survive layout changes while a narrow screen temporarily limits Squat")
+addon.SetVignetteRadarLayout("classic")
+assert(panel:GetScale() == savedScale, "roomier layouts must restore the requested size")
+addon.SetVignetteRadarLayout("squat")
+panel:SetScale(1)
+settings.vignetteRadarScale = 1
+panel:ClearAllPoints()
+panel:SetPoint("TOPLEFT", UIParent, "TOPLEFT", 100, -100)
+cursorX, cursorY = 400, 300
+rightGrip = panel.resizeGrips.right
+rightGrip.scripts.OnDragStart(rightGrip)
+cursorX = cursorX + 1000
+rightGrip.scripts.OnUpdate(rightGrip)
+assert(panel:GetScale() <= (800 - 274) / panel.width,
+    "Squat resizing must leave room for the target picker on an 800px screen")
+rightGrip.scripts.OnDragStop(rightGrip)
+panel.target.scripts.OnClick(panel.target, "LeftButton")
+assert(targetPanel:IsShown() and targetPanel.point[1] == "TOPLEFT"
+    and panel:GetLeft() + panel.width * panel:GetScale() + 8 + targetPanel.width <= 796,
+    "the target picker must remain beside a scaled Squat panel with an outer screen gutter")
+addon.VignetteRadarTargetPicker.Hide()
+panel:SetScale(1)
+settings.vignetteRadarScale = 1
+UIParent:SetSize(1600, 900)
+mapID, guids, now = 781, {}, 500
+SlashCmdList.VIGNETTERADAR("on")
+addon.SetVignetteRadarLayout("squat")
+assert(panel:IsShown() and not panel.focusReadout:IsShown()
+    and panel.layoutHint:IsShown() and panel.sideCaption.text == "NO DETECTIONS"
+    and panel.sideGuide.text == "MOVE OR CHECK THE MAP",
+    "Squat needs an understandable empty state when no vignette is available")
 
 io.write("vignette radar UI tests passed\n")

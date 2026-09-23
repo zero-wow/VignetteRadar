@@ -10,7 +10,9 @@ Choose a saved panel style under `/vr config` → Layout, or use `/vr layout` to
 - **Squat:** a wider, shorter panel with the radar on the left, details on the right, and every button along the bottom. Focusing a target keeps the same panel height.
 - **Compact:** a narrower radar with its range readout and all buttons underneath. Target details expand the panel when needed.
 
-Styles preserve your range, filters, focus, and saved position. Switching closes open legend/target pickers; reopen them against the new panel edges. The radar stays circular in every style, and resized panels stay inside the screen. Use **Preview layout** on the Layout tab to try a style without enabling tracking.
+Styles preserve your range, filters, focus, and saved position. Switching closes open legend/target pickers; reopen them against the new panel edges. The radar stays circular in every style. Drag any edge or corner of the full panel to scale it uniformly; the small bottom-right grip shows where to start. The size is saved and stays inside the screen. Use **Preview layout** on the Layout tab to try a style without enabling tracking.
+
+Squat automatically fills its right side with the nearest visible detection's name, type, distance, and available health. Click that readout to focus it; when tracking a specific target, the readout and action label change. When no detection is available, the panel shows a clear empty state.
 
 Click the small **N** compass button to switch orientation. When highlighted, north stays at the top and your center direction line turns as you turn. Click it again to restore the default facing-up radar. This choice is saved, applies to the small launcher too, and is also available as **Keep north at the top** on the Layout tab.
 
@@ -48,6 +50,6 @@ Preview samples support focus without changing favorites, ignores, or navigation
 
 ## Development validation
 
-Current development build: `0.1.0-dev.5` (base version `0.1.0`).
+Current development build: `0.1.0-dev.6` (base version `0.1.0`).
 
-Run each `tests/*_test.lua` with Lua from the addon root and check Lua files with `luac -p`. The tests cover migration, radar projection, filters, target actions, alert/last-seen state, navigation fallbacks, quiet modes, mouse-wheel/button zoom, world-map visibility guards, and UI layout bounds using mocked game APIs. Layout checks exercise repeated style changes, focused and unfocused states, pop-outs, resized rings and markers, and an 800×600 canvas. Orientation checks cover quarter turns, fixed markers/cardinals, the player direction line, both radars, preview, unknown facing, and out-of-range focus. These checks do not replace in-game validation of rendering, navigation, or API availability.
+Run each `tests/*_test.lua` with Lua from the addon root and check Lua files with `luac -p`. The tests cover migration, radar projection, filters, target actions, alert/last-seen state, navigation fallbacks, quiet modes, mouse-wheel/button zoom, world-map visibility guards, and UI layout bounds using mocked game APIs. Layout checks exercise repeated style changes, automatic Squat details, focused and unfocused states, edge and corner resizing, pop-outs, resized rings and markers, and an 800×600 canvas. Orientation checks cover quarter turns, fixed markers/cardinals, the player direction line, both radars, preview, unknown facing, and out-of-range focus. These checks do not replace in-game validation of rendering, navigation, or API availability.

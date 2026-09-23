@@ -60,6 +60,12 @@ function addon.GetSettings()
         end
     end
     if not validLayout then db.vignetteRadarLayout = "classic" end
+    if type(db.vignetteRadarScale) ~= "number" or db.vignetteRadarScale ~= db.vignetteRadarScale
+        or db.vignetteRadarScale == math.huge or db.vignetteRadarScale == -math.huge then
+        db.vignetteRadarScale = 1
+    else
+        db.vignetteRadarScale = math.max(0.8, math.min(1.8, db.vignetteRadarScale))
+    end
     if type(db.vignetteRadarNorthUp) ~= "boolean" then db.vignetteRadarNorthUp = false end
     if type(db.vignetteRadarWorldMap) ~= "boolean" then db.vignetteRadarWorldMap = true end
     if type(db.vignetteRadarAlerts) ~= "boolean" then db.vignetteRadarAlerts = true end

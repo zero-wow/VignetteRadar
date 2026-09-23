@@ -254,7 +254,7 @@ local function Attach(anchor)
     elseif anchor and top and screenHeight and screenHeight - top >= PANEL_H + 12 then
         panel:SetPoint("BOTTOM", anchor, "TOP", 0, 8)
     else
-        local anchorWidth = FrameValue(anchor, "GetWidth")
+        local anchorWidth = left and right and right - left or FrameValue(anchor, "GetWidth")
         -- A centered Squat panel can leave no side or vertical space. Move the
         -- whole panel only when it is the anchor, keeping the saved position intact.
         if anchor and anchorWidth and anchorWidth >= 100 and left and top and screenWidth and screenHeight

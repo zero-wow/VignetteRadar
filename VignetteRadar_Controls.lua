@@ -83,3 +83,63 @@ function Controls.Button(parent, title, width, height)
     Refresh()
     return button
 end
+
+function Controls.Checkbox(parent)
+    local checkbox = CreateFrame("CheckButton", nil, parent, "BackdropTemplate")
+    checkbox:SetSize(26, 26)
+    checkbox:SetBackdrop({
+        bgFile = "Interface\\Buttons\\WHITE8X8",
+        edgeFile = "Interface\\Buttons\\WHITE8X8",
+        edgeSize = 1,
+    })
+    checkbox.mark = {}
+    local segments = {
+        { -6, 0, -2, -4 },
+        { -2, -4, 7, 6 },
+    }
+    for index, segment in ipairs(segments) do
+        local line = checkbox:CreateLine(nil, "OVERLAY")
+        line:SetThickness(2)
+        line:SetColorTexture(0.80, 1, 0.94, 1)
+        line:SetStartPoint("CENTER", checkbox, "CENTER", segment[1], segment[2])
+        line:SetEndPoint("CENTER", checkbox, "CENTER", segment[3], segment[4])
+        checkbox.mark[index] = line
+    end
+    function checkbox:RefreshAppearance()
+        local checked = self:GetChecked() == true or self:GetChecked() == 1
+        local hovered = self._hovered == true
+        local pressed = self._pressed == true
+        for _, line in ipairs(self.mark) do line:SetShown(checked) end
+        if checked then
+            self:SetBackdropColor(pressed and 0.02 or 0.035, 0.10, 0.08, 1)
+            self:SetBackdropBorderColor(ACCENT[1], ACCENT[2], ACCENT[3], hovered and 0.90 or 0.65)
+        else
+            self:SetBackdropColor(hovered and 0.035 or 0.025, hovered and 0.065 or 0.03,
+                hovered and 0.055 or 0.035, 0.96)
+            self:SetBackdropBorderColor(hovered and ACCENT[1] or 1,
+                hovered and ACCENT[2] or 1, hovered and ACCENT[3] or 1, hovered and 0.55 or 0.18)
+        end
+        if self.label then
+            self.label:SetTextColor(hovered and 0.95 or 0.82, hovered and 1 or 0.88,
+                hovered and 0.96 or 0.88, 1)
+        end
+    end
+    local nativeSetChecked = checkbox.SetChecked
+    checkbox.SetChecked = function(self, checked)
+        nativeSetChecked(self, checked == true or checked == 1)
+        self:RefreshAppearance()
+    end
+    checkbox:SetScript("OnEnter", function(self) self._hovered = true; self:RefreshAppearance() end)
+    checkbox:SetScript("OnLeave", function(self)
+        self._hovered, self._pressed = false, false
+        self:RefreshAppearance()
+    end)
+    checkbox:SetScript("OnMouseDown", function(self) self._pressed = true; self:RefreshAppearance() end)
+    checkbox:SetScript("OnMouseUp", function(self) self._pressed = false; self:RefreshAppearance() end)
+    checkbox:SetScript("OnHide", function(self)
+        self._hovered, self._pressed = false, false
+        self:RefreshAppearance()
+    end)
+    checkbox:RefreshAppearance()
+    return checkbox
+end
