@@ -48,6 +48,63 @@ local presets = {
         quest = { 1, .79, .33 } },
 }
 
+local function HueColor(hue, saturation, value)
+    local position = (hue % 1) * 6
+    local sector = math.floor(position)
+    local fraction = position - sector
+    local minimum = value * (1 - saturation)
+    local rising = value * (1 - saturation * (1 - fraction))
+    local falling = value * (1 - saturation * fraction)
+    if sector == 0 then return { value, rising, minimum } end
+    if sector == 1 then return { falling, value, minimum } end
+    if sector == 2 then return { minimum, value, rising } end
+    if sector == 3 then return { minimum, falling, value } end
+    if sector == 4 then return { rising, minimum, value } end
+    return { value, minimum, falling }
+end
+
+-- Additional palettes share legible category contrast while changing the
+-- instrument's color family, background tint, and event marker treatment.
+local additional = {
+    { "mint", "Mint", .44, .63 }, { "jade", "Jade", .47, .88 },
+    { "moss", "Moss", .27, .58 }, { "lime", "Lime", .22, .88 },
+    { "neon", "Neon", .32, 1 }, { "pine", "Pine", .41, .74 },
+    { "copper", "Copper", .075, .82 }, { "rust", "Rust", .035, .83 },
+    { "solar", "Solar", .12, .94 }, { "sand", "Sand", .105, .47 },
+    { "ivory", "Ivory", .13, .20 }, { "slate", "Slate", .60, .27 },
+    { "steel", "Steel", .57, .48 }, { "ash", "Ash", .60, .10 },
+    { "ruby", "Ruby", .97, .89 }, { "cherry", "Cherry", .00, .80 },
+    { "coral", "Coral", .02, .70 }, { "peach", "Peach", .07, .56 },
+    { "lilac", "Lilac", .76, .51 }, { "plum", "Plum", .80, .77 },
+    { "dusk", "Dusk", .69, .59 }, { "arctic", "Arctic", .53, .43 },
+    { "cobalt", "Cobalt", .62, .84 }, { "lagoon", "Lagoon", .49, .82 },
+}
+for _, definition in ipairs(additional) do
+    local key, label, hue, saturation = definition[1], definition[2], definition[3], definition[4]
+    local accent = HueColor(hue, saturation, 1)
+    local rare = HueColor(.59 + hue * .07, .34, 1)
+    local treasure = HueColor(.105 + hue * .025, .80, 1)
+    presets[key] = {
+        accent = accent,
+        rings = HueColor(hue, saturation * .78, .82),
+        heading = HueColor(hue, saturation * .52, 1),
+        background = { .010 + accent[1] * .024, .013 + accent[2] * .024,
+            .017 + accent[3] * .024 },
+        rare = rare,
+        boss = HueColor(.005 + hue * .012, .88, 1),
+        treasure = treasure,
+        event = HueColor(hue + .40, .72, 1),
+        other = HueColor(hue, .22, .82),
+        quest = HueColor(.105 + hue * .025, .67, 1),
+    }
+    Style.order[#Style.order + 1] = key
+    Style.names[key] = label
+end
+
+function Style.HasTheme(name)
+    return presets[name] ~= nil
+end
+
 function Style.PresetColor(name, slot)
     local value = presets[name] and presets[name][slot or "accent"]
     if value then return value[1], value[2], value[3] end

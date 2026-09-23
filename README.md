@@ -4,7 +4,7 @@ A compact radar for the rare, treasure, event, and other vignettes that World of
 
 The small draggable launcher covers 150 yards. Click it to show or tuck away the full radar. The full radar has a category legend and a picker for focusing one current detection. Right-click the launcher for a layout preview.
 
-Click the small colored dot in the radar header to open **Radar Settings** beside the panel. Its eight compact tabs cover detection, layouts, alerts, markers, guides, themes, behavior, and quests. Click a checkbox label as well as its box to toggle it; the settings apply immediately. The Guides tab adjusts ring visibility, chevron and facing-line opacity, chevron distance from the player dot, and facing-line length. The Themes tab offers eight palettes and a color picker for each radar element and marker type. Turn off **Use icons** there to display category-colored dots instead. Custom colors are saved; choosing a preset clears the custom colors.
+Click the small colored dot in the radar header to open **Radar Settings** beside the panel. Its eight compact tabs cover detection, layouts, alerts, markers, guides, themes, behavior, and quests. Click a checkbox label as well as its box to toggle it; the settings apply immediately. The Guides tab adjusts ring visibility, chevron and facing-line opacity, chevron distance from the player dot, facing-line length, and an optional animated sweep on the full radar. The Themes tab offers 32 palettes in a two-row scroll area with a slim scrollbar, plus a color picker for each radar element and marker type. Turn off **Use icons** there to display category-colored dots instead. Custom colors are saved; choosing a preset clears the custom colors.
 
 Choose a saved panel style under `/vr config` → Layout, or use `/vr layout` to cycle through them:
 
@@ -53,6 +53,6 @@ Preview samples support focus without changing favorites, ignores, or navigation
 
 ## Development validation
 
-Current development build: `0.1.0-dev.13` (base version `0.1.0`).
+Current development build: `0.1.0-dev.14` (base version `0.1.0`).
 
 Run each `tests/*_test.lua` with Lua from the addon root and check Lua files with `luac -p`. The tests cover migration, radar projection, filters, target actions, alert/last-seen state, navigation fallbacks, quiet modes, mouse-wheel/button zoom, world-map visibility guards, and UI layout bounds using mocked game APIs. Layout checks exercise repeated style changes, automatic Squat details, focused and unfocused states, edge and corner resizing, pop-outs, resized rings and markers, and an 800×600 canvas. Orientation checks cover quarter turns, fixed markers/cardinals, the player direction line, both radars, preview, unknown facing, and out-of-range focus. These checks do not replace in-game validation of rendering, navigation, or API availability.

@@ -100,9 +100,12 @@ function addon.GetSettings()
     end
     if type(db.vignetteRadarShapes) ~= "boolean" then db.vignetteRadarShapes = true end
     if type(db.vignetteRadarShowHealth) ~= "boolean" then db.vignetteRadarShowHealth = true end
-    local themes = { verdant = true, ember = true, frost = true, violet = true,
-        amber = true, mono = true, rose = true, ocean = true }
-    if not themes[db.vignetteRadarTheme] then db.vignetteRadarTheme = "verdant" end
+    if type(db.vignetteRadarFullSweep) ~= "boolean" then db.vignetteRadarFullSweep = false end
+    local style = addon.VignetteRadarStyle
+    if (style and not style.HasTheme(db.vignetteRadarTheme))
+        or (not style and type(db.vignetteRadarTheme) ~= "string") then
+        db.vignetteRadarTheme = "verdant"
+    end
     if type(db.vignetteRadarColors) ~= "table" then db.vignetteRadarColors = {} end
     local appearance = {
         vignetteRadarRingOpacity = { .5, 0, 2 },

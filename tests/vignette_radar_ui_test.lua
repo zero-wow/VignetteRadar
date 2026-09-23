@@ -24,6 +24,9 @@ function methods:SetFrameLevel(value) self.level = value end
 function methods:GetFrameLevel() return self.level or 1 end
 function methods:SetClampedToScreen(value) self.clamped = value end
 function methods:SetClipsChildren(value) self.clipsChildren = value end
+function methods:SetScrollChild(value) self.scrollChild = value end
+function methods:SetVerticalScroll(value) self.verticalScroll = value end
+function methods:GetVerticalScroll() return self.verticalScroll or 0 end
 function methods:SetMapID(value) self.mapID = value end
 function methods:SetFillTexture(value) self.fillTexture = value end
 function methods:SetBorderTexture(value) self.borderTexture = value end
@@ -106,8 +109,8 @@ function methods:CreateFontString()
     objects[#objects + 1] = label
     return label
 end
-function methods:CreateLine()
-    local line = setmetatable({ kind = "Line", parent = self }, { __index = methods })
+function methods:CreateLine(_, layer)
+    local line = setmetatable({ kind = "Line", parent = self, layer = layer }, { __index = methods })
     objects[#objects + 1] = line
     return line
 end
@@ -968,7 +971,8 @@ for _, key in ipairs({ "vignetteRadarEnabled", "vignetteRadarHideWhenEmpty", "vi
     "vignetteRadarLastSeen", "vignetteRadarLastSeenSeconds", "vignetteRadarQuietCombat",
     "vignetteRadarQuietInstances", "vignetteRadarQuestDots", "vignetteRadarQuestAreas",
     "vignetteRadarRingOpacity", "vignetteRadarChevronOpacity", "vignetteRadarHeadingOpacity",
-    "vignetteRadarChevronDistance", "vignetteRadarHeadingLength", "vignetteRadarTheme" }) do
+    "vignetteRadarChevronDistance", "vignetteRadarHeadingLength", "vignetteRadarFullSweep",
+    "vignetteRadarTheme" }) do
     assert(exposed[key], "compact settings missing: " .. key)
 end
 for _, slot in ipairs(addon.VignetteRadarStyle.slots) do
@@ -976,12 +980,68 @@ for _, slot in ipairs(addon.VignetteRadarStyle.slots) do
 end
 local function quickControl(page, key, value)
     for _, object in ipairs(objects) do
-        if object.parent == quick.pages[page] and object.optionKey == key
+        if (object.parent == quick.pages[page] or (page == "Themes" and object.parent == quick.themeContent))
+            and object.optionKey == key
             and (value == nil or object.optionValue == value) then return object end
     end
 end
 quick.tabs.Themes.scripts.OnClick(quick.tabs.Themes)
 assert(quick.pages.Themes:IsShown() and not quick.pages.Radar:IsShown())
+local style = addon.VignetteRadarStyle
+assert(#style.order == 32 and quick.themeScroll.width == 244 and quick.themeScroll.height == 46
+    and quick.themeScroll.clipsChildren and quick.themeScroll.scrollChild == quick.themeContent
+    and quick.themeContent.height == 8 * 24,
+    "thirty-two palettes must live in a clipped, two-row scroll viewport")
+assert(quick.themeTrack.point[4] == 267 and quick.themeTrack.point[5] == -18
+    and quick.themeScroll.point[4] + quick.themeScroll.width + 8 <= quick.themeTrack.point[4]
+    and 18 + quick.themeTrack.height + 10 <= 78,
+    "the scrollbar needs a visible gutter from palette buttons and controls below")
+for index, name in ipairs(style.order) do
+    local choice = assert(quick.themeChoices[name])
+    local p = choice.point
+    assert(style.HasTheme(name) and style.PresetColor(name, "accent")
+        and choice.parent == quick.themeContent and choice.width == 56
+        and p[4] == ((index - 1) % 4) * 61
+        and p[4] + choice.width <= quick.themeContent.width - 5
+        and -p[5] == math.floor((index - 1) / 4) * 24 + 1,
+        "each named palette needs a valid color and a clipped four-column grid cell")
+    for _, slot in ipairs(style.slots) do
+        local r, g, b = style.PresetColor(name, slot)
+        assert(type(r) == "number" and type(g) == "number" and type(b) == "number"
+            and r >= 0 and r <= 1 and g >= 0 and g <= 1 and b >= 0 and b <= 1,
+            "every palette must define a valid color for " .. slot)
+    end
+end
+local function visibleThemeCount()
+    local count = 0
+    for _, name in ipairs(style.order) do
+        local top = -quick.themeChoices[name].point[5]
+        if top >= quick.themeOffset and top + 21 <= quick.themeOffset + quick.themeScroll.height then
+            count = count + 1
+        end
+    end
+    return count
+end
+assert(visibleThemeCount() == 8, "only two rows of four palettes may fit in the viewport")
+for _ = 1, 10 do quick.themeScroll.scripts.OnMouseWheel(quick.themeScroll, -1) end
+assert(quick.themeOffset == 144 and quick.themeScroll:GetVerticalScroll() == 144
+    and quick.themeThumb.point[5] < -25 and visibleThemeCount() == 8,
+    "wheel scrolling must reach the last two rows and move the scrollbar thumb")
+quick.SetThemeScroll(0)
+quick.themeTrack.top = 500
+cursorY = 500
+quick.themeTrack.scripts.OnMouseDown(quick.themeTrack)
+cursorY = 450
+quick.themeTrack.scripts.OnUpdate(quick.themeTrack)
+assert(quick.themeOffset == 144, "dragging the scrollbar must reach the final palette rows")
+quick.themeTrack.scripts.OnMouseUp(quick.themeTrack)
+assert(not quick.themeTrack.dragging and not quick.themeTrack.scripts.OnUpdate,
+    "releasing the scrollbar must stop its drag update")
+quick.themeTrack.top = nil
+quick.themeChoices.lagoon.scripts.OnClick()
+assert(settings.vignetteRadarTheme == "lagoon" and quick.themeOffset == 144,
+    "a palette in the final row must remain selectable")
+quick.SetThemeScroll(0)
 quickControl("Themes", "vignetteRadarTheme", "ember").scripts.OnClick()
 assert(settings.vignetteRadarTheme == "ember" and panel.title.textColor[1] == 1
     and panel.field.background.vertexColor[1] > .04,
@@ -1044,6 +1104,22 @@ assert(settings.vignetteRadarChevronDistance == 5
 plusFor("vignetteRadarHeadingLength").scripts.OnClick()
 assert(math.abs(panel.direction.endPoint[4] - panel.plotRadius * .35) < .001,
     "facing-line length must redraw using the selected radius fraction")
+local sweepToggle = quickControl("Guides", "vignetteRadarFullSweep")
+sweepToggle:SetChecked(true)
+sweepToggle.scripts.OnClick(sweepToggle)
+local sweep = panel.sweepLines
+assert(settings.vignetteRadarFullSweep and #sweep == 2 and sweep[1]:IsShown()
+    and sweep[1].parent == panel.field and sweep[1].layer == "BORDER"
+    and sweep[1].color[4] < .2 and panel.blipByKey["preview-rare"].level > panel.field.level,
+    "the optional full-size sweep must stay subtle and behind markers")
+local oldAngle = panel._sweepAngle
+panel.scripts.OnUpdate(panel, .06)
+assert(panel._sweepAngle ~= oldAngle and sweep[1]:IsShown(),
+    "the full-size sweep must animate while enabled")
+sweepToggle:SetChecked(false)
+sweepToggle.scripts.OnClick(sweepToggle)
+assert(not settings.vignetteRadarFullSweep and not sweep[1]:IsShown(),
+    "turning the sweep off must hide its lines immediately")
 panel.settingsDot.scripts.OnClick(panel.settingsDot)
 assert(not quick:IsShown(), "clicking the dot again must close compact settings")
 UIParent:SetSize(800, 600)

@@ -1147,9 +1147,28 @@ ApplyAppearance = function()
     if legend and legend.Refresh then legend.Refresh() end
 end
 
+local function UpdateFullSweep(elapsed)
+    if not (panel and panel.sweepLines) then return end
+    local enabled = Settings().vignetteRadarFullSweep == true and panel:IsShown()
+    if not enabled then
+        for _, line in ipairs(panel.sweepLines) do line:Hide() end
+        return
+    end
+    panel._sweepAngle = ((panel._sweepAngle or 0) + (elapsed or 0) * .72) % TWO_PI
+    for index, line in ipairs(panel.sweepLines) do
+        local angle = panel._sweepAngle - ((index - 1) * .13)
+        line:SetColorTexture(ACCENT[1], ACCENT[2], ACCENT[3], index == 1 and .17 or .07)
+        line:SetStartPoint("CENTER", panel.field, 0, 0)
+        line:SetEndPoint("CENTER", panel.field, math.sin(angle) * panel.plotRadius,
+            math.cos(angle) * panel.plotRadius)
+        line:Show()
+    end
+end
+
 Render = function()
     if not panel or not panel:IsShown() then return end
     ApplyAppearance()
+    UpdateFullSweep(0)
     BeginBlips()
     local range = tonumber(Settings().vignetteRadarRange) or 450
     UpdateRingLabels(range)
@@ -1935,6 +1954,14 @@ local function EnsurePanel()
     panel.rangeRing = AddRing(panel.field, PLOT_RADIUS, 0.045)
     panel.middleRing = AddRing(panel.field, PLOT_RADIUS * (2 / 3), 0.04)
     panel.innerRing = AddRing(panel.field, PLOT_RADIUS / 3, 0.03)
+    panel.sweepLines = {}
+    for index = 1, 2 do
+        local line = panel.field:CreateLine(nil, "BORDER")
+        line:SetThickness(index == 1 and 1.5 or 1)
+        line:SetColorTexture(ACCENT[1], ACCENT[2], ACCENT[3], index == 1 and .17 or .07)
+        line:Hide()
+        panel.sweepLines[index] = line
+    end
 
     panel.innerLabel = Text(panel.field, 8, "150y")
     panel.innerLabel:SetTextColor(ACCENT[1], ACCENT[2], ACCENT[3], 0.55)
@@ -2054,7 +2081,9 @@ local function EnsurePanel()
             if not self:IsShown() then return end
         end
         if self._renderElapsed >= UPDATE_SECONDS then
+            local renderElapsed = self._renderElapsed
             self._renderElapsed = 0
+            UpdateFullSweep(renderElapsed)
             Render()
         end
     end)

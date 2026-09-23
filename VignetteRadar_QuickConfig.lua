@@ -2,6 +2,8 @@ local _, addon = ...
 if type(addon) ~= "table" then return end
 
 local WIDTH, HEIGHT = 288, 365
+local THEME_COLUMNS, THEME_ROW, THEME_VIEW_HEIGHT = 4, 24, 46
+local THEME_VIEW_WIDTH = 244
 local ACCENT = { 0.05, 0.82, 0.62 }
 local FONT = STANDARD_TEXT_FONT or "Fonts\\FRIZQT__.TTF"
 local quick, anchor
@@ -224,6 +226,7 @@ function API.Refresh()
         quick.rail:SetColorTexture(ar, ag, ab, .75)
         quick.headerLine:SetColorTexture(ar, ag, ab, .18)
         quick.bead:SetColorTexture(ar, ag, ab, 1)
+        if quick.themeThumb then quick.themeThumb:SetColorTexture(ar, ag, ab, .95) end
         for _, label in ipairs(sections) do label:SetTextColor(ar, ag, ab, .88) end
         if anchor and anchor.settingsDot then
             anchor.settingsDot.rim:SetVertexColor(ar, ag, ab, quick:IsShown() and .68 or .20)
@@ -245,6 +248,18 @@ local function SelectPage(name)
     for pageName, page in pairs(quick.pages) do page:SetShown(pageName == name) end
     for pageName, tab in pairs(quick.tabs) do
         if pageName == name then tab:LockHighlight() else tab:UnlockHighlight() end
+    end
+    if name == "Themes" and quick.SetThemeScroll then
+        local selected = Settings().vignetteRadarTheme
+        for index, key in ipairs(addon.VignetteRadarStyle.order) do
+            if key == selected then
+                local row = math.floor((index - 1) / THEME_COLUMNS)
+                local first = math.floor((quick.themeOffset or 0) / THEME_ROW)
+                if row < first then quick.SetThemeScroll(row * THEME_ROW)
+                elseif row > first + 1 then quick.SetThemeScroll((row - 1) * THEME_ROW) end
+                break
+            end
+        end
     end
     API.Refresh()
 end
@@ -373,22 +388,93 @@ local function Build()
         { 2, 3, 4, 5, 6, 7, 8, 9 }, function(value) return value .. " px" end)
     Stepper(guides, "vignetteRadarHeadingLength", "Facing line length", -189,
         { .12, .16, .2, .25, .3, .35, .4, .5, .6, .7, .8 }, percent)
-    Label(guides, "The line starts at the chevron tip.", 14, -234, 9)
+    Check(guides, "vignetteRadarFullSweep", "Animated sweep on full radar", 14, -231)
 
     local themes = quick.pages.Themes
     Section(themes, "COLOR THEMES", -3)
     local style = addon.VignetteRadarStyle
+    local themeRows = math.ceil(#style.order / THEME_COLUMNS)
+    local maxThemeScroll = math.max(0, (themeRows - 2) * THEME_ROW)
+    local themeScroll = CreateFrame("ScrollFrame", nil, themes)
+    themeScroll:SetSize(THEME_VIEW_WIDTH, THEME_VIEW_HEIGHT)
+    themeScroll:SetPoint("TOPLEFT", themes, "TOPLEFT", 14, -18)
+    themeScroll:SetClipsChildren(true)
+    themeScroll:EnableMouseWheel(true)
+    local themeContent = CreateFrame("Frame", nil, themeScroll)
+    themeContent:SetSize(THEME_VIEW_WIDTH, themeRows * THEME_ROW)
+    themeScroll:SetScrollChild(themeContent)
+    quick.themeScroll, quick.themeContent = themeScroll, themeContent
+
+    local track = CreateFrame("Button", nil, themes, "BackdropTemplate")
+    track:SetSize(8, THEME_VIEW_HEIGHT)
+    track:SetPoint("TOPLEFT", themes, "TOPLEFT", 267, -18)
+    track:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8X8",
+        edgeFile = "Interface\\Buttons\\WHITE8X8", edgeSize = 1 })
+    track:SetBackdropColor(.018, .030, .034, 1)
+    track:SetBackdropBorderColor(1, 1, 1, .18)
+    track:EnableMouse(true)
+    track:RegisterForDrag("LeftButton")
+    local thumb = track:CreateTexture(nil, "OVERLAY")
+    thumb:SetSize(6, 13)
+    thumb:SetColorTexture(ACCENT[1], ACCENT[2], ACCENT[3], .95)
+    quick.themeTrack, quick.themeThumb = track, thumb
+
+    local function SetThemeScroll(value)
+        local row = math.max(0, math.min(themeRows - 2, math.floor(value / THEME_ROW + .5)))
+        local offset = row * THEME_ROW
+        quick.themeOffset = offset
+        themeScroll:SetVerticalScroll(offset)
+        thumb:ClearAllPoints()
+        local travel = THEME_VIEW_HEIGHT - thumb:GetHeight() - 2
+        local position = maxThemeScroll > 0 and (offset / maxThemeScroll) * travel or 0
+        thumb:SetPoint("TOP", track, "TOP", 0, -1 - position)
+    end
+    quick.SetThemeScroll = SetThemeScroll
+    local function WheelThemes(_, delta)
+        SetThemeScroll((quick.themeOffset or 0) + (delta > 0 and -THEME_ROW or THEME_ROW))
+    end
+    themeScroll:SetScript("OnMouseWheel", WheelThemes)
+    track:EnableMouseWheel(true)
+    track:SetScript("OnMouseWheel", WheelThemes)
+    local function CursorScroll()
+        if not GetCursorPosition then return end
+        local _, cursorY = GetCursorPosition()
+        local scale = track:GetEffectiveScale()
+        local top = track:GetTop()
+        if not (cursorY and scale and scale > 0 and top) then return end
+        local travel = THEME_VIEW_HEIGHT - thumb:GetHeight() - 2
+        local distance = math.max(0, math.min(travel, top - cursorY / scale - thumb:GetHeight() / 2))
+        SetThemeScroll(travel > 0 and distance / travel * maxThemeScroll or 0)
+    end
+    track:SetScript("OnMouseDown", function(self)
+        self.dragging = true
+        CursorScroll()
+        self:SetScript("OnUpdate", function(active) if active.dragging then CursorScroll() end end)
+    end)
+    local function StopScrollDrag(self)
+        self.dragging = false
+        self:SetScript("OnUpdate", nil)
+    end
+    track:SetScript("OnMouseUp", StopScrollDrag)
+    track:SetScript("OnDragStop", StopScrollDrag)
+    track:SetScript("OnHide", StopScrollDrag)
+    track:SetScript("OnDragStart", function(self) self.dragging = true end)
+
+    quick.themeChoices = {}
     for index, name in ipairs(style.order) do
-        local row, column = math.floor((index - 1) / 4), (index - 1) % 4
-        -- Two compact rows show all palettes without pushing colors below the frame.
-        local choice = Choice(themes, "vignetteRadarTheme", name, style.names[name],
-            14 + column * 66, -18 - row * 24, 62)
+        local row, column = math.floor((index - 1) / THEME_COLUMNS), (index - 1) % THEME_COLUMNS
+        local choice = Choice(themeContent, "vignetteRadarTheme", name, style.names[name],
+            column * 61, -row * THEME_ROW - 1, 56)
+        choice:EnableMouseWheel(true)
+        choice:SetScript("OnMouseWheel", WheelThemes)
+        quick.themeChoices[name] = choice
         local stripe = choice:CreateTexture(nil, "OVERLAY")
         stripe:SetPoint("TOPLEFT", 2, -1)
         stripe:SetPoint("TOPRIGHT", -2, -1)
         stripe:SetHeight(2)
         stripe:SetColorTexture(style.PresetColor(name, "accent"))
     end
+    SetThemeScroll(0)
     Check(themes, "vignetteRadarShapes", "Use icons (off = colored dots)", 14, -78)
     quick.customLabel = Section(themes, "THEME COLORS", -116)
     local slots = style.slots
