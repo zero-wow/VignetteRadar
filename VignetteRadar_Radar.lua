@@ -793,14 +793,45 @@ local function RenderQuestDots(player, range)
     return count
 end
 
+local QUEST_CLIP_STEP = 5
+
+local function AddQuestClipSegment()
+    local clip = CreateFrame("Frame", nil, panel.questClip)
+    clip:SetFrameLevel(panel.field:GetFrameLevel() + 1)
+    clip:EnableMouse(false)
+    clip:SetClipsChildren(true)
+    local ok, blob = pcall(CreateFrame, "QuestPOIFrame", nil, clip)
+    if not (ok and blob and type(blob.SetMapID) == "function" and type(blob.DrawBlob) == "function"
+        and type(blob.DrawNone) == "function" and type(blob.SetFillTexture) == "function"
+        and type(blob.SetBorderTexture) == "function" and type(blob.SetFillAlpha) == "function"
+        and type(blob.SetBorderAlpha) == "function") then
+        panel.questClipFailed = true
+        clip:Hide()
+        return nil
+    end
+    blob:SetFrameLevel(panel.field:GetFrameLevel() + 2)
+    blob:EnableMouse(false)
+    blob:SetFillTexture("Interface\\WorldMap\\UI-QuestBlob-Inside")
+    blob:SetBorderTexture("Interface\\WorldMap\\UI-QuestBlob-Outside")
+    blob:SetFillAlpha(48)
+    blob:SetBorderAlpha(0)
+    blob:Hide()
+    clip:Hide()
+    local segment = { clip = clip, blob = blob }
+    panel.questSegments[#panel.questSegments + 1] = segment
+    if not panel.questBlob then panel.questBlob = blob end
+    return segment
+end
+
 local function HideQuestAreas()
-    if panel and panel.questBlob then
-        if GameTooltip and GameTooltip.GetOwner and GameTooltip:GetOwner() == panel.questBlob then
-            GameTooltip:Hide()
-        end
-        panel.questBlob.tooltipQuestID = nil
-        panel.questBlob:Hide()
-        panel.questBlob.drawnKey = nil
+    if not panel then return end
+    if panel.questBlob and GameTooltip and GameTooltip.GetOwner
+        and GameTooltip:GetOwner() == panel.questBlob then GameTooltip:Hide() end
+    if panel.questBlob then panel.questBlob.tooltipQuestID = nil end
+    for _, segment in ipairs(panel.questSegments or {}) do
+        segment.blob:Hide()
+        segment.blob.drawnKey = nil
+        segment.clip:Hide()
     end
 end
 
@@ -822,7 +853,16 @@ local function UpdateQuestAreaTooltip()
     if fieldLeft and fieldTop and blobLeft and blobTop and width and height and width > 0 and height > 0 then
         local fromCenterX = cursorX - fieldLeft - field:GetWidth() / 2
         local fromCenterY = cursorY - fieldTop + field:GetHeight() / 2
-        if fromCenterX * fromCenterX + fromCenterY * fromCenterY <= panel.fieldRadius * panel.fieldRadius then
+        local insideClip = false
+        for _, segment in ipairs(panel.questSegments or {}) do
+            if segment.clip:IsShown() and segment.clipWidth
+                and math.abs(fromCenterX) <= segment.clipWidth / 2
+                and math.abs(fromCenterY - segment.clipCenterY) <= segment.clipHeight / 2 then
+                insideClip = true
+                break
+            end
+        end
+        if insideClip then
             local x, y = (cursorX - blobLeft) / width, (blobTop - cursorY) / height
             if x >= 0 and x <= 1 and y >= 0 and y <= 1 then
                 questID = SafeNumber(Call(blob.UpdateMouseOverTooltip, blob, x, y))
@@ -848,6 +888,57 @@ local function UpdateQuestAreaTooltip()
     GameTooltip:Show()
 end
 
+local function PrepareQuestArea(segment, key, mapID, width, height, offsetX, offsetY)
+    local area = segment.blob
+    if segment.width ~= width or segment.height ~= height then
+        area:SetSize(width, height)
+        segment.width, segment.height = width, height
+    end
+    if segment.offsetX ~= offsetX or segment.offsetY ~= offsetY then
+        area:ClearAllPoints()
+        area:SetPoint("CENTER", panel.field, "CENTER", offsetX, offsetY)
+        segment.offsetX, segment.offsetY = offsetX, offsetY
+    end
+    if area.drawnKey ~= key then
+        local ok = pcall(area.SetMapID, area, mapID)
+        if ok then ok = pcall(area.DrawNone, area) end
+        if ok then
+            for _, quest in ipairs(activeQuests) do
+                if not pcall(area.DrawBlob, area, quest.questID, true) then ok = false; break end
+            end
+        end
+        if not ok then return false end
+        area.drawnKey = key
+    end
+    return true
+end
+
+local function RenderInsetQuestArea(key, mapID, width, height, offsetX, offsetY, radius)
+    -- If this client cannot make all the strips, retain shading in an inscribed
+    -- square rather than exposing it outside the circle or losing it entirely.
+    local segment = panel.questSegments[1]
+    if not segment then HideQuestAreas(); return end
+    for index = 2, #panel.questSegments do
+        panel.questSegments[index].blob:Hide()
+        panel.questSegments[index].clip:Hide()
+    end
+    if segment.radius ~= -radius then
+        local side = radius * math.sqrt(2) - 1
+        segment.clip:SetSize(side, side)
+        segment.clip:ClearAllPoints()
+        segment.clip:SetPoint("CENTER", panel.field, "CENTER")
+        segment.clipWidth, segment.clipHeight, segment.clipCenterY = side, side, 0
+        segment.radius = -radius
+    end
+    if not PrepareQuestArea(segment, key, mapID, width, height, offsetX, offsetY) then
+        HideQuestAreas()
+        return
+    end
+    segment.clip:Show()
+    segment.blob:Show()
+    return true
+end
+
 local function RenderQuestAreas(player, mapID, range)
     local blob = panel.questBlob
     if not (blob and player and mapID and Settings().vignetteRadarQuestAreas
@@ -856,7 +947,7 @@ local function RenderQuestAreas(player, mapID, range)
         return
     end
     -- Blizzard's quest widget draws in map coordinates. Keep its full-map canvas
-    -- aligned with the north-up radar, and clip it to the plotting frame.
+    -- aligned with the north-up radar, then clip copies to strips inside the circle.
     if not questMapBasis or questMapBasis.mapID ~= mapID then
         local originX, originY, originInstance = MapToWorld(mapID, MapVector(0, 0))
         local rightX, rightY, rightInstance = MapToWorld(mapID, MapVector(1, 0))
@@ -880,21 +971,45 @@ local function RenderQuestAreas(player, mapID, range)
     if width > 8192 or height > 8192 or width < 1 or height < 1 then HideQuestAreas(); return end
     local key = tostring(mapID) .. ":" .. tostring(width) .. ":" .. tostring(height)
     for _, quest in ipairs(activeQuests) do key = key .. ":" .. tostring(quest.questID) end
-    blob:SetSize(width, height)
-    blob:ClearAllPoints()
-    blob:SetPoint("CENTER", panel.field, "CENTER", (0.5 - player.mapX) * width, (player.mapY - 0.5) * height)
-    if blob.drawnKey ~= key then
-        local ok = pcall(blob.SetMapID, blob, mapID)
-        if ok then ok = pcall(blob.DrawNone, blob) end
-        if ok then
-            for _, quest in ipairs(activeQuests) do
-                if not pcall(blob.DrawBlob, blob, quest.questID, true) then ok = false; break end
-            end
-        end
-        if not ok then HideQuestAreas(); return end
-        blob.drawnKey = key
+    local radius = panel.plotRadius
+    local offsetX, offsetY = (0.5 - player.mapX) * width, (player.mapY - 0.5) * height
+    if panel.questClipFailed then
+        return RenderInsetQuestArea(key, mapID, width, height, offsetX, offsetY, radius)
     end
-    blob:Show()
+    local count, outerX = 0, radius
+    while outerX > QUEST_CLIP_STEP do
+        local innerX = math.max(0, outerX - QUEST_CLIP_STEP)
+        local innerY = math.sqrt(radius * radius - outerX * outerX)
+        local outerY = math.sqrt(radius * radius - innerX * innerX)
+        for side = 1, -1, -2 do
+            count = count + 1
+            local segment = panel.questSegments[count] or AddQuestClipSegment()
+            if not segment then
+                return RenderInsetQuestArea(key, mapID, width, height, offsetX, offsetY, radius)
+            end
+            local clip, area = segment.clip, segment.blob
+            if segment.radius ~= radius then
+                local clipWidth, clipHeight = innerX * 2, outerY - innerY
+                local clipCenterY = side * (innerY + outerY) / 2
+                clip:SetSize(clipWidth, clipHeight)
+                clip:ClearAllPoints()
+                clip:SetPoint("CENTER", panel.field, "CENTER", 0, clipCenterY)
+                segment.clipWidth, segment.clipHeight, segment.clipCenterY = clipWidth, clipHeight, clipCenterY
+                segment.radius = radius
+            end
+            if not PrepareQuestArea(segment, key, mapID, width, height, offsetX, offsetY) then
+                panel.questClipFailed = true
+                return RenderInsetQuestArea(key, mapID, width, height, offsetX, offsetY, radius)
+            end
+            clip:Show()
+            area:Show()
+        end
+        outerX = innerX
+    end
+    for index = count + 1, #panel.questSegments do
+        panel.questSegments[index].blob:Hide()
+        panel.questSegments[index].clip:Hide()
+    end
     return true
 end
 
@@ -2095,22 +2210,10 @@ local function EnsurePanel()
     panel.questClip:SetAllPoints(panel.field)
     panel.questClip:SetFrameLevel(panel.field:GetFrameLevel() + 1)
     panel.questClip:EnableMouse(false)
+    panel.questSegments = {}
     if type(panel.questClip.SetClipsChildren) == "function" then
         panel.questClip:SetClipsChildren(true)
-        local ok, blob = pcall(CreateFrame, "QuestPOIFrame", nil, panel.questClip)
-        if ok and blob and type(blob.SetMapID) == "function" and type(blob.DrawBlob) == "function"
-            and type(blob.DrawNone) == "function" and type(blob.SetFillTexture) == "function"
-            and type(blob.SetBorderTexture) == "function" and type(blob.SetFillAlpha) == "function"
-            and type(blob.SetBorderAlpha) == "function" then
-            panel.questBlob = blob
-            blob:SetFrameLevel(panel.field:GetFrameLevel() + 2)
-            blob:EnableMouse(false)
-            blob:SetFillTexture("Interface\\WorldMap\\UI-QuestBlob-Inside")
-            blob:SetBorderTexture("Interface\\WorldMap\\UI-QuestBlob-Outside")
-            blob:SetFillAlpha(48)
-            blob:SetBorderAlpha(0)
-            blob:Hide()
-        end
+        AddQuestClipSegment()
     end
     panel.field.halo = panel.field:CreateTexture(nil, "BACKGROUND", nil, -1)
     panel.field.halo:SetPoint("CENTER")

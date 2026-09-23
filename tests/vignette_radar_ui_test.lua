@@ -964,6 +964,36 @@ assert(panel.questClip.clipsChildren and panel.questBlob:IsShown() and panel.que
     and panel.questBlob.drawnQuests[1] == 12345 and panel.questBlob.fillAlpha < 128
     and panel.questBlob.level < questDot.level,
     "native quest shapes must be translucent, clipped, and behind markers")
+local function AssertCircularQuestClip()
+    local shown = 0
+    for _, segment in ipairs(panel.questSegments) do
+        local clip = segment.clip
+        if clip:IsShown() then
+            shown = shown + 1
+            local farY = math.abs(clip.point[5]) + clip:GetHeight() / 2
+            local halfWidth = clip:GetWidth() / 2
+            assert(clip.clipsChildren and segment.blob:IsShown()
+                and halfWidth * halfWidth + farY * farY <= panel.plotRadius * panel.plotRadius + .001,
+                "every quest-area clip must remain entirely inside the radar circle")
+        end
+    end
+    assert(shown > 1, "quest areas need visible circular clipping segments")
+end
+for _, layout in ipairs({ "compact", "squat", "classic" }) do
+    addon.SetVignetteRadarLayout(layout)
+    AssertCircularQuestClip()
+end
+panel.questClipFailed = true
+addon.VignetteRadarAPI.Refresh(false)
+local fallbackClip = panel.questSegments[1].clip
+assert(fallbackClip:IsShown() and panel.questBlob:IsShown()
+    and fallbackClip:GetWidth() == fallbackClip:GetHeight()
+    and fallbackClip:GetWidth() < panel.plotRadius * math.sqrt(2)
+    and not panel.questSegments[2].clip:IsShown(),
+    "unsupported multi-blob clipping must keep shading within an inscribed square")
+panel.questClipFailed = false
+addon.VignetteRadarAPI.Refresh(false)
+AssertCircularQuestClip()
 local originalCursor = GetCursorPosition
 panel.field.left, panel.field.top = 0, panel.field:GetHeight()
 panel.questBlob.left, panel.questBlob.top = 0, panel.field:GetHeight()
@@ -983,6 +1013,7 @@ panel.questBlob.left, panel.questBlob.top = nil, nil
 panel.frameToggle.scripts.OnClick(panel.frameToggle)
 assert(settings.vignetteRadarCircleOnly and panel.questBlob:IsShown() and questDot:IsShown(),
     "circle-only view must keep both quest dots and available area shading")
+AssertCircularQuestClip()
 panel.frameToggle.scripts.OnClick(panel.frameToggle)
 assert(not settings.vignetteRadarCircleOnly and panel.questBlob:IsShown(),
     "restoring the frame must restore available quest-area shading")
@@ -991,6 +1022,10 @@ settings.vignetteRadarQuestDots = false
 addon.VignetteRadarAPI.Refresh(true)
 assert(not questDot:IsShown() and not panel.questBlob:IsShown(),
     "each quest overlay must disappear as soon as its option is disabled")
+for _, segment in ipairs(panel.questSegments) do
+    assert(not segment.clip:IsShown() and not segment.blob:IsShown(),
+        "disabling quest shading must hide every circular clipping segment")
+end
 settings.vignetteRadarQuestAreas = true
 mapID = 782
 C_Map.GetWorldPosFromMapPos = originalWorldPosition
