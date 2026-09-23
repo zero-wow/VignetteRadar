@@ -4,10 +4,11 @@ if type(addon) ~= "table" then return end
 local PANEL_W, PANEL_H = 206, 166
 local ACCENT = { 0.05, 0.82, 0.62 }
 local FONT_FALLBACK = "Fonts\\FRIZQT__.TTF"
+local SKULL_TEXTURE = "Interface\\TargetingFrame\\UI-TargetingFrame-Skull"
 
 local CATEGORY_ORDER = { "rare", "treasure", "event", "other" }
 local CATEGORIES = {
-    rare = { label = "RARES", color = { 1.00, 0.24, 0.20 } },
+    rare = { label = "RARE / BOSS", color = { 0.78, 0.88, 1.00 } },
     treasure = { label = "TREASURE", color = { 1.00, 0.68, 0.16 } },
     event = { label = "EVENTS", color = { 0.67, 0.42, 1.00 } },
     other = { label = "OTHER", color = { 0.66, 0.72, 0.76 } },
@@ -201,9 +202,25 @@ local function CreateCategoryRow(parent, category, index)
     row.swatch:SetSize(7, 7)
     row.swatch:SetPoint("CENTER", row.swatchGlow, "CENTER")
     row.swatch:SetColorTexture(definition.color[1], definition.color[2], definition.color[3], 1)
+    if category == "rare" then
+        row.swatch:SetSize(13, 13)
+        row.swatch:SetTexture(SKULL_TEXTURE)
+        row.swatch:SetVertexColor(definition.color[1], definition.color[2], definition.color[3], 1)
+        row.bossSwatch = row:CreateTexture(nil, "OVERLAY")
+        row.bossSwatch:SetSize(13, 13)
+        row.bossSwatch:SetPoint("LEFT", 21, 0)
+        row.bossSwatch:SetTexture(SKULL_TEXTURE)
+        row.bossSwatch:SetVertexColor(1, 0.18, 0.12, 1)
+    elseif category == "treasure" and row.swatch.SetAtlas then
+        row.swatch:SetSize(13, 13)
+        row.swatch:SetAtlas("VignetteLoot")
+        row.swatch:SetVertexColor(definition.color[1], definition.color[2], definition.color[3], 1)
+    end
 
     row.label = Text(row, 10, definition.label)
-    row.label:SetPoint("LEFT", 29, 0)
+    row.label:SetPoint("LEFT", category == "rare" and 39 or 29, 0)
+    row.label:SetWidth(category == "rare" and 98 or 108)
+    if row.label.SetMaxLines then row.label:SetMaxLines(1) end
 
     row.toggle = CreateFrame("Button", nil, row, "BackdropTemplate")
     row.toggle:SetSize(42, 17)
@@ -220,8 +237,9 @@ local function CreateCategoryRow(parent, category, index)
     end)
     row:SetScript("OnEnter", function(self)
         self.hover:Show()
-        Tooltip(self, definition.label:sub(1, 1) .. definition.label:sub(2):lower(),
-            "Click the row to spotlight this type. Other enabled dots stay visible but dim.")
+        Tooltip(self, definition.label:sub(1, 1) .. definition.label:sub(2):lower(), category == "rare"
+            and "Silver skull: rare enemy. Red skull: world boss. Both use this filter. Click to spotlight."
+            or "Click the row to spotlight this type. Other enabled dots stay visible but dim.")
     end)
     row:SetScript("OnLeave", function(self)
         self.hover:Hide()
@@ -232,7 +250,8 @@ local function CreateCategoryRow(parent, category, index)
     end)
     row.toggle:SetScript("OnEnter", function(self)
         Tooltip(self, "Filter " .. definition.label:sub(1, 1) .. definition.label:sub(2):lower(),
-            "Turn this category on or off on the radar.")
+            category == "rare" and "Silver skull: rare enemy. Red skull: world boss. Both use this filter."
+            or "Turn this category on or off on the radar.")
     end)
     row.toggle:SetScript("OnLeave", function() if GameTooltip then GameTooltip:Hide() end end)
     return row
@@ -325,11 +344,13 @@ function API.Refresh()
             row.toggle.label:SetText("ON")
             row.toggle.label:SetTextColor(ACCENT[1], ACCENT[2], ACCENT[3], 1)
             row.swatch:SetAlpha(1)
+            if row.bossSwatch then row.bossSwatch:SetAlpha(1) end
         else
             row:SetAlpha(0.46)
             row.toggle.label:SetText("OFF")
             row.toggle.label:SetTextColor(0.58, 0.60, 0.62, 1)
             row.swatch:SetAlpha(0.38)
+            if row.bossSwatch then row.bossSwatch:SetAlpha(0.38) end
         end
         if selected then row.selection:Show() else row.selection:Hide() end
     end

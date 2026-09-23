@@ -4,12 +4,14 @@ if type(addon) ~= "table" then return end
 local PANEL_W, PANEL_H = 220, 252
 local HEADER_H, FIELD_SIZE = 34, 200
 local FIELD_RADIUS = (FIELD_SIZE / 2) - 9
+local PLOT_RADIUS = FIELD_RADIUS - 15
 local LAUNCHER_SIZE, LAUNCHER_RADIUS, LAUNCHER_RANGE = 44, 13, 150
 local UPDATE_SECONDS, RESCAN_SECONDS = 0.05, 1
 local MAX_BLIPS = 32
 local ACCENT = { 0.05, 0.82, 0.62 }
 local RED = { 1, 0.18, 0.14 }
 local CIRCLE_TEXTURE = "Interface\\CharacterFrame\\TempPortraitAlphaMask"
+local SKULL_TEXTURE = "Interface\\TargetingFrame\\UI-TargetingFrame-Skull"
 local LAUNCHER_BEZEL = "Interface\\AddOns\\VignetteRadar\\Media\\vignette-radar-bezel.tga"
 local LAUNCHER_CLOSED = "Interface\\AddOns\\VignetteRadar\\Media\\vignette-radar-closed.tga"
 local TWO_PI = math.pi * 2
@@ -21,18 +23,48 @@ local preview = false
 local manualPanelState
 local activeTargets = {}
 local activeMapID
+local pulseUntil = 0
 local RefreshRadar, ScanVignettes, Render, UpdateLauncher, EnsureLauncher
 local PREVIEW_TARGETS = {
-    { key = "preview-rare", x = 28, y = 52, launcherX = 7, launcherY = 11,
+    { key = "preview-rare", x = 28, y = 52, launcherX = 3, launcherY = 6,
         distanceFactor = 0.34, name = "Sample rare", category = "rare", sample = true },
-    { key = "preview-treasure", x = -58, y = -14, launcherX = -13, launcherY = -4,
-        distanceFactor = 0.58, name = "Sample treasure", category = "treasure", sample = true },
-    { key = "preview-event", x = 49, y = -45, launcherX = 12, launcherY = -11,
+    { key = "preview-treasure", x = -58, y = -14, launcherX = -6, launcherY = -2,
+        distanceFactor = 0.58, name = "Sample treasure", category = "treasure", atlasName = "VignetteLoot", sample = true },
+    { key = "preview-event", x = 49, y = -45, launcherX = 5, launcherY = -5,
         distanceFactor = 0.52, name = "Sample event", category = "event", sample = true },
+    { key = "preview-boss", x = -18, y = -50, launcherX = -4, launcherY = -6,
+        distanceFactor = 0.70, name = "Sample world boss", category = "rare", isWorldBoss = true, sample = true },
 }
 
 local function Settings()
     return addon.GetSettings()
+end
+
+local function Features()
+    return addon.VignetteRadarFeatures
+end
+
+local function Now()
+    return GetTime and GetTime() or 0
+end
+
+local function Quiet()
+    return not preview and Features() and Features().IsQuiet() or false
+end
+
+local function Ignored(target)
+    return Features() and Features().IsIgnored(target) or false
+end
+
+local function Favorite(target)
+    if target.favorite ~= nil then return target.favorite == true end
+    return Features() and Features().IsFavorite(target) or false
+end
+
+local function TargetAlpha(target)
+    if not target.stale then return 1 end
+    local duration = math.max(1, (target.expiresAt or 0) - (target.lastSeenAt or 0))
+    return math.max(0, math.min(0.65, ((target.expiresAt or 0) - Now()) / duration * 0.65))
 end
 
 local function IsSecret(value)
@@ -47,7 +79,7 @@ local function SafeField(object, key)
 end
 
 local function SafeNumber(value)
-    if IsSecret(value) or type(value) ~= "number" or value ~= value then return nil end
+    if IsSecret(value) or type(value) ~= "number" or value ~= value or value == math.huge or value == -math.huge then return nil end
     return value
 end
 
@@ -159,17 +191,23 @@ local function CollectVignettes(mapID)
                 local mapX, mapY = ReadXY(mapPosition)
                 local worldX, worldY, instanceID = MapToWorld(mapID, mapPosition)
                 if mapX and mapY and worldX and worldY then
+                    local worldBoss = Features() and Features().IsWorldBoss(info) or false
                     targets[#targets + 1] = {
                         key = tostring(guid),
+                        vignetteID = SafeNumber(SafeField(info, "vignetteID")),
+                        mapID = mapID,
+                        mapX = mapX,
+                        mapY = mapY,
                         name = SafeString(SafeField(info, "name")) or "Detected vignette",
-                        category = ClassifyVignette(info),
+                        category = worldBoss and "rare" or ClassifyVignette(info),
+                        isWorldBoss = worldBoss,
                         vignetteType = SafeField(info, "type"),
                         atlasName = SafeString(SafeField(info, "atlasName")),
                         worldX = worldX,
                         worldY = worldY,
                         instanceID = instanceID,
                     }
-                    if #targets >= MAX_BLIPS then break end
+                    -- Collect beyond the visible pool so ignored entries cannot starve useful ones.
                 end
             end
         end
@@ -262,6 +300,19 @@ local function CategoryColor(category)
     return RED[1], RED[2], RED[3]
 end
 
+local function TargetColor(target)
+    if target.isWorldBoss then return 1, 0.18, 0.12 end
+    return CategoryColor(target.category)
+end
+
+local function TargetKind(target)
+    if target.isWorldBoss then return "World boss" end
+    if target.category == "rare" then return "Rare enemy" end
+    if target.category == "treasure" then return "Treasure" end
+    if target.category == "event" then return "Event" end
+    return "Other detection"
+end
+
 local function HighlightCategory()
     local legend = LegendAPI()
     if not (legend and type(legend.GetHighlight) == "function") then return nil end
@@ -287,7 +338,7 @@ local function FocusedTargetKey()
 end
 
 local function TargetVisible(target)
-    if not (target and CategoryEnabled(target.category)) then return false end
+    if not (target and CategoryEnabled(target.category)) or Ignored(target) or TargetAlpha(target) <= 0 then return false end
     local focusedKey = FocusedTargetKey()
     return not focusedKey or focusedKey == target.key
 end
@@ -298,7 +349,7 @@ local function SelectableTargets()
     local source = preview and PREVIEW_TARGETS or activeTargets
     local previewRange = tonumber(Settings().vignetteRadarRange) or 450
     for _, target in ipairs(source) do
-        if CategoryEnabled(target.category) then
+        if CategoryEnabled(target.category) and not Ignored(target) and TargetAlpha(target) > 0 then
             if preview then
                 target.distance = previewRange * target.distanceFactor
             elseif player and not (player.instanceID and target.instanceID and player.instanceID ~= target.instanceID) then
@@ -307,17 +358,57 @@ local function SelectableTargets()
             else
                 target.distance = nil
             end
-            target.red, target.green, target.blue = CategoryColor(target.category)
+            target.red, target.green, target.blue = TargetColor(target)
             output[#output + 1] = target
         end
     end
     table.sort(output, function(left, right)
+        if Favorite(left) ~= Favorite(right) then return Favorite(left) end
+        if (left.stale == true) ~= (right.stale == true) then return not left.stale end
+        if (left.isWorldBoss == true) ~= (right.isWorldBoss == true) then return left.isWorldBoss == true end
         if type(left.distance) == "number" and type(right.distance) == "number" and left.distance ~= right.distance then
             return left.distance < right.distance
         end
         return (left.name or left.key or "") < (right.name or right.key or "")
     end)
     return output
+end
+
+-- The same explicit gestures work on the radar and in the target list.
+function addon.HandleVignetteClick(target, button)
+    if not target then return false end
+    local shift = IsShiftKeyDown and IsShiftKeyDown()
+    local alt = IsAltKeyDown and IsAltKeyDown()
+    local features = Features()
+    if button == "RightButton" then
+        if not features then return false end
+        if not target.sample then features.Ignore(target, shift == true) end
+    elseif shift and features then
+        local ok, reason = features.Navigate(target)
+        if not ok and reason then
+            local messages = {
+                ["not-live"] = "Navigation needs a current live detection.",
+                ["no-map-position"] = "This detection has no usable map position.",
+                ["waypoint-unavailable"] = "Navigation is unavailable on this map.",
+                ["waypoint-failed"] = "The game could not set a waypoint for this detection.",
+            }
+            reason = messages[reason] or "This detection cannot be tracked right now."
+            if UIErrorsFrame and UIErrorsFrame.AddMessage then UIErrorsFrame:AddMessage(reason, 1, 0.65, 0.25)
+            elseif DEFAULT_CHAT_FRAME then DEFAULT_CHAT_FRAME:AddMessage("Vignette Radar: " .. reason) end
+        end
+        return ok, reason
+    elseif alt and features then
+        if not target.sample then features.ToggleFavorite(target) end
+    else
+        local picker = TargetPickerAPI()
+        if picker then
+            if picker.GetFocus() == target.key then picker.ClearFocus()
+            else picker.SetFocus(target.key, target.name) end
+        end
+        return true
+    end
+    RefreshRadar(true)
+    return true
 end
 
 local function ReconcileFocusedTarget()
@@ -334,7 +425,7 @@ local function UpdateTargetButton()
     if focusedKey then
         for _, target in ipairs(SelectableTargets()) do
             if target.key == focusedKey then
-                red, green, blue = CategoryColor(target.category)
+                red, green, blue = TargetColor(target)
                 break
             end
         end
@@ -349,18 +440,93 @@ local function Tooltip(owner)
     if not (target and GameTooltip) then return end
     GameTooltip:SetOwner(owner, "ANCHOR_RIGHT")
     GameTooltip:SetText(target.name or "Detected vignette", 1, 1, 1)
+    local r, g, b = TargetColor(target)
+    GameTooltip:AddLine(TargetKind(target), r, g, b)
     if target.distance then
         GameTooltip:AddLine(math.floor(target.distance + 0.5) .. " yd from you", 0.72, 0.76, 0.78)
     end
     if FocusedTargetKey() == target.key then
         GameTooltip:AddLine("Specific vignette focus is active.", ACCENT[1], ACCENT[2], ACCENT[3])
     end
+    if Favorite(target) then GameTooltip:AddLine("Favorite", 1, 0.82, 0.30) end
+    if target.stale then
+        GameTooltip:AddLine("Last seen " .. math.floor(math.max(0, Now() - target.lastSeenAt)) .. " seconds ago; not a live detection.", 0.75, 0.75, 0.75, true)
+    end
     if target.sample then
         GameTooltip:AddLine("Layout preview; this is not a live detection.", 0.55, 0.86, 0.76, true)
-    else
+    elseif not target.stale then
         GameTooltip:AddLine("Shown from Blizzard's active minimap vignette data.", 0.55, 0.86, 0.76, true)
     end
+    GameTooltip:AddLine("Click: focus; click again to show all.", 0.65, 0.80, 0.77, true)
+    if not target.sample then
+        if not target.stale then GameTooltip:AddLine("Shift-click: navigate.", 0.65, 0.80, 0.77, true) end
+        GameTooltip:AddLine("Alt-click: favorite. Right-click: ignore this session.", 0.65, 0.80, 0.77, true)
+        GameTooltip:AddLine("Shift-right-click: remember ignore.", 0.65, 0.80, 0.77, true)
+    end
     GameTooltip:Show()
+end
+
+local SHAPES = {
+    treasure = { { 0, 0.62 }, { 0.62, 0 }, { 0, -0.62 }, { -0.62, 0 } },
+    event = { { -0.5, 0.5 }, { 0.5, 0.5 }, { 0.5, -0.5 }, { -0.5, -0.5 } },
+}
+
+-- Use familiar game imagery first, with vector fallbacks for missing client art.
+local function StyleMarker(owner, dot, target, size, r, g, b)
+    owner.shapeLines = owner.shapeLines or {}
+    local icons = Settings().vignetteRadarShapes ~= false
+    local points = icons and SHAPES[target.category] or nil
+    dot:SetTexture(CIRCLE_TEXTURE)
+    local iconSize, nativeIcon = size, false
+    if icons and target.category == "rare" then
+        dot:SetTexture(SKULL_TEXTURE)
+        iconSize = size + (owner.isMini and 2 or 5) + (target.isWorldBoss and 2 or 0)
+        nativeIcon, points = true, nil
+    elseif icons and not owner.isMini and target.atlasName and dot.SetAtlas then
+        local atlas = C_Texture and C_Texture.GetAtlasInfo and Call(C_Texture.GetAtlasInfo, target.atlasName)
+        if atlas and pcall(dot.SetAtlas, dot, target.atlasName) then
+            iconSize, nativeIcon, points = size + 5, true, nil
+        end
+    end
+    if target.stale and not points then
+        points = { { 0, 0.6 }, { 0.6, 0 }, { 0, -0.6 }, { -0.6, 0 } }
+    end
+    for index = 1, 4 do
+        local line = owner.shapeLines[index]
+        if points and points[index] then
+            if not line then
+                line = owner:CreateLine(nil, "OVERLAY")
+                owner.shapeLines[index] = line
+            end
+            local first, last = points[index], points[index % #points + 1]
+            line:SetThickness(size < 5 and 1 or 1.3)
+            line:SetColorTexture(r, g, b, 1)
+            line:SetStartPoint("CENTER", owner, "CENTER", first[1] * size, first[2] * size)
+            line:SetEndPoint("CENTER", owner, "CENTER", last[1] * size, last[2] * size)
+            line:Show()
+        elseif line then line:Hide() end
+    end
+    dot:SetSize(points and math.max(2, size * 0.35) or iconSize, points and math.max(2, size * 0.35) or iconSize)
+    -- Skull silhouettes take category color; other native icons retain their own familiar colors.
+    if nativeIcon and target.category ~= "rare" then dot:SetVertexColor(1, 1, 1, 1)
+    else dot:SetVertexColor(r, g, b, 1) end
+    dot:SetShown(not target.stale)
+end
+
+local function DrawArrow(frame, x, y, r, g, b)
+    local length = math.sqrt(x * x + y * y)
+    if length < 0.001 then x, y, length = 0, 1, 1 end
+    local ux, uy = x / length, y / length
+    frame.lines = frame.lines or {}
+    for index = 1, 2 do
+        local line = frame.lines[index]
+        if not line then line = frame:CreateLine(nil, "OVERLAY"); frame.lines[index] = line end
+        local side = index == 1 and -1 or 1
+        line:SetThickness(2)
+        line:SetColorTexture(r, g, b, 1)
+        line:SetStartPoint("CENTER", frame, "CENTER", ux * 5, uy * 5)
+        line:SetEndPoint("CENTER", frame, "CENTER", -ux * 4 - uy * side * 4, -uy * 4 + ux * side * 4)
+    end
 end
 
 local function AcquireBlip()
@@ -381,6 +547,11 @@ local function AcquireBlip()
         blip.dot:SetVertexColor(RED[1], RED[2], RED[3], 1)
         blip:SetScript("OnEnter", Tooltip)
         blip:SetScript("OnLeave", function() if GameTooltip then GameTooltip:Hide() end end)
+        blip:RegisterForClicks("LeftButtonUp", "RightButtonUp")
+        blip:SetScript("OnClick", function(self, button) addon.HandleVignetteClick(self.target, button) end)
+        blip.favorite = Text(blip, 9, "*")
+        blip.favorite:SetPoint("BOTTOMLEFT", blip, "TOPRIGHT", -3, -3)
+        blip.favorite:SetTextColor(1, 0.82, 0.30, 1)
         panel.blips[#panel.blips + 1] = blip
     end
     blip:Show()
@@ -427,10 +598,16 @@ local function PlaceBlip(key, screenX, screenY, target)
     end
     blip._seen = true
     blip.target = target
-    local r, g, b = CategoryColor(target.category)
-    blip.dot:SetVertexColor(r, g, b, 1)
-    blip.glow:SetVertexColor(r, g, b, 0.28)
-    blip:SetAlpha(CategoryOpacity(target.category))
+    local r, g, b = TargetColor(target)
+    local size = tonumber(Settings().vignetteRadarMarkerSize) or 7
+    local hitSize = math.max(14, size + (target.isWorldBoss and 11 or 8))
+    blip:SetSize(hitSize, hitSize)
+    StyleMarker(blip, blip.dot, target, size, r, g, b)
+    blip.favorite:SetShown(Favorite(target))
+    local flashing = not Quiet() and target.newUntil and target.newUntil > Now()
+    blip.glow:SetVertexColor(r, g, b, flashing and (0.4 + 0.3 * math.sin(Now() * 9)) or 0.18)
+    blip.glow:SetShown(not target.stale)
+    blip:SetAlpha(CategoryOpacity(target.category) * TargetAlpha(target))
     blip:ClearAllPoints()
     blip:SetPoint("CENTER", panel.field, "CENTER", screenX, screenY)
 end
@@ -457,11 +634,70 @@ local function UpdateRingLabels(range)
     panel.outerLabel:SetText(math.floor((range * 2) / 3) .. "y")
 end
 
+local function UpdateFocusReadout(target, player)
+    local focused = target ~= nil
+    panel:SetHeight(PANEL_H + (focused and 46 or 0))
+    panel.field:ClearAllPoints()
+    panel.field:SetPoint("BOTTOM", 0, focused and 55 or 9)
+    panel.focusReadout:SetShown(focused)
+    panel.focusDivider:SetShown(focused)
+    panel.edgeArrow:Hide()
+    if not focused then return end
+    panel.focusReadout.target = target
+    panel.focusName:SetText((Favorite(target) and "* " or "") .. (target.name or "Detected vignette"))
+    local age = target.stale and math.floor(math.max(0, Now() - target.lastSeenAt)) or nil
+    local detail = target.isWorldBoss and "BOSS | " or (target.category == "rare" and "RARE | " or "")
+    detail = detail .. (target.distance and (math.floor(target.distance + 0.5) .. " yd") or "Distance unavailable")
+    if age then detail = detail .. " | seen " .. age .. "s ago"
+    elseif target.sample then detail = detail .. " | preview"
+    elseif Features() then
+        if not target._healthAt or Now() - target._healthAt >= 1 then
+            target._healthAt, target._health = Now(), Features().GetHealth(target)
+        end
+        if Settings().vignetteRadarShowHealth ~= false and target._health then
+            detail = detail .. " | " .. math.floor(target._health + 0.5) .. "% HP"
+        end
+    end
+    panel.focusMeta:SetText(detail)
+    local r, g, b = TargetColor(target)
+    local x, y
+    if target.sample then x, y = target.x, target.y
+    elseif player and player.headingAvailable then
+        x, y = Project(target.worldX - player.worldX, target.worldY - player.worldY,
+            target.distance or 0, player.facing, 1, math.max(1, target.distance or 1))
+    end
+    panel.focusArrow:SetShown(x ~= nil and y ~= nil)
+    if x and y then
+        DrawArrow(panel.focusArrow, x, y, r, g, b)
+        local range = tonumber(Settings().vignetteRadarRange) or 450
+        if not target.stale and target.distance and target.distance > range then
+            local magnitude = math.sqrt(x * x + y * y)
+            if magnitude > 0 then
+                panel.edgeArrow:ClearAllPoints()
+                panel.edgeArrow:SetPoint("CENTER", panel.field, "CENTER", x / magnitude * 76, y / magnitude * 76)
+                panel.edgeArrow.target = target
+                DrawArrow(panel.edgeArrow, x, y, r, g, b)
+                panel.edgeArrow:Show()
+            end
+        end
+    end
+end
+
 Render = function()
     if not panel or not panel:IsShown() then return end
     BeginBlips()
     local range = tonumber(Settings().vignetteRadarRange) or 450
     UpdateRingLabels(range)
+    panel:SetAlpha(Quiet() and 0.35 or 1)
+    local mapID = CurrentMapID()
+    if not preview and mapID ~= activeMapID then ScanVignettes(mapID) end
+    local targets = SelectableTargets()
+    local focusedTarget
+    for _, target in ipairs(targets) do
+        if target.key == FocusedTargetKey() then focusedTarget = target; break end
+    end
+    local player = not preview and PlayerSnapshot(CurrentMapID()) or nil
+    UpdateFocusReadout(focusedTarget, player)
 
     if preview then
         panel.summary:SetText(FocusedTargetKey() and "PREVIEW FOCUS" or "PREVIEW")
@@ -474,11 +710,7 @@ Render = function()
         return
     end
 
-    local mapID = CurrentMapID()
-    if mapID ~= activeMapID then
-        ScanVignettes(mapID)
-    end
-    local player = PlayerSnapshot(mapID)
+    player = PlayerSnapshot(mapID)
     if not player then
         panel.summary:SetText("POSITION UNAVAILABLE")
         RenderCardinals(0)
@@ -486,26 +718,30 @@ Render = function()
         return
     end
     RenderCardinals(player.facing)
-    local shown = 0
-    for _, target in ipairs(activeTargets) do
+    local shown, staleShown = 0, 0
+    for _, target in ipairs(targets) do
         if TargetVisible(target)
             and not (player.instanceID and target.instanceID and player.instanceID ~= target.instanceID) then
             local dx, dy = target.worldX - player.worldX, target.worldY - player.worldY
             local distance = math.sqrt((dx * dx) + (dy * dy))
             if distance <= range then
-                local screenX, screenY = Project(dx, dy, distance, player.facing, FIELD_RADIUS, range)
+                local screenX, screenY = Project(dx, dy, distance, player.facing, PLOT_RADIUS, range)
                 if screenX and screenY then
                     target.distance = distance
                     PlaceBlip(target.key, screenX, screenY, target)
                     shown = shown + 1
+                    if target.stale then staleShown = staleShown + 1 end
+                    if shown >= MAX_BLIPS then break end
                 end
             end
         end
     end
     if FocusedTargetKey() then
-        panel.summary:SetText(shown > 0 and "TARGET FOCUS" or "FOCUS OUT OF RANGE")
+        panel.summary:SetText(focusedTarget and focusedTarget.stale and "LAST SEEN"
+            or (shown > 0 and "TARGET FOCUS" or "OUT OF RANGE"))
     else
-        panel.summary:SetText(shown == 1 and "1 IN RANGE" or shown .. " IN RANGE")
+        panel.summary:SetText(staleShown > 0 and ((shown - staleShown) .. " LIVE / " .. staleShown .. " SEEN")
+            or (shown == 1 and "1 IN RANGE" or shown .. " IN RANGE"))
     end
     EndBlips()
 end
@@ -531,12 +767,16 @@ local function LauncherTooltip(owner)
     GameTooltip:SetOwner(owner, "ANCHOR_RIGHT")
     GameTooltip:SetText("Vignette Radar", 1, 1, 1)
     GameTooltip:AddLine("The hollow center mirrors live detections within 150 yards.", 0.55, 0.86, 0.76, true)
+    if (owner.bosses or 0) > 0 then GameTooltip:AddLine(owner.bosses .. " world boss nearby", 1, 0.18, 0.12) end
+    if (owner.rares or 0) > 0 then GameTooltip:AddLine(owner.rares .. " rare enemy nearby", 0.78, 0.88, 1) end
+    GameTooltip:AddLine("Silver skull: rare enemy. Larger red skull: world boss.", 0.78, 0.88, 1, true)
     GameTooltip:AddLine("Left-click to show or tuck away the radar.", 0.65, 0.80, 0.77, true)
     GameTooltip:AddLine("Right-click to preview its live layout. Drag to move this launcher.", 0.65, 0.80, 0.77, true)
     GameTooltip:Show()
 end
 
 local function PlayLauncherSound()
+    if Quiet() then return end
     if type(PlaySound) ~= "function" then return end
     local sound = SOUNDKIT and (SOUNDKIT.IG_MAINMENU_OPTION_CHECKBOX_ON or SOUNDKIT.IG_MAINMENU_OPTION)
     if sound then pcall(PlaySound, sound) end
@@ -573,6 +813,7 @@ local function CreateLauncherRing(parent, radius, alpha)
 end
 
 local function UpdateLauncherSweep(frame, elapsed)
+    frame:SetAlpha(Quiet() and 0.35 or 1)
     local active = Settings().vignetteRadarEnabled == true or preview
     frame._animationTime = (frame._animationTime or 0) + elapsed
     local speed = frame._hovered and 1.35 or 0.72
@@ -599,6 +840,10 @@ local function UpdateLauncherSweep(frame, elapsed)
         stateAlpha = 0.93 + (pulse * 0.02)
     end
     stateTexture:SetAlpha(stateAlpha)
+    stateTexture:SetVertexColor(1, 1, 1, 1)
+    if active and pulseUntil > Now() and not Quiet() then
+        stateTexture:SetVertexColor(0.60 + 0.40 * math.abs(math.sin(Now() * 6)), 1, 0.72, 1)
+    end
     frame.face:SetVertexColor(frame._pressed and 0.01 or 0.012, frame._pressed and 0.035 or 0.046,
         frame._pressed and 0.038 or 0.052, 0.98)
 
@@ -622,18 +867,23 @@ UpdateLauncher = function(elapsed, updateTargets)
     if not updateTargets then return end
 
     local range = LAUNCHER_RANGE
-    local shown = 0
+    local shown, rares, bosses = 0, 0, 0
     local highlight = HighlightCategory()
     local player = not preview and Settings().vignetteRadarEnabled == true and PlayerSnapshot(CurrentMapID()) or nil
     local function ShowDot(target, x, y)
         shown = shown + 1
         local dot = launcher.miniBlips[shown]
-        if not dot then return false end
-        local red, green, blue = CategoryColor(target.category)
-        dot:SetVertexColor(red, green, blue, 1)
-        dot:SetAlpha(CategoryOpacity(target.category))
-        dot:SetSize(highlight == (target.category or "other") and 4 or 3,
-            highlight == (target.category or "other") and 4 or 3)
+        if not dot then shown = shown - 1; return false end
+        local red, green, blue = TargetColor(target)
+        if not target.stale then
+            if target.isWorldBoss then bosses = bosses + 1
+            elseif target.category == "rare" then rares = rares + 1 end
+        end
+        local size = (tonumber(Settings().vignetteRadarMarkerSize) or 7) * 0.5
+        if highlight == (target.category or "other") or Favorite(target) then size = size + 1 end
+        StyleMarker(dot, dot.dot, target, size, red, green, blue)
+        dot:SetAlpha(CategoryOpacity(target.category) * TargetAlpha(target))
+        dot:SetSize(size + 2, size + 2)
         dot:ClearAllPoints()
         dot:SetPoint("CENTER", launcher, "CENTER", x, y)
         dot:Show()
@@ -645,13 +895,13 @@ UpdateLauncher = function(elapsed, updateTargets)
             if TargetVisible(target) then ShowDot(target, target.launcherX, target.launcherY) end
         end
     elseif player then
-        for _, target in ipairs(activeTargets) do
+        for _, target in ipairs(SelectableTargets()) do
             if TargetVisible(target)
                 and not (player.instanceID and target.instanceID and player.instanceID ~= target.instanceID) then
                 local dx, dy = target.worldX - player.worldX, target.worldY - player.worldY
                 local distance = math.sqrt((dx * dx) + (dy * dy))
                 if distance <= range then
-                    local x, y = Project(dx, dy, distance, player.facing, LAUNCHER_RADIUS - 3, range)
+                    local x, y = Project(dx, dy, distance, player.facing, LAUNCHER_RADIUS - 5, range)
                     if x and y and not ShowDot(target, x, y) then break end
                 end
             end
@@ -659,6 +909,11 @@ UpdateLauncher = function(elapsed, updateTargets)
     end
     for index = shown + 1, #launcher.miniBlips do launcher.miniBlips[index]:Hide() end
     launcher.detected = shown
+    launcher.rares, launcher.bosses = rares, bosses
+    launcher.rangeLabel:SetText(bosses > 0 and "BOSS" or (rares > 0 and "RARE" or "150"))
+    if bosses > 0 then launcher.rangeLabel:SetTextColor(1, 0.25, 0.18, 1)
+    elseif rares > 0 then launcher.rangeLabel:SetTextColor(0.78, 0.88, 1, 1)
+    else launcher.rangeLabel:SetTextColor(0.56, 0.78, 0.74, 0.68) end
 end
 
 EnsureLauncher = function()
@@ -711,13 +966,17 @@ EnsureLauncher = function()
     launcher.center:SetVertexColor(ACCENT[1], ACCENT[2], ACCENT[3], 1)
     launcher.miniBlips = {}
     for index = 1, 5 do
-        local dot = launcher:CreateTexture(nil, "OVERLAY", nil, 2)
+        local dot = CreateFrame("Frame", nil, launcher)
+        dot.isMini = true
+        dot:SetFrameLevel(launcher:GetFrameLevel() + 1)
         dot:SetSize(3, 3)
-        dot:SetTexture(CIRCLE_TEXTURE)
+        dot.dot = dot:CreateTexture(nil, "OVERLAY")
+        dot.dot:SetPoint("CENTER")
+        dot.dot:SetTexture(CIRCLE_TEXTURE)
         dot:Hide()
         launcher.miniBlips[index] = dot
     end
-    launcher.rangeLabel = Text(launcher, 6, "150")
+    launcher.rangeLabel = Text(launcher, 7, "150")
     launcher.rangeLabel:SetPoint("BOTTOM", launcher, "BOTTOM", 0, 8)
     launcher.rangeLabel:SetJustifyH("CENTER")
     launcher.rangeLabel:SetTextColor(0.56, 0.78, 0.74, 0.68)
@@ -811,9 +1070,11 @@ local function EnsurePanel()
 
     panel.title = Text(panel, 11, "VIGNETTE RADAR", true)
     panel.title:SetPoint("TOPLEFT", 12, -6)
+    panel.title:SetWidth(120)
     panel.summary = Text(panel, 8, "0 IN RANGE")
     panel.summary:SetPoint("TOPLEFT", 12, -21)
     panel.summary:SetJustifyH("LEFT")
+    panel.summary:SetWidth(120)
 
     panel.drag = CreateFrame("Frame", nil, panel)
     panel.drag:SetPoint("TOPLEFT", 4, -3)
@@ -879,7 +1140,7 @@ local function EnsurePanel()
     panel.legend:SetHighlightTexture("Interface\\Buttons\\WHITE8X8")
     panel.legend:GetHighlightTexture():SetVertexColor(1, 1, 1, 0.07)
     local legendColors = {
-        { 1.00, 0.24, 0.20 },
+        { 0.78, 0.88, 1.00 },
         { 1.00, 0.68, 0.16 },
         { 0.67, 0.42, 1.00 },
     }
@@ -956,15 +1217,16 @@ local function EnsurePanel()
     panel.field.halo:SetTexture(CIRCLE_TEXTURE)
     panel.field.halo:SetVertexColor(ACCENT[1], ACCENT[2], ACCENT[3], 0.18)
     panel.outerRing = AddRing(panel.field, FIELD_RADIUS, 0.44)
-    panel.middleRing = AddRing(panel.field, FIELD_RADIUS * (2 / 3), 0.23)
-    panel.innerRing = AddRing(panel.field, FIELD_RADIUS / 3, 0.18)
+    panel.rangeRing = AddRing(panel.field, PLOT_RADIUS, 0.23)
+    panel.middleRing = AddRing(panel.field, PLOT_RADIUS * (2 / 3), 0.23)
+    panel.innerRing = AddRing(panel.field, PLOT_RADIUS / 3, 0.18)
 
     panel.innerLabel = Text(panel.field, 8, "150y")
     panel.innerLabel:SetTextColor(ACCENT[1], ACCENT[2], ACCENT[3], 0.55)
-    panel.innerLabel:SetPoint("CENTER", 0, -(FIELD_RADIUS / 3))
+    panel.innerLabel:SetPoint("CENTER", 0, -(PLOT_RADIUS / 3))
     panel.outerLabel = Text(panel.field, 8, "300y")
     panel.outerLabel:SetTextColor(ACCENT[1], ACCENT[2], ACCENT[3], 0.55)
-    panel.outerLabel:SetPoint("CENTER", 0, -(FIELD_RADIUS * 2 / 3))
+    panel.outerLabel:SetPoint("CENTER", 0, -(PLOT_RADIUS * 2 / 3))
 
     panel.cardinals = {}
     for index, definition in ipairs(CARDINALS) do
@@ -988,6 +1250,37 @@ local function EnsurePanel()
     panel.player:SetTexture(CIRCLE_TEXTURE)
     panel.player:SetVertexColor(ACCENT[1], ACCENT[2], ACCENT[3], 1)
     panel.blips, panel.freeBlips, panel.blipByKey = {}, {}, {}
+
+    panel.focusDivider = panel:CreateTexture(nil, "ARTWORK")
+    panel.focusDivider:SetSize(PANEL_W - 24, 1)
+    panel.focusDivider:SetPoint("BOTTOM", 0, 46)
+    panel.focusDivider:SetColorTexture(1, 1, 1, 0.12)
+    panel.focusDivider:Hide()
+    panel.focusReadout = CreateFrame("Button", nil, panel)
+    panel.focusReadout:SetSize(PANEL_W - 24, 32)
+    panel.focusReadout:SetPoint("BOTTOMLEFT", 12, 8)
+    panel.focusReadout:RegisterForClicks("LeftButtonUp", "RightButtonUp")
+    panel.focusReadout:SetScript("OnEnter", Tooltip)
+    panel.focusReadout:SetScript("OnLeave", function() if GameTooltip then GameTooltip:Hide() end end)
+    panel.focusReadout:SetScript("OnClick", function(self, button) addon.HandleVignetteClick(self.target, button) end)
+    panel.focusArrow = CreateFrame("Frame", nil, panel.focusReadout)
+    panel.focusArrow:SetSize(16, 16)
+    panel.focusArrow:SetPoint("LEFT", 0, 0)
+    panel.focusName = Text(panel.focusReadout, 10, "")
+    panel.focusName:SetPoint("TOPLEFT", 24, -1)
+    panel.focusName:SetSize(172, 13)
+    panel.focusMeta = Text(panel.focusReadout, 9, "")
+    panel.focusMeta:SetPoint("BOTTOMLEFT", 24, 1)
+    panel.focusMeta:SetSize(172, 12)
+    panel.focusReadout:Hide()
+    panel.edgeArrow = CreateFrame("Button", nil, panel.field)
+    panel.edgeArrow:SetSize(14, 14)
+    panel.edgeArrow:SetFrameLevel(panel.field:GetFrameLevel() + 5)
+    panel.edgeArrow:RegisterForClicks("LeftButtonUp", "RightButtonUp")
+    panel.edgeArrow:SetScript("OnEnter", Tooltip)
+    panel.edgeArrow:SetScript("OnLeave", function() if GameTooltip then GameTooltip:Hide() end end)
+    panel.edgeArrow:SetScript("OnClick", function(self, button) addon.HandleVignetteClick(self.target, button) end)
+    panel.edgeArrow:Hide()
 
     panel:SetScript("OnUpdate", function(self, elapsed)
         self._renderElapsed = (self._renderElapsed or 0) + elapsed
@@ -1017,8 +1310,27 @@ local function EnsurePanel()
 end
 
 ScanVignettes = function(mapID)
+    if activeMapID ~= mapID or preview or Settings().vignetteRadarEnabled ~= true then pulseUntil = 0 end
     activeMapID = mapID
     activeTargets = CollectVignettes(mapID)
+    if Features() then
+        local alerts
+        activeTargets, alerts = Features().Update(activeTargets, mapID, Now(), {
+            enabled = Settings().vignetteRadarEnabled == true, preview = preview,
+        })
+        if alerts and #alerts > 0 then
+            local favorite = false
+            for _, target in ipairs(alerts) do
+                pulseUntil = math.max(pulseUntil, target.newUntil or 0)
+                favorite = favorite or Favorite(target)
+            end
+            if Settings().vignetteRadarAlertSound == true and not Quiet() and PlaySound and SOUNDKIT then
+                local sound = favorite and SOUNDKIT.RAID_WARNING or SOUNDKIT.TELL_MESSAGE
+                    or SOUNDKIT.IG_MAINMENU_OPTION_CHECKBOX_ON
+                if sound then pcall(PlaySound, sound, "SFX") end
+            end
+        end
+    end
 end
 
 RefreshRadar = function(rescan)
@@ -1039,7 +1351,7 @@ RefreshRadar = function(rescan)
     end
     if manualPanelState == false then
         if panel then panel:Hide() end
-    elseif manualPanelState == true or preview or settings.vignetteRadarHideWhenEmpty == false or #activeTargets > 0 then
+    elseif manualPanelState == true or preview or settings.vignetteRadarHideWhenEmpty == false or #SelectableTargets() > 0 then
         EnsurePanel():Show()
         Render()
     elseif panel then
@@ -1137,6 +1449,7 @@ local events = CreateFrame("Frame")
 for _, event in ipairs({
     "PLAYER_LOGIN", "PLAYER_ENTERING_WORLD", "ZONE_CHANGED_NEW_AREA",
     "VIGNETTES_UPDATED", "VIGNETTE_MINIMAP_UPDATED",
+    "PLAYER_REGEN_DISABLED", "PLAYER_REGEN_ENABLED", "ZONE_CHANGED", "ZONE_CHANGED_INDOORS",
 }) do
     events:RegisterEvent(event)
 end
@@ -1144,5 +1457,18 @@ events:SetScript("OnEvent", function(_, event)
     RefreshRadar(true)
     if event == "PLAYER_LOGIN" and C_Timer and C_Timer.After then
         C_Timer.After(0.5, function() RefreshRadar(true) end)
+    end
+end)
+-- Detection and expiry continue when the user hides both visual surfaces.
+events:SetScript("OnUpdate", function(self, elapsed)
+    if Settings().vignetteRadarEnabled ~= true or preview
+        or (panel and panel:IsShown()) or (launcher and launcher:IsShown()) then
+        self._idleElapsed = 0
+        return
+    end
+    self._idleElapsed = (self._idleElapsed or 0) + elapsed
+    if self._idleElapsed >= RESCAN_SECONDS then
+        self._idleElapsed = 0
+        RefreshRadar(true)
     end
 end)

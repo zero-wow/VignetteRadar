@@ -36,6 +36,7 @@ function methods:UnlockHighlight() self.highlightLocked = false end
 function methods:SetHighlightTexture(texture) self.highlight = setmetatable({ texture = texture }, { __index = methods }) end
 function methods:GetHighlightTexture() return self.highlight end
 function methods:SetTexture(value) self.texture = value end
+function methods:SetAtlas(value) self.atlas = value end
 function methods:SetColorTexture(...) self.color = { ... } end
 function methods:SetVertexColor(...) self.vertexColor = { ... } end
 function methods:SetAlpha(value) self.alpha = value end
@@ -99,6 +100,7 @@ C_VignetteInfo = {
     GetVignetteInfo = function() end,
     GetVignettePosition = function() end,
 }
+C_Texture = { GetAtlasInfo = function(name) return name == "VignetteLoot" and {} or nil end }
 GetPlayerFacing = function() return 0 end
 issecretvalue = function() return false end
 
@@ -115,6 +117,9 @@ Settings = {
 
 local settings = { vignetteRadarEnabled = true, vignetteRadarHideWhenEmpty = true, vignetteRadarRange = 450 }
 local addon = { GetSettings = function() return settings end }
+VignetteRadarDB = settings
+assert(loadfile("VignetteRadar_Core.lua"))("VignetteRadar", addon)
+assert(loadfile("VignetteRadar_Features.lua"))("VignetteRadar", addon)
 assert(loadfile(legendSourcePath))("VignetteRadar", addon)
 assert(loadfile(targetPickerSourcePath))("VignetteRadar", addon)
 assert(loadfile(sourcePath))("VignetteRadar", addon)
@@ -132,9 +137,9 @@ assert(optionsPanel.width == 520 and optionsPanel.height == 365 and registeredCa
 local toggles, range150
 toggles = {}
 for _, object in ipairs(objects) do
-    if object.parent == optionsPanel and object.kind == "CheckButton" then
+    if object.parent == optionsPanel.pages.Radar and object.kind == "CheckButton" then
         toggles[#toggles + 1] = object
-    elseif object.parent == optionsPanel and object.text == "150 yd" then
+    elseif object.parent == optionsPanel.pages.Radar and object.text == "150 yd" then
         range150 = object
     end
 end
@@ -158,8 +163,8 @@ assert(panel.drag.width == 128 and panel.target.point[1] == "TOPRIGHT"
     and panel.legend.point[1] == "TOPRIGHT" and panel.close.point[1] == "TOPRIGHT",
     "drag target must stop before the focus, legend, and close controls")
 assert(panel.title.font[1] == STANDARD_TEXT_FONT, "radar must work with the standard client font")
-assert(panel.summary.text == "PREVIEW" and #panel.blips == 3,
-    "preview must be explicit and render one sample marker for each themed category")
+assert(panel.summary.text == "PREVIEW" and #panel.blips == 4,
+    "preview must explicitly show rare, boss, treasure, and event samples")
 local firstBlip, secondBlip = panel.blips[1], panel.blips[2]
 for _, blip in ipairs(panel.blips) do
     assert(blip._seen and blip.target.sample == true, "preview marker must be labeled as sample data")
@@ -182,8 +187,8 @@ assert(#launcher.ring == 24 and #launcher.sweepLines == 2
     and launcher.bezel.texture:find("vignette%-radar%-bezel%.tga$")
     and launcher.closed.texture:find("vignette%-radar%-closed%.tga$"),
     "launcher needs matching jeweled closed and hollow live states")
-assert(launcher.rangeLabel.text == "150" and #launcher.miniBlips == 5 and launcher.miniBlips[1]:IsShown(),
-    "launcher preview must mirror category dots inside its compact field")
+assert(launcher.rangeLabel.text == "BOSS" and #launcher.miniBlips == 5 and launcher.miniBlips[1]:IsShown(),
+    "launcher preview must mirror category markers with a plain boss cue")
 launcher.scripts.OnUpdate(launcher, 0.05)
 assert(launcher.bezel.alpha >= 0.93 and launcher.bezel.alpha <= 0.95
     and launcher.shadow == nil and launcher.halo == nil and launcher.alert == nil,
@@ -204,9 +209,11 @@ assert(settings.vignetteRadarCategories.treasure == false and not secondBlip:IsS
 addon.VignetteRadarLegend.SetCategoryEnabled("treasure", true)
 panel.target.scripts.OnClick(panel.target, "LeftButton")
 local targetPanel = assert(_G.VignetteRadarTargetPickerPanel, "reticle button must open its target picker")
-assert(targetPanel:IsShown() and targetPanel.rows[1].target.key == "preview-rare",
-    "specific-vignette picker must list current detections nearest first")
-targetPanel.rows[1].scripts.OnClick(targetPanel.rows[1])
+assert(targetPanel:IsShown() and targetPanel.rows[1].target.key == "preview-boss",
+    "specific-vignette picker must prioritize bosses before ordinary detections")
+local rareRow
+for _, row in ipairs(targetPanel.rows) do if row.target and row.target.key == "preview-rare" then rareRow = row end end
+assert(rareRow).scripts.OnClick(rareRow)
 assert(addon.VignetteRadarTargetPicker.GetFocus() == "preview-rare" and firstBlip:IsShown()
     and not secondBlip:IsShown(), "specific focus must isolate one vignette across the full radar")
 panel.target.scripts.OnClick(panel.target, "RightButton")
@@ -215,5 +222,158 @@ assert(addon.VignetteRadarTargetPicker.GetFocus() == nil,
 SlashCmdList.VIGNETTERADAR("off")
 assert(launcher.closed:IsShown() and not launcher.bezel:IsShown() and not launcher.miniBlips[1]:IsShown(),
     "disabled tracking must close the live center into its filled jeweled state")
+
+-- Exercise the complete feature path with deterministic live vignette data.
+local now, combat, instance, shift, alt = 100, false, false, false, false
+local mapID, guids, tracked, sounds = 777, {}, nil, {}
+GetTime = function() return now end
+InCombatLockdown = function() return combat end
+IsInInstance = function() return instance end
+IsShiftKeyDown = function() return shift end
+IsAltKeyDown = function() return alt end
+local health = 0.42
+local liveInfo = {
+    rare = { name = string.rep("Long rare name ", 5), atlasName = "VignetteKill", vignetteID = 101, onMinimap = true },
+    treasure = { name = "Nearby treasure", atlasName = "VignetteLoot", vignetteID = 102, onMinimap = true },
+    event = { name = "Event", atlasName = "VignetteEvent", vignetteID = 103, onMinimap = true },
+}
+local livePositions = { rare = { x = 0.85, y = 0.5 }, treasure = { x = 0.58, y = 0.5 }, event = { x = 0.52, y = 0.51 } }
+C_Map.GetBestMapForUnit = function() return mapID end
+C_VignetteInfo.GetVignettes = function() return guids end
+C_VignetteInfo.GetVignetteInfo = function(key) return liveInfo[key] end
+C_VignetteInfo.GetVignettePosition = function(key) return livePositions[key] end
+C_VignetteInfo.GetHealthPercent = function() return health end
+C_SuperTrack = { SetSuperTrackedVignette = function(key) tracked = key end }
+SOUNDKIT = { TELL_MESSAGE = 1, RAID_WARNING = 2 }
+PlaySound = function(sound) sounds[#sounds + 1] = sound end
+addon.VignetteRadarLegend.SetHighlight(nil)
+SlashCmdList.VIGNETTERADAR("on") -- Seed an empty first scan without alerts.
+now, guids = 101, { "rare", "treasure" }
+addon.VignetteRadarAPI.Refresh(true)
+local rareBlip = assert(panel.blipByKey.rare)
+assert(#sounds == 0 and rareBlip.target.newUntil > now, "default detection alerts must pulse silently")
+assert(rareBlip.dot.texture:find("Skull", 1, true) and panel.blipByKey.treasure.dot.atlas == "VignetteLoot",
+    "live rares and treasures must use familiar skull and chest imagery")
+rareBlip.scripts.OnClick(rareBlip, "LeftButton")
+assert(panel.focusReadout:IsShown() and panel.height == 298 and panel.field.point[3] == 55,
+    "focusing must reserve exactly the footer space without moving the radar into its header")
+assert(panel.focusMeta.text:find("350 yd", 1, true) and panel.focusMeta.text:find("42% HP", 1, true),
+    "focused live rare must show distance and available health")
+assert(panel.focusName.width == 172 and panel.focusMeta.width == 172,
+    "long target text must stay bounded within the focus footer")
+-- Field bottom is 55; divider y46 leaves a 9px gutter. Footer ends y40 (6px gutter).
+assert(panel.focusReadout.point[3] + panel.focusReadout.height <= 40
+    and panel.focusDivider.point[3] == 46 and panel.field.point[3] >= 55,
+    "focus controls and radar must keep clear gutters on both sides of their divider")
+settings.vignetteRadarRange = 150
+addon.VignetteRadarAPI.Refresh(true)
+assert(panel.edgeArrow:IsShown() and not panel.blipByKey.rare,
+    "a live focused target outside range must become a bounded direction arrow")
+local edgeX, edgeY = panel.edgeArrow.point[4], panel.edgeArrow.point[5]
+assert(math.sqrt(edgeX * edgeX + edgeY * edgeY) + 7 <= 83,
+    "edge arrow must leave a visible gutter before the outer ring")
+shift = true
+panel.edgeArrow.scripts.OnClick(panel.edgeArrow, "LeftButton")
+assert(tracked == "rare", "shift-click must navigate to the actual live target")
+shift, alt = false, true
+panel.focusReadout.scripts.OnClick(panel.focusReadout, "LeftButton")
+alt = false
+assert(addon.VignetteRadarFeatures.IsFavorite(panel.focusReadout.target), "alt-click must persist a favorite")
+addon.VignetteRadarTargetPicker.ClearFocus()
+assert(addon.VignetteRadarAPI.GetSelectableTargets()[1].key == "rare", "favorites must rank before nearer ordinary targets")
+settings.vignetteRadarRange = 450
+addon.VignetteRadarAPI.Refresh(true)
+rareBlip = panel.blipByKey.rare
+assert(rareBlip.favorite:IsShown(), "favorite marker must remain recognizable without hovering")
+rareBlip.scripts.OnClick(rareBlip, "LeftButton")
+now, guids = 102, { "treasure" }
+addon.VignetteRadarAPI.Refresh(true)
+rareBlip = assert(panel.blipByKey.rare)
+assert(rareBlip.target.stale and not rareBlip.dot:IsShown() and panel.focusMeta.text:find("seen", 1, true)
+    and not panel.focusMeta.text:find("HP", 1, true), "lost targets must become hollow last-seen markers without stale health")
+assert(not panel.edgeArrow:IsShown(), "stale snapshots must not present live out-of-range navigation")
+shift, tracked = true, nil
+rareBlip.scripts.OnClick(rareBlip, "LeftButton")
+assert(tracked == nil, "last-seen positions must not silently navigate as live targets")
+shift = false
+local initialAlpha = rareBlip:GetAlpha()
+now = 107
+addon.VignetteRadarAPI.Refresh(true)
+assert(panel.blipByKey.rare:GetAlpha() < initialAlpha, "last-seen markers must fade with elapsed time")
+now = 113
+addon.VignetteRadarAPI.Refresh(true)
+assert(not panel.blipByKey.rare and not panel.focusReadout:IsShown() and panel.height == 252
+    and panel.field.point[3] == 9, "expiry must clear focus and release footer space")
+
+settings.vignetteRadarAlertSound = true
+combat, now, guids = true, 120, { "treasure", "rare" }
+addon.VignetteRadarAPI.Refresh(true)
+assert(panel:GetAlpha() == 0.35 and launcher:GetAlpha() == 0.35 and #sounds == 0,
+    "combat must fade both surfaces and suppress detection sounds")
+combat, now = false, 125
+addon.VignetteRadarAPI.Refresh(true)
+assert(panel:GetAlpha() == 1 and launcher:GetAlpha() == 1 and #sounds == 0,
+    "leaving combat must restore opacity without replaying suppressed detections")
+instance = true
+addon.VignetteRadarAPI.Refresh(true)
+assert(panel:GetAlpha() == 0.35, "instance quiet mode must fade the radar")
+instance = false
+addon.VignetteRadarAPI.Refresh(true)
+local treasureBlip = panel.blipByKey.treasure
+treasureBlip.scripts.OnClick(treasureBlip, "RightButton")
+assert(not panel.blipByKey.treasure and next(settings.vignetteRadarIgnored) == nil,
+    "plain right-click must ignore only for this session")
+rareBlip = panel.blipByKey.rare
+shift = true
+rareBlip.scripts.OnClick(rareBlip, "RightButton")
+shift = false
+assert(next(settings.vignetteRadarIgnored) ~= nil and #addon.VignetteRadarAPI.GetSelectableTargets() == 0,
+    "shift-right-click must persist ignore and remove its target immediately")
+addon.VignetteRadarFeatures.ClearIgnored()
+addon.VignetteRadarAPI.Refresh(true)
+assert(#addon.VignetteRadarAPI.GetSelectableTargets() == 2, "clearing ignores must restore current detections")
+settings.vignetteRadarMarkerSize = 9
+addon.VignetteRadarAPI.Refresh(true)
+for _, blip in pairs(panel.blipByKey) do
+    local x, y = blip.point[4], blip.point[5]
+    assert(math.sqrt(x * x + y * y) + blip.width / 2 < 91,
+        "largest supported marker hit target must remain clear of the outer ring")
+end
+now, guids = 200, { "treasure" }
+addon.VignetteRadarAPI.Refresh(true)
+now, guids = 270, { "rare", "treasure" }
+addon.VignetteRadarAPI.Refresh(true)
+assert(#sounds == 1 and sounds[1] == SOUNDKIT.RAID_WARNING,
+    "an eligible favorite rediscovery after cooldown must play its distinct enabled sound")
+addon.VignetteRadarAPI.Refresh(true)
+assert(#sounds == 1, "repeated refreshes must not replay the same discovery sound")
+-- A new map silently seeds live entries and drops old snapshots/focus.
+addon.HandleVignetteClick(panel.blipByKey.rare.target, "LeftButton")
+mapID, guids, now = 778, {}, 280
+addon.VignetteRadarAPI.Refresh(true)
+assert(#addon.VignetteRadarAPI.GetTargets() == 0 and addon.VignetteRadarTargetPicker.GetFocus() == nil,
+    "zone transitions must not retain old-map targets")
+Enum = { QuestTagType = { WorldBoss = 99 } }
+C_QuestLog = { GetQuestTagInfo = function(id)
+    return id == 700 and { worldQuestType = Enum.QuestTagType.WorldBoss } or nil
+end }
+liveInfo.boss = { name = "World boss", atlasName = "Unclassified", rewardQuestID = 700, vignetteID = 700, onMinimap = true }
+livePositions.boss = { x = 0.55, y = 0.55 }
+now, guids = 281, { "boss", "rare" }
+addon.VignetteRadarAPI.Refresh(true)
+local bossBlip = assert(panel.blipByKey.boss)
+rareBlip = assert(panel.blipByKey.rare)
+assert(bossBlip.target.isWorldBoss and bossBlip.target.category == "rare"
+    and bossBlip.dot.width > rareBlip.dot.width and bossBlip.dot.vertexColor[1] == 1
+    and bossBlip.dot.vertexColor[2] < 0.3 and rareBlip.dot.vertexColor[3] == 1,
+    "confirmed world bosses must have larger red skulls distinct from silver-blue rares")
+assert(launcher.rangeLabel.text == "BOSS" and launcher.bosses == 1,
+    "a nearby confirmed boss must have a plain-language launcher cue")
+bossBlip.scripts.OnClick(bossBlip, "LeftButton")
+assert(panel.focusMeta.text:find("BOSS", 1, true), "focused boss identity must be explicit without color knowledge")
+now, guids = 282, { "rare" }
+addon.VignetteRadarAPI.Refresh(true)
+assert(panel.blipByKey.boss.target.stale and panel.blipByKey.boss.target.isWorldBoss
+    and launcher.rangeLabel.text ~= "BOSS", "last-seen boss classification must persist without implying a live nearby boss")
 
 io.write("vignette radar UI tests passed\n")

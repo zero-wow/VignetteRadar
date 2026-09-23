@@ -1,0 +1,360 @@
+local _, addon = ...
+if type(addon) ~= "table" then return end
+
+local API = {}
+addon.VignetteRadarFeatures = API
+
+local MAX_TARGETS, MAX_RECENT, MAX_SESSION_IGNORED = 64, 256, 256
+local GLOBAL_ALERT_SECONDS, PULSE_SECONDS = 3, 3
+local activeMapID, initialized, previewing = nil, false, false
+local live, stale, recent, sessionIgnored = {}, {}, {}, {}
+local lastAlertAt = -math.huge
+
+local function IsSecret(value)
+    if type(issecretvalue) ~= "function" then return false end
+    local ok, secret = pcall(issecretvalue, value)
+    return not ok or secret == true
+end
+
+local function Field(value, key)
+    if value == nil or IsSecret(value) then return nil end
+    local ok, result = pcall(function() return value[key] end)
+    if not ok or IsSecret(result) then return nil end
+    return result
+end
+
+local function Number(value)
+    if IsSecret(value) or type(value) ~= "number" or value ~= value
+        or value == math.huge or value == -math.huge then return nil end
+    return value
+end
+
+local function String(value)
+    if IsSecret(value) or type(value) ~= "string" or value == "" then return nil end
+    return value
+end
+
+local function Settings()
+    return type(addon.GetSettings) == "function" and addon.GetSettings() or {}
+end
+
+local function BoundedNumber(value, default, minimum, maximum)
+    value = Number(value)
+    return value and math.max(minimum, math.min(maximum, value)) or default
+end
+
+local function Identity(target)
+    local id = Number(Field(target, "vignetteID")) or String(Field(target, "vignetteID"))
+    if not id then
+        local guid = String(Field(target, "key"))
+        id = guid and guid:match("^Vignette%-%d+%-%d+%-%d+%-%d+%-(%d+)%-") or nil
+    end
+    if id then return "id:" .. tostring(id) end
+
+    local name = String(Field(target, "name"))
+    if not name then return nil end
+    local category = String(Field(target, "category")) or "other"
+    local mapID = Number(Field(target, "mapID")) or activeMapID
+    return "name:" .. tostring(mapID or "unknown") .. ":" .. category .. ":" .. name:lower()
+end
+
+local function TableSetting(settings, key)
+    local value = settings[key]
+    if type(value) ~= "table" or IsSecret(value) then
+        value = {}
+        settings[key] = value
+    end
+    return value
+end
+
+function API.IsFavorite(target)
+    local identity = Identity(target)
+    return identity ~= nil and Field(TableSetting(Settings(), "vignetteRadarFavorites"), identity) == true or false
+end
+
+function API.ToggleFavorite(target)
+    local identity = Identity(target)
+    if not identity then return false, "no-stable-identity" end
+    local favorites = TableSetting(Settings(), "vignetteRadarFavorites")
+    local enabled = favorites[identity] ~= true
+    favorites[identity] = enabled or nil
+    return enabled
+end
+
+function API.IsIgnored(target)
+    local identity = Identity(target)
+    if not identity then return false end
+    return sessionIgnored[identity] == true
+        or Field(TableSetting(Settings(), "vignetteRadarIgnored"), identity) == true
+        or false
+end
+
+function API.Ignore(target, permanent)
+    local identity = Identity(target)
+    if not identity then return false, "no-stable-identity" end
+    if permanent == true then
+        TableSetting(Settings(), "vignetteRadarIgnored")[identity] = true
+    else
+        sessionIgnored[identity] = true
+        local count, oldestKey = 0, nil
+        for key in pairs(sessionIgnored) do
+            count = count + 1
+            if not oldestKey then oldestKey = key end
+        end
+        if count > MAX_SESSION_IGNORED then sessionIgnored[oldestKey] = nil end
+    end
+    return true
+end
+
+function API.ClearIgnored()
+    Settings().vignetteRadarIgnored = {}
+    sessionIgnored = {}
+end
+
+function API.IsQuiet()
+    local settings = Settings()
+    if settings.vignetteRadarQuietCombat ~= false and type(InCombatLockdown) == "function" then
+        local ok, combat = pcall(InCombatLockdown)
+        if not ok or IsSecret(combat) or combat == true then return true end
+    end
+    if settings.vignetteRadarQuietInstances ~= false and type(IsInInstance) == "function" then
+        local ok, inside = pcall(IsInInstance)
+        if not ok or IsSecret(inside) or inside == true then return true end
+    end
+    return false
+end
+
+function API.IsWorldBoss(info)
+    local questID = Number(Field(info, "rewardQuestID"))
+    if not questID or questID <= 0 or not (C_QuestLog and type(C_QuestLog.GetQuestTagInfo) == "function") then
+        return false
+    end
+    local ok, tagInfo = pcall(C_QuestLog.GetQuestTagInfo, questID)
+    if not ok or not tagInfo or IsSecret(tagInfo) then return false end
+    local questTags = Enum and Field(Enum, "QuestTagType")
+    local bossType = Number(Field(questTags, "WorldBoss"))
+    local actualType = Number(Field(tagInfo, "worldQuestType"))
+    if bossType and actualType == bossType then return true end
+
+    -- Blizzard still identifies legacy world-boss world quests this way.
+    local normalType = Number(Field(questTags, "Normal"))
+    local qualities = Enum and Field(Enum, "WorldQuestQuality")
+    local epicQuality = Number(Field(qualities, "Epic"))
+    return normalType ~= nil and epicQuality ~= nil and actualType == normalType
+        and Field(tagInfo, "isElite") == true
+        and Number(Field(tagInfo, "quality")) == epicQuality or false
+end
+
+local SNAPSHOT_FIELDS = {
+    "key", "vignetteID", "name", "category", "mapID", "mapX", "mapY",
+    "worldX", "worldY", "instanceID", "atlasName", "vignetteType", "isWorldBoss",
+}
+
+local function Snapshot(target, mapID, now)
+    local copy = {}
+    for _, field in ipairs(SNAPSHOT_FIELDS) do
+        local value = Field(target, field)
+        if type(value) == "string" or type(value) == "number"
+            or (field == "isWorldBoss" and type(value) == "boolean") then
+            copy[field] = value
+        end
+    end
+    copy.mapID = mapID
+    copy.lastSeenAt = now
+    return copy
+end
+
+local function Reset(mapID)
+    live, stale, recent = {}, {}, {}
+    activeMapID, initialized = mapID, false
+    lastAlertAt = -math.huge
+end
+
+local function TrimRecent(now, cooldown)
+    local count = 0
+    for identity, timestamp in pairs(recent) do
+        if now - timestamp >= cooldown then
+            recent[identity] = nil
+        else
+            count = count + 1
+        end
+    end
+    while count > MAX_RECENT do
+        local oldestKey, oldestTime
+        for identity, timestamp in pairs(recent) do
+            if not oldestTime or timestamp < oldestTime then
+                oldestKey, oldestTime = identity, timestamp
+            end
+        end
+        if not oldestKey then break end
+        recent[oldestKey] = nil
+        count = count - 1
+    end
+end
+
+local function CategoryMayAlert(settings, target)
+    local category = String(Field(target, "category")) or "other"
+    local alerts = settings.vignetteRadarAlertCategories
+    if type(alerts) ~= "table" or Field(alerts, category) ~= true then return false end
+    local categories = settings.vignetteRadarCategories
+    if type(categories) == "table" and Field(categories, category) == false then return false end
+    local legend = addon.VignetteRadarLegend
+    if type(legend) == "table" and type(legend.IsCategoryEnabled) == "function" then
+        local ok, enabled = pcall(legend.IsCategoryEnabled, category)
+        if not ok or enabled == false then return false end
+    end
+    return true
+end
+
+-- Returns visible live and fading snapshots, followed by fresh alert candidates.
+function API.Update(targets, mapID, now, context)
+    local settings = Settings()
+    local enabled = Field(context, "enabled") == true
+    local preview = Field(context, "preview") == true
+    mapID, now = Number(mapID), Number(now)
+    if not enabled or preview or not mapID or not now then
+        Reset(nil)
+        previewing = preview
+        return preview and (type(targets) == "table" and targets or {}) or {}, {}
+    end
+    previewing = false
+    if activeMapID ~= mapID then Reset(mapID) end
+
+    local firstScan = not initialized
+    initialized = true
+    local output, alerts, candidates, nextLive = {}, {}, {}, {}
+    local seen, seenIdentities = {}, {}
+    local cooldown = BoundedNumber(settings.vignetteRadarAlertCooldown, 60, 5, 3600)
+    local fadeSeconds = BoundedNumber(settings.vignetteRadarLastSeenSeconds, 10, 1, 60)
+    local canAlert = not firstScan and settings.vignetteRadarAlerts == true and not API.IsQuiet()
+
+    if type(targets) == "table" and not IsSecret(targets) then
+        for index = 1, math.min(#targets, 128) do
+            local target = targets[index]
+            local key = String(Field(target, "key"))
+            if #output < MAX_TARGETS and key and not seen[key] and not API.IsIgnored(target) then
+                seen[key] = true
+                local previous = live[key]
+                local identity = Identity(target)
+                if identity then seenIdentities[identity] = true end
+                local favorite = API.IsFavorite(target)
+                target.favorite = favorite
+                target.stale, target.fading = nil, nil
+                target.newUntil = previous and previous.newUntil or nil
+                local snapshot = Snapshot(target, mapID, now)
+                nextLive[key] = { snapshot = snapshot, newUntil = target.newUntil, identity = identity }
+                stale[key] = nil
+                output[#output + 1] = target
+                if canAlert and not previous and identity and CategoryMayAlert(settings, target)
+                    and (not recent[identity] or now - recent[identity] >= cooldown) then
+                    candidates[#candidates + 1] = target
+                end
+                if not previous and identity then recent[identity] = now end
+            end
+        end
+    end
+
+    for key, entry in pairs(live) do
+        if not nextLive[key] and not seenIdentities[entry.identity]
+            and not stale[key] and settings.vignetteRadarLastSeen == true
+            and not API.IsIgnored(entry.snapshot) then
+            local snapshot = entry.snapshot
+            snapshot.stale = true
+            snapshot.expiresAt = now + fadeSeconds
+            snapshot.favorite = API.IsFavorite(snapshot)
+            snapshot.newUntil = nil
+            stale[key] = snapshot
+        end
+    end
+    live = nextLive
+    if settings.vignetteRadarLastSeen == true then
+        for key, snapshot in pairs(stale) do
+            if snapshot.expiresAt <= now or API.IsIgnored(snapshot) or seenIdentities[Identity(snapshot)] then
+                stale[key] = nil
+            end
+        end
+        local staleCount = 0
+        for _ in pairs(stale) do staleCount = staleCount + 1 end
+        while staleCount > MAX_TARGETS - #output do
+            local oldestKey, oldestAt
+            for key, snapshot in pairs(stale) do
+                if not oldestAt or snapshot.lastSeenAt < oldestAt then
+                    oldestKey, oldestAt = key, snapshot.lastSeenAt
+                end
+            end
+            if not oldestKey then break end
+            stale[oldestKey] = nil
+            staleCount = staleCount - 1
+        end
+        for _, snapshot in pairs(stale) do
+            snapshot.fading = math.max(0, (snapshot.expiresAt - now) / fadeSeconds)
+            snapshot.favorite = API.IsFavorite(snapshot)
+            output[#output + 1] = snapshot
+        end
+    else
+        stale = {}
+    end
+
+    if #candidates > 0 and now - lastAlertAt >= GLOBAL_ALERT_SECONDS then
+        table.sort(candidates, function(left, right)
+            if left.favorite ~= right.favorite then return left.favorite end
+            return left.key < right.key
+        end)
+        local selected = candidates[1]
+        selected.newUntil = now + PULSE_SECONDS
+        nextLive[selected.key].newUntil = selected.newUntil
+        alerts[1] = selected
+        lastAlertAt = now
+        recent[nextLive[selected.key].identity] = now
+    end
+    TrimRecent(now, cooldown)
+    return output, alerts
+end
+
+local function CurrentLive(target)
+    local key = String(Field(target, "key"))
+    if previewing or not activeMapID or not key or Field(target, "stale") == true then return nil end
+    return live[key]
+end
+
+function API.Navigate(target)
+    local entry = CurrentLive(target)
+    if not entry then return false, "not-live" end
+    local key = entry.snapshot.key
+    if C_SuperTrack and type(C_SuperTrack.SetSuperTrackedVignette) == "function" then
+        local ok, result = pcall(C_SuperTrack.SetSuperTrackedVignette, key)
+        if ok and not IsSecret(result) and result ~= false then return true, "vignette" end
+    end
+    local mapID, x, y = entry.snapshot.mapID, entry.snapshot.mapX, entry.snapshot.mapY
+    if not (Number(mapID) and Number(x) and Number(y) and x >= 0 and x <= 1 and y >= 0 and y <= 1) then
+        return false, "no-map-position"
+    end
+    if not (UiMapPoint and type(UiMapPoint.CreateFromCoordinates) == "function"
+        and C_Map and type(C_Map.SetUserWaypoint) == "function") then
+        return false, "waypoint-unavailable"
+    end
+    if type(C_Map.CanSetUserWaypointOnMap) == "function" then
+        local allowed, canSet = pcall(C_Map.CanSetUserWaypointOnMap, mapID)
+        if not allowed or IsSecret(canSet) or canSet == false then return false, "waypoint-unavailable" end
+    end
+    local ok, point = pcall(UiMapPoint.CreateFromCoordinates, mapID, x, y)
+    if not ok or not point or IsSecret(point) then return false, "waypoint-unavailable" end
+    local placed, result = pcall(C_Map.SetUserWaypoint, point)
+    if not placed or IsSecret(result) or result == false then return false, "waypoint-failed" end
+    if C_SuperTrack and type(C_SuperTrack.SetSuperTrackedUserWaypoint) == "function" then
+        pcall(C_SuperTrack.SetSuperTrackedUserWaypoint, true)
+    end
+    return true, "waypoint"
+end
+
+-- Blizzard passes this 0..1 value to FormatPercentage, which multiplies by 100.
+function API.GetHealth(target)
+    local entry = CurrentLive(target)
+    if not entry or entry.snapshot.category ~= "rare" or Settings().vignetteRadarShowHealth ~= true then return nil end
+    if not (C_VignetteInfo and type(C_VignetteInfo.GetHealthPercent) == "function") then return nil end
+    local ok, percent = pcall(C_VignetteInfo.GetHealthPercent, entry.snapshot.key)
+    if not ok then return nil end
+    percent = Number(percent)
+    if percent and percent >= 0 and percent <= 1 then return percent * 100 end
+    return nil
+end

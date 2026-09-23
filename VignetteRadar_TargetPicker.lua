@@ -5,6 +5,7 @@ local PANEL_W, PANEL_H = 250, 258
 local ROWS_PER_PAGE = 5
 local ACCENT = { 0.05, 0.82, 0.62 }
 local CIRCLE_TEXTURE = "Interface\\CharacterFrame\\TempPortraitAlphaMask"
+local SKULL_TEXTURE = "Interface\\TargetingFrame\\UI-TargetingFrame-Skull"
 local FONT_FALLBACK = "Fonts\\FRIZQT__.TTF"
 
 local panel
@@ -49,14 +50,54 @@ local function Targets()
     return targets
 end
 
+local function IsFavorite(target)
+    local features = addon.VignetteRadarFeatures
+    if features and type(features.IsFavorite) == "function" then
+        local ok, favorite = pcall(features.IsFavorite, target)
+        if ok then return favorite == true end
+    end
+    return target.favorite == true
+end
+
+local function LastSeenAge(target)
+    if type(target.lastSeenAt) ~= "number" or type(GetTime) ~= "function" then return nil end
+    return math.max(0, math.floor(GetTime() - target.lastSeenAt + 0.5))
+end
+
+local function AgeLabel(seconds)
+    if not seconds then return "LAST SEEN" end
+    if seconds < 60 then return seconds .. "S AGO" end
+    if seconds < 3600 then return math.floor(seconds / 60) .. "M AGO" end
+    return math.floor(seconds / 3600) .. "H AGO"
+end
+
 local function Tooltip(owner, target)
     if not (GameTooltip and target) then return end
     GameTooltip:SetOwner(owner, "ANCHOR_RIGHT")
     GameTooltip:SetText(target.name or "Detected vignette", 1, 1, 1)
+    if target.isWorldBoss == true then
+        GameTooltip:AddLine("World boss", 1, 0.18, 0.12)
+    elseif target.category == "rare" then
+        GameTooltip:AddLine("Rare enemy", 0.78, 0.88, 1)
+    end
     if type(target.distance) == "number" then
         GameTooltip:AddLine(math.floor(target.distance + 0.5) .. " yd away", 0.72, 0.76, 0.78)
     end
-    GameTooltip:AddLine("Click to show only this vignette on both radar views.", 0.55, 0.86, 0.76, true)
+    if target.stale then
+        local age = LastSeenAge(target)
+        GameTooltip:AddLine(age and ("Last seen " .. AgeLabel(age):lower() .. ".") or "Last seen recently.",
+            0.72, 0.76, 0.78)
+    elseif not target.sample then
+        GameTooltip:AddLine("Currently visible on the minimap.", 0.72, 0.76, 0.78)
+    end
+    if IsFavorite(target) then GameTooltip:AddLine("Favorite", 1, 0.82, 0.33) end
+    GameTooltip:AddLine("Left-click: focus this vignette; click again to show all.", 0.55, 0.86, 0.76, true)
+    if not target.sample then
+        if not target.stale then GameTooltip:AddLine("Shift-left-click: navigate to it.", 0.55, 0.86, 0.76, true) end
+        GameTooltip:AddLine("Alt-left-click: toggle favorite.", 0.55, 0.86, 0.76, true)
+        GameTooltip:AddLine("Right-click: ignore this session.", 0.55, 0.86, 0.76, true)
+        GameTooltip:AddLine("Shift-right-click: ignore persistently.", 0.55, 0.86, 0.76, true)
+    end
     GameTooltip:Show()
 end
 
@@ -118,6 +159,7 @@ end
 
 local function CreateRow(parent, index)
     local row = CreateFrame("Button", nil, parent, "BackdropTemplate")
+    if row.RegisterForClicks then row:RegisterForClicks("LeftButtonUp", "RightButtonUp") end
     row:SetSize(PANEL_W - 18, 34)
     row:SetPoint("TOPLEFT", 9, -45 - ((index - 1) * 37))
     Surface(row, 0.06, 0.069, 0.078, 0.98, 0.09)
@@ -144,21 +186,37 @@ local function CreateRow(parent, index)
     row.dot:SetPoint("CENTER", row.reticle, "CENTER")
     row.dot:SetTexture(CIRCLE_TEXTURE)
 
+    row.favorite = Text(row, 11, "*")
+    row.favorite:SetPoint("TOPLEFT", 34, -5)
+    row.favorite:SetWidth(10)
+    row.favorite:SetTextColor(1, 0.82, 0.33, 1)
+    row.favorite:Hide()
     row.name = Text(row, 10, "")
-    row.name:SetPoint("TOPLEFT", 35, -6)
-    row.name:SetWidth(133)
+    row.name:SetPoint("TOPLEFT", 46, -6)
+    row.name:SetWidth(121)
+    if row.name.SetMaxLines then row.name:SetMaxLines(1) end
     row.meta = Text(row, 8, "")
     row.meta:SetPoint("BOTTOMLEFT", 35, 5)
+    row.meta:SetWidth(132)
+    if row.meta.SetMaxLines then row.meta:SetMaxLines(1) end
     row.meta:SetTextColor(0.49, 0.58, 0.59, 1)
     row.action = Text(row, 8, "FOCUS")
     row.action:SetPoint("RIGHT", -8, 0)
+    row.action:SetWidth(49)
     row.action:SetJustifyH("RIGHT")
     row.action:SetTextColor(0.56, 0.64, 0.65, 1)
     AddPressState(row)
 
-    row:SetScript("OnClick", function(self)
+    row:SetScript("OnClick", function(self, button)
         local target = self.target
         if not target then return end
+        local handler = addon.HandleVignetteClick
+        if type(handler) == "function" then
+            handler(target, button or "LeftButton")
+            API.Refresh()
+            return
+        end
+        if button and button ~= "LeftButton" then return end
         if focusKey == target.key then API.ClearFocus() else API.SetFocus(target.key, target.name) end
     end)
     row:SetScript("OnEnter", function(self)
@@ -209,6 +267,8 @@ local function EnsurePanel()
     panel.title:SetTextColor(ACCENT[1], ACCENT[2], ACCENT[3], 1)
     panel.subtitle = Text(panel, 8, "Choose one current detection")
     panel.subtitle:SetPoint("TOPLEFT", 10, -25)
+    panel.subtitle:SetWidth(165)
+    if panel.subtitle.SetMaxLines then panel.subtitle:SetMaxLines(1) end
     panel.subtitle:SetTextColor(0.48, 0.56, 0.57, 1)
 
     panel.clear = CreateFrame("Button", nil, panel, "BackdropTemplate")
@@ -270,11 +330,26 @@ function API.Refresh()
         local target = targets[first + rowIndex - 1]
         row.target = target
         if target then
-            local red, green, blue = target.red or 1, target.green or 0.24, target.blue or 0.20
+            local rare = target.category == "rare"
+            local boss = target.isWorldBoss == true
+            local red = target.red or (boss and 1 or rare and 0.78 or 1)
+            local green = target.green or (boss and 0.18 or rare and 0.88 or 0.24)
+            local blue = target.blue or (boss and 0.12 or rare and 1 or 0.20)
             row.name:SetText(target.name or "Detected vignette")
-            local category = type(target.category) == "string" and target.category:upper() or "OTHER"
+            row.favorite:SetShown(IsFavorite(target))
+            local category = boss and "WORLD BOSS"
+                or type(target.category) == "string" and target.category:upper() or "OTHER"
             local distance = type(target.distance) == "number" and (math.floor(target.distance + 0.5) .. " YD") or "DISTANCE N/A"
-            row.meta:SetText(category .. "  •  " .. distance)
+            if target.stale then
+                row.meta:SetText(boss and ("WORLD BOSS  •  " .. AgeLabel(LastSeenAge(target)))
+                    or (distance .. "  •  " .. AgeLabel(LastSeenAge(target))))
+                row.meta:SetTextColor(0.64, 0.58, 0.47, 1)
+            else
+                row.meta:SetText(category .. "  •  " .. distance)
+                row.meta:SetTextColor(0.49, 0.58, 0.59, 1)
+            end
+            row.dot:SetTexture((boss or rare) and SKULL_TEXTURE or CIRCLE_TEXTURE)
+            row.dot:SetSize(boss and 14 or rare and 12 or 7, boss and 14 or rare and 12 or 7)
             row.dot:SetVertexColor(red, green, blue, 1)
             local selected = focusKey == target.key
             row.action:SetText(selected and "ACTIVE" or "FOCUS")

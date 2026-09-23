@@ -16,3 +16,23 @@ Copy the `VignetteRadar` folder to `_retail_/Interface/AddOns/`, then reload the
 - `/vradar`, `/vignetteradar`, and `/whradar` remain aliases.
 
 The addon also appears under the game's AddOns settings when the current Retail Settings API is available.
+
+## Detection and navigation
+
+- New rare and treasure detections pulse briefly. Sound is off by default; enable it and select categories or a repeat cooldown under `/vr config` → Alerts. Initial login/zone scans are silent, and rapid changes are throttled.
+- Click a marker or target-list row to focus it; click it again to show all. The focused readout shows its name, distance, direction, and rare health when the game supplies it. A rim arrow points toward a live focused target outside the selected range.
+- Shift-left-click a live marker, row, or focused readout to activate Blizzard navigation. A supported map waypoint is used if direct vignette tracking is unavailable.
+- Alt-left-click to toggle a saved favorite. Favorites have a star, sort first, and use a distinct sound when sound alerts are enabled.
+- Right-click to ignore a vignette for the current login session. Shift-right-click saves that ignore across logins. The Behavior page can clear both lists. Favorites and ignores apply to a vignette type when Blizzard provides a stable ID.
+- Lost detections become fading hollow markers for 10 seconds by default. They are explicitly labeled as last seen, cannot trigger live navigation, and expire automatically. Zone changes clear them.
+- Rares use silver-blue skulls; confirmed world bosses use larger red skulls. The small launcher also says `RARE` or `BOSS` for nearby live enemies. Target rows and tooltips spell out the type, and both enemy types use the Rare / Boss filter. Boss identification uses Blizzard's reward-quest metadata; unavailable metadata keeps the normal rare treatment rather than guessing.
+- Treasures and other detections use Blizzard's own icons when available, with simple fallback markers. Marker size and recognizable icons are configurable.
+- Combat and instance quiet modes fade the radar and launcher and suppress alerts, restoring them automatically afterward. Both modes can be disabled in Behavior.
+
+Preview samples support focus without changing favorites, ignores, or navigation. All live information still comes from Blizzard's exposed minimap vignettes; the addon does not discover hidden objects or determine whether a missing detection was killed or looted.
+
+## Development validation
+
+Current development build: `0.1.0-dev.2` (base version `0.1.0`).
+
+Run each `tests/*_test.lua` with Lua from the addon root and check Lua files with `luac -p`. The tests cover migration, radar projection, filters, target actions, alert/last-seen state, navigation fallbacks, quiet modes, and UI layout bounds using mocked game APIs. These checks do not replace in-game validation of rendering, navigation, or API availability.

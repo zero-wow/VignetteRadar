@@ -21,8 +21,11 @@ function methods:SetText(value) self.text = value end
 function methods:SetTextColor(...) self.textColor = { ... } end
 function methods:SetJustifyH(value) self.justifyH = value end
 function methods:SetWordWrap(value) self.wordWrap = value end
+function methods:SetMaxLines(value) self.maxLines = value end
 function methods:SetColorTexture(...) self.color = { ... } end
 function methods:SetTexture(value) self.texture = value end
+function methods:SetAtlas(value) self.atlas = value end
+function methods:SetVertexColor(...) self.vertexColor = { ... } end
 function methods:SetAlpha(value) self.alpha = value end
 function methods:SetScript(name, callback) self.scripts = self.scripts or {}; self.scripts[name] = callback end
 function methods:IsShown() return self.shown == true end
@@ -54,8 +57,11 @@ UIParent = CreateFrame("Frame", "UIParent")
 UIParent:SetSize(1600, 900)
 STANDARD_TEXT_FONT = "fallback.ttf"
 EllesmereUI = { EXPRESSWAY = "native-eui-font.ttf" }
+local tooltipLines = {}
 GameTooltip = {
-    SetOwner = function() end, SetText = function() end, AddLine = function() end,
+    SetOwner = function() tooltipLines = {} end,
+    SetText = function(_, value) tooltipLines[#tooltipLines + 1] = value end,
+    AddLine = function(_, value) tooltipLines[#tooltipLines + 1] = value end,
     Show = function() end, Hide = function() end,
 }
 
@@ -77,6 +83,9 @@ assert(legend.IsCategoryEnabled("unknown"), "unknown Blizzard categories must sa
 
 local r, g, b = legend.ColorFor("treasure")
 assert(r == 1 and g == 0.68 and b == 0.16, "treasure must use the legend's gold treatment")
+r, g, b = legend.ColorFor("rare")
+assert(r == 0.78 and g == 0.88 and b == 1,
+    "the shared rare filter must use silver-blue rather than boss red")
 local _, _, _, _, alpha, normalized = legend.DotStyle("unrecognized")
 assert(normalized == "other" and alpha == 1, "dot style must normalize unknown categories without inventing data")
 
@@ -113,6 +122,21 @@ assert(panel.title.font[1] == EllesmereUI.EXPRESSWAY and panel.title.text == "RA
     "legend must use native EllesmereUI typography")
 assert(panel.rows.rare and panel.rows.treasure and panel.rows.event and panel.rows.other,
     "legend must render one independent row for every supported filter")
+assert(panel.rows.rare.label.text == "RARE / BOSS" and panel.rows.rare.label.width == 98
+    and panel.rows.rare.label.point[2] == 39 and panel.rows.rare.label.maxLines == 1,
+    "the rare and boss label must stay bounded before its toggle")
+assert(panel.rows.rare.swatch.texture == "Interface\\TargetingFrame\\UI-TargetingFrame-Skull"
+    and panel.rows.rare.bossSwatch.texture == panel.rows.rare.swatch.texture
+    and panel.rows.rare.swatch.vertexColor[1] == 0.78
+    and panel.rows.rare.bossSwatch.vertexColor[1] == 1
+    and panel.rows.rare.bossSwatch.point[2] == 21,
+    "the rare filter must show separate silver and red skulls")
+assert(panel.rows.treasure.swatch.atlas == "VignetteLoot",
+    "treasure must use the familiar chest atlas when SetAtlas is available")
+panel.rows.rare.scripts.OnEnter(panel.rows.rare)
+assert(table.concat(tooltipLines, "\n"):find(
+    "Silver skull: rare enemy. Red skull: world boss. Both use this filter.", 1, true),
+    "rare tooltip must explain both symbols in plain language")
 assert(panel.rows.event.scripts.OnMouseDown and panel.rows.event.scripts.OnMouseUp,
     "category controls must expose native pressed feedback")
 assert(panel.rows.rare.toggle.label.text == "OFF", "the UI must reflect persisted filter state")
@@ -132,11 +156,14 @@ assert(legend.Toggle(anchor) == false and not legend.IsShown(), "toggle must clo
 
 -- Validate fallback behavior without native EllesmereUI helpers or fonts.
 EllesmereUI = nil
+methods.SetAtlas = nil
 local fallbackSettings = {}
 local fallbackAddon = { GetSettings = function() return fallbackSettings end }
 assert(loadfile(sourcePath))("VignetteRadar", fallbackAddon)
 assert(fallbackAddon.VignetteRadarLegend.Toggle(anchor), "legend must build without EllesmereUI helper functions")
 assert(fallbackAddon.VignetteRadarLegend.Testing.GetPanel().title.font[1] == STANDARD_TEXT_FONT,
     "helper-free mode must use the standard client font")
+assert(fallbackAddon.VignetteRadarLegend.Testing.GetPanel().rows.treasure.swatch.color[1] == 1,
+    "treasure keeps its color swatch when the atlas API is absent")
 
 io.write("vignette radar legend tests passed\n")

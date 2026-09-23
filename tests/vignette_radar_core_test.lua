@@ -37,5 +37,24 @@ local defaults = fresh.GetSettings()
 assert(defaults.vignetteRadarEnabled == true and defaults.vignetteRadarHideWhenEmpty == true
     and defaults.vignetteRadarLauncherVisible == true and defaults.vignetteRadarRange == 450,
     "the radar must work without either optional addon installed")
+assert(defaults.vignetteRadarAlerts == true and defaults.vignetteRadarAlertSound == false
+    and defaults.vignetteRadarAlertCategories.rare == true
+    and defaults.vignetteRadarAlertCategories.treasure == true
+    and defaults.vignetteRadarAlertCategories.event == false
+    and defaults.vignetteRadarAlertCategories.other == false
+    and defaults.vignetteRadarAlertCooldown == 60,
+    "alert preferences need safe standalone defaults")
+assert(type(defaults.vignetteRadarFavorites) == "table" and type(defaults.vignetteRadarIgnored) == "table"
+    and defaults.vignetteRadarLastSeen == true and defaults.vignetteRadarLastSeenSeconds == 10
+    and defaults.vignetteRadarQuietCombat == true and defaults.vignetteRadarQuietInstances == true
+    and defaults.vignetteRadarMarkerSize == 7 and defaults.vignetteRadarShapes == true
+    and defaults.vignetteRadarShowHealth == true,
+    "feature preferences need complete defaults")
+defaults.vignetteRadarAlertCooldown = -100
+defaults.vignetteRadarLastSeenSeconds = 10000
+defaults.vignetteRadarMarkerSize = 100
+fresh.GetSettings()
+assert(defaults.vignetteRadarAlertCooldown == 5 and defaults.vignetteRadarLastSeenSeconds == 60
+    and defaults.vignetteRadarMarkerSize == 9, "numeric preferences must stay inside supported bounds")
 
 io.write("vignette radar settings migration tests passed\n")

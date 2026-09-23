@@ -2,11 +2,12 @@
 ## Title: Vignette Radar
 ## Notes: A heading-up radar for active minimap vignettes, with rare, treasure, and event filters.
 ## Author: Zero
-## Version: 0.1.0-dev.1
+## Version: 0.1.0-dev.2
 ## OptionalDeps: WaffleHouse_EllesmereUI, EllesmereUI
 ## SavedVariables: VignetteRadarDB
 
 VignetteRadar_Core.lua
+VignetteRadar_Features.lua
 VignetteRadar_Legend.lua
 VignetteRadar_TargetPicker.lua
 VignetteRadar_Radar.lua
