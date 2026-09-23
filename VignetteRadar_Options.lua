@@ -178,7 +178,7 @@ local function BuildPanel()
         page:SetSize(520, 365)
         page:Hide()
         panel.pages[name] = page
-        local button = AddButton(panel, name, 18 + (index - 1) * 120, -77, 114, function()
+        local button = AddButton(panel, name, 18 + (index - 1) * 96, -77, 90, function()
             SelectPage(name)
         end)
         panel.pageButtons[name] = button
@@ -256,6 +256,15 @@ local function BuildPanel()
         end
     end)
     AddFooter(behavior, "Combat and instance fading also mutes alerts. Clear ignores above.")
+
+    local quests = AddPage("Quests", 5)
+    AddLabel(quests, "QUEST LOCATIONS", 24, -119)
+    AddCheckbox(quests, "vignetteRadarQuestDots", "Show quest location dots", 18, -145)
+    AddDescription(quests, "Small gold dots mark quest positions supplied by the game. They turn with the radar in facing-up mode.", 49, -176, 435)
+    AddLabel(quests, "QUEST AREAS", 24, -236)
+    AddCheckbox(quests, "vignetteRadarQuestAreas", "Shade Blizzard quest areas", 18, -262)
+    AddDescription(quests, "The actual quest-area shape appears faintly behind markers when north stays at the top.", 49, -292, 435)
+    AddFooter(quests, "Quest areas require north-up. Use the N button to switch.")
 
     SelectPage("Radar")
     panel:SetScript("OnShow", Refresh)

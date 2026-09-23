@@ -22,6 +22,14 @@ function methods:SetFrameStrata(value) self.strata = value end
 function methods:SetFrameLevel(value) self.level = value end
 function methods:GetFrameLevel() return self.level or 1 end
 function methods:SetClampedToScreen(value) self.clamped = value end
+function methods:SetClipsChildren(value) self.clipsChildren = value end
+function methods:SetMapID(value) self.mapID = value end
+function methods:SetFillTexture(value) self.fillTexture = value end
+function methods:SetBorderTexture(value) self.borderTexture = value end
+function methods:SetFillAlpha(value) self.fillAlpha = value end
+function methods:SetBorderAlpha(value) self.borderAlpha = value end
+function methods:DrawNone() self.drawnQuests = {} end
+function methods:DrawBlob(questID) self.drawnQuests = self.drawnQuests or {}; self.drawnQuests[#self.drawnQuests + 1] = questID end
 function methods:SetMovable(value) self.movable = value end
 function methods:EnableMouse(value) self.mouse = value end
 function methods:EnableMouseWheel(value) self.mouseWheel = value end
@@ -874,5 +882,47 @@ assert(panel:IsShown() and not panel.focusReadout:IsShown()
     and panel.layoutHint:IsShown() and panel.sideCaption.text == "NO DETECTIONS"
     and panel.sideGuide.text == "MOVE OR CHECK THE MAP",
     "Squat needs an understandable empty state when no vignette is available")
+
+-- Quest dots follow the chosen orientation, while Blizzard's native blob is
+-- aligned and clipped only when north is fixed at the top.
+local originalWorldPosition = C_Map.GetWorldPosFromMapPos
+C_Map.GetWorldPosFromMapPos = function(_, position)
+    return 42, { x = (0.5 - position.y) * 1000, y = (0.5 - position.x) * 1000 }
+end
+C_QuestLog = {
+    GetQuestsOnMap = function() return { { questID = 12345, x = 0.52, y = 0.5, name = "Nearby quest" } } end,
+    GetTitleForQuestID = function() return "Nearby quest" end,
+}
+settings.vignetteRadarQuestDots = true
+settings.vignetteRadarQuestAreas = true
+settings.vignetteRadarNorthUp = false
+GetPlayerFacing = function() return 0 end
+addon.VignetteRadarAPI.Refresh(true)
+local questDot = assert(panel.questDots[1], "quest locations must create a distinct dot")
+assert(questDot:IsShown() and questDot.quest.questID == 12345 and questDot.point[4] > 0
+    and panel.summary.text == "1 QUEST IN RANGE", "quest dots should show live positions and a readable count")
+assert(panel.questBlob and not panel.questBlob:IsShown(), "exact blobs must wait for north-up mode")
+GetPlayerFacing = function() return math.pi / 2 end
+addon.VignetteRadarAPI.Refresh(false)
+assert(questDot.point[5] < 0, "quest dots should turn with the facing-up radar")
+addon.SetVignetteRadarNorthUp(true)
+assert(questDot.point[4] > 0 and math.abs(questDot.point[5]) < 0.001,
+    "quest dots must return to their fixed map position in north-up mode")
+assert(panel.questClip.clipsChildren and panel.questBlob:IsShown() and panel.questBlob.mapID == 781
+    and panel.questBlob.drawnQuests[1] == 12345 and panel.questBlob.fillAlpha < 128
+    and panel.questBlob.level < questDot.level,
+    "native quest shapes must be translucent, clipped, and behind markers")
+settings.vignetteRadarQuestAreas = false
+settings.vignetteRadarQuestDots = false
+addon.VignetteRadarAPI.Refresh(true)
+assert(not questDot:IsShown() and not panel.questBlob:IsShown(),
+    "each quest overlay must disappear as soon as its option is disabled")
+settings.vignetteRadarQuestAreas = true
+mapID = 782
+C_Map.GetWorldPosFromMapPos = originalWorldPosition
+addon.VignetteRadarAPI.Refresh(true)
+assert(not panel.questBlob:IsShown(),
+    "unrotatable native blobs must not appear on maps whose axes disagree with the radar")
+settings.vignetteRadarQuestAreas = false
 
 io.write("vignette radar UI tests passed\n")

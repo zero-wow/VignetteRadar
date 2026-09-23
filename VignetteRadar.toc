@@ -1,8 +1,8 @@
 ## Interface: 120000, 120001, 120005
 ## Title: Vignette Radar
-## Notes: A heading-up radar for active minimap vignettes, with rare, treasure, and event filters.
+## Notes: A radar for active vignettes with optional quest dots and area shading.
 ## Author: Zero
-## Version: 0.1.0-dev.11
+## Version: 0.1.0-dev.12
 ## OptionalDeps: WaffleHouse_EllesmereUI, EllesmereUI
 ## SavedVariables: VignetteRadarDB
 

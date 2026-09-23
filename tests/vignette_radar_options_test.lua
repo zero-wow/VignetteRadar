@@ -80,6 +80,7 @@ local db = {
     vignetteRadarLayout = "classic",
     vignetteRadarNorthUp = false,
     vignetteRadarWorldMap = true,
+    vignetteRadarQuestDots = false, vignetteRadarQuestAreas = false,
     vignetteRadarAlerts = true, vignetteRadarAlertSound = false,
     vignetteRadarAlertCategories = { rare = true, treasure = 1, event = false, other = false },
     vignetteRadarAlertCooldown = 60, vignetteRadarLastSeen = true,
@@ -135,7 +136,7 @@ local controls = {}
 local byKey = {}
 local choices = {}
 local action = {}
-for _, pageName in ipairs({ "Radar", "Layout", "Alerts", "Behavior" }) do
+for _, pageName in ipairs({ "Radar", "Layout", "Alerts", "Behavior", "Quests" }) do
     local page, tab = assert(panel.pages[pageName]), assert(panel.pageButtons[pageName])
     tab.scripts.OnClick(tab)
     assert(panel.selectedPage == pageName and tab.highlightLocked and page:IsShown())
@@ -173,7 +174,7 @@ for _, pageName in ipairs({ "Radar", "Layout", "Alerts", "Behavior" }) do
         if otherName ~= pageName then assert(not otherPage:IsShown()) end
     end
 end
-for _, pageName in ipairs({ "Radar", "Layout", "Alerts", "Behavior" }) do
+for _, pageName in ipairs({ "Radar", "Layout", "Alerts", "Behavior", "Quests" }) do
     local tab = panel.pageButtons[pageName]
     local x1, _, x2 = rect(tab)
     assert(x1 >= 18 and x2 <= 496,
@@ -182,7 +183,7 @@ end
 assert(#controls >= 26, "each feature must have a usable control")
 for _, key in ipairs({
     "vignetteRadarEnabled", "vignetteRadarHideWhenEmpty", "vignetteRadarLauncherVisible",
-    "vignetteRadarWorldMap", "vignetteRadarNorthUp",
+    "vignetteRadarWorldMap", "vignetteRadarNorthUp", "vignetteRadarQuestDots", "vignetteRadarQuestAreas",
     "vignetteRadarAlerts", "vignetteRadarAlertSound", "vignetteRadarAlertCategories.rare",
     "vignetteRadarAlertCategories.treasure", "vignetteRadarAlertCategories.event",
     "vignetteRadarAlertCategories.other", "vignetteRadarLastSeen", "vignetteRadarQuietCombat",
@@ -194,6 +195,18 @@ assert(byKey["vignetteRadarAlertCategories.rare"].label.text == "Rares and bosse
     and byKey["vignetteRadarShapes"].label.text == "Recognizable icons"
     and byKey["vignetteRadarWorldMap"].label.text == "Include world-map detections",
     "rare alerts and icon settings must use recognizable player-facing names")
+assert(byKey.vignetteRadarQuestDots.label.text == "Show quest location dots"
+    and byKey.vignetteRadarQuestAreas.label.text == "Shade Blizzard quest areas",
+    "quest dots and areas need separate plain-language switches")
+local questHelp = {}
+for _, object in ipairs(objects) do
+    if object.parent == panel.pages.Quests and object.kind == "FontString" and object.text then
+        questHelp[#questHelp + 1] = object.text
+    end
+end
+assert(table.concat(questHelp, " "):find("north", 1, true)
+    and table.concat(questHelp, " "):find("behind markers", 1, true),
+    "quest settings should explain orientation and visual layering")
 local themedCheck = byKey.vignetteRadarAlertSound
 assert(themedCheck.backdrop and #themedCheck.mark == 2 and not themedCheck.mark[1]:IsShown(),
     "every settings checkbox must use the addon surface and a recognizable empty state")

@@ -18,6 +18,8 @@ assert(db.vignetteRadarEnabled == false and db.vignetteRadarHideWhenEmpty == fal
     and db.vignetteRadarLauncherVisible == false and db.vignetteRadarRange == 600,
     "standalone addon must migrate the user's original radar choices")
 assert(db.vignetteRadarWorldMap == true, "world-map detections should be included by default")
+assert(db.vignetteRadarQuestDots == false and db.vignetteRadarQuestAreas == false,
+    "new quest overlays should preserve the existing uncluttered radar until enabled")
 assert(db.vignetteRadarPosition.x == 111 and db.vignetteRadarLauncherPosition.y == -44
     and db.vignetteRadarCategories.rare == false and db.vignetteRadarHighlight == "treasure",
     "standalone addon must preserve placement and category choices")
@@ -55,11 +57,14 @@ for index, layout in ipairs(expectedLayouts) do
 end
 defaults.vignetteRadarRange = 999
 defaults.vignetteRadarWorldMap = "bad"
+defaults.vignetteRadarQuestDots = "bad"
+defaults.vignetteRadarQuestAreas = "bad"
 defaults.vignetteRadarLayout = "unsupported"
 defaults.vignetteRadarNorthUp = "bad"
 defaults.vignetteRadarScale = "bad"
 fresh.GetSettings()
 assert(defaults.vignetteRadarRange == 450 and defaults.vignetteRadarWorldMap == true
+    and defaults.vignetteRadarQuestDots == false and defaults.vignetteRadarQuestAreas == false
     and defaults.vignetteRadarLayout == "classic" and defaults.vignetteRadarNorthUp == false
     and defaults.vignetteRadarScale == 1,
     "invalid range, mode, layout, and north-up values must reset to safe defaults")

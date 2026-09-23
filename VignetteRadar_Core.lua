@@ -68,6 +68,8 @@ function addon.GetSettings()
     end
     if type(db.vignetteRadarNorthUp) ~= "boolean" then db.vignetteRadarNorthUp = false end
     if type(db.vignetteRadarWorldMap) ~= "boolean" then db.vignetteRadarWorldMap = true end
+    if type(db.vignetteRadarQuestDots) ~= "boolean" then db.vignetteRadarQuestDots = false end
+    if type(db.vignetteRadarQuestAreas) ~= "boolean" then db.vignetteRadarQuestAreas = false end
     if type(db.vignetteRadarAlerts) ~= "boolean" then db.vignetteRadarAlerts = true end
     if type(db.vignetteRadarAlertSound) ~= "boolean" then db.vignetteRadarAlertSound = false end
     if type(db.vignetteRadarAlertCategories) ~= "table" then db.vignetteRadarAlertCategories = {} end

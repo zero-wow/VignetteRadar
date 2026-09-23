@@ -16,6 +16,7 @@ local HEADING_BASE, HEADING_TIP, HEADING_HALF_WIDTH = 4, 9, 4
 local HEADING_RAY_RATIO = 0.30
 local UPDATE_SECONDS, RESCAN_SECONDS = 0.05, 1
 local MAX_BLIPS = 64
+local MAX_QUEST_DOTS = 64
 local ACCENT = { 0.05, 0.82, 0.62 }
 local RED = { 1, 0.18, 0.14 }
 local CIRCLE_TEXTURE = "Interface\\CharacterFrame\\TempPortraitAlphaMask"
@@ -30,6 +31,8 @@ local panel, launcher
 local preview = false
 local manualPanelState
 local activeTargets = {}
+local activeQuests = {}
+local questMapBasis
 local activeMapID
 local activeWorldMapMode
 local pulseUntil = 0
@@ -167,6 +170,11 @@ local function ReadXY(vector)
     return SafeNumber(vx), SafeNumber(vy)
 end
 
+local function MapVector(x, y)
+    local vector = type(CreateVector2D) == "function" and Call(CreateVector2D, x, y) or nil
+    return vector or { x = x, y = y }
+end
+
 local function MapToWorld(mapID, mapPosition)
     if not (C_Map and C_Map.GetWorldPosFromMapPos) then return nil end
     local instanceID, worldPosition = Call(C_Map.GetWorldPosFromMapPos, mapID, mapPosition)
@@ -296,6 +304,37 @@ local function CollectVignettes(mapID)
     return targets
 end
 
+local function CollectQuests(mapID)
+    local quests = {}
+    if not (mapID and C_QuestLog and C_QuestLog.GetQuestsOnMap
+        and (Settings().vignetteRadarQuestDots or Settings().vignetteRadarQuestAreas)) then
+        return quests
+    end
+    local records = Call(C_QuestLog.GetQuestsOnMap, mapID)
+    if IsSecret(records) or type(records) ~= "table" then return quests end
+    local seen = {}
+    for index = 1, math.min(#records, 256) do
+        local record = records[index]
+        local questID = SafeNumber(SafeField(record, "questID"))
+        local x, y = SafeNumber(SafeField(record, "x")), SafeNumber(SafeField(record, "y"))
+        if questID and questID > 0 and x and y and x >= 0 and x <= 1 and y >= 0 and y <= 1
+            and not seen[questID] then
+            local worldX, worldY, instanceID = MapToWorld(mapID, MapVector(x, y))
+            if worldX and worldY then
+                seen[questID] = true
+                quests[#quests + 1] = {
+                    questID = questID, mapX = x, mapY = y,
+                    worldX = worldX, worldY = worldY, instanceID = instanceID,
+                    name = SafeString(SafeField(record, "name"))
+                        or SafeString(Call(C_QuestLog.GetTitleForQuestID, questID)) or "Quest location",
+                }
+            end
+        end
+    end
+    return quests
+end
+
+
 local function NormalizeAngle(angle)
     angle = angle % TWO_PI
     if angle > math.pi then angle = angle - TWO_PI end
@@ -314,6 +353,7 @@ end
 addon.VignetteRadarTesting = {
     ClassifyVignette = ClassifyVignette,
     CollectVignettes = CollectVignettes,
+    CollectQuests = CollectQuests,
     DisplayableVignetteInfo = DisplayableVignetteInfo,
     NormalizeAngle = NormalizeAngle,
     Project = Project,
@@ -681,6 +721,118 @@ local function ReleaseAllBlips()
     for _, entry in ipairs(assigned) do ReleaseBlip(entry[1], entry[2]) end
 end
 
+local function HideQuestDots()
+    if not panel or not panel.questDots then return end
+    for _, dot in ipairs(panel.questDots) do dot:Hide() end
+end
+
+local function RenderQuestDots(player, range)
+    if not (Settings().vignetteRadarQuestDots and player) then HideQuestDots(); return 0 end
+    local count = 0
+    for _, quest in ipairs(activeQuests) do
+        if not (player.instanceID and quest.instanceID and player.instanceID ~= quest.instanceID) then
+            local dx, dy = quest.worldX - player.worldX, quest.worldY - player.worldY
+            local distance = math.sqrt(dx * dx + dy * dy)
+            if distance <= range and count < MAX_QUEST_DOTS then
+                local x, y = Project(dx, dy, distance, ViewFacing(player.facing), panel.plotRadius, range)
+                if x and y then
+                    count = count + 1
+                    local dot = panel.questDots[count]
+                    if not dot then
+                        dot = CreateFrame("Button", nil, panel.field)
+                        dot:SetSize(12, 12)
+                        dot:SetFrameLevel(panel.field:GetFrameLevel() + 3)
+                        dot.rim = dot:CreateTexture(nil, "ARTWORK")
+                        dot.rim:SetSize(8, 8)
+                        dot.rim:SetPoint("CENTER")
+                        dot.rim:SetTexture(CIRCLE_TEXTURE)
+                        dot.rim:SetVertexColor(0.04, 0.04, 0.03, 0.9)
+                        dot.fill = dot:CreateTexture(nil, "OVERLAY")
+                        dot.fill:SetSize(5, 5)
+                        dot.fill:SetPoint("CENTER")
+                        dot.fill:SetTexture(CIRCLE_TEXTURE)
+                        dot.fill:SetVertexColor(1, 0.74, 0.27, 1)
+                        dot:EnableMouseWheel(true)
+                        dot:SetScript("OnMouseWheel", OnZoomWheel)
+                        dot:SetScript("OnEnter", function(self)
+                            if not GameTooltip then return end
+                            GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+                            GameTooltip:SetText(self.quest.name, 1, 0.82, 0.35)
+                            GameTooltip:AddLine(math.floor(self.distance + 0.5) .. " yd from you", 0.72, 0.76, 0.78)
+                            GameTooltip:Show()
+                        end)
+                        dot:SetScript("OnLeave", function() if GameTooltip then GameTooltip:Hide() end end)
+                        panel.questDots[count] = dot
+                    end
+                    dot.quest, dot.distance = quest, distance
+                    dot:ClearAllPoints()
+                    dot:SetPoint("CENTER", panel.field, "CENTER", x, y)
+                    dot:Show()
+                end
+            end
+        end
+    end
+    for index = count + 1, #panel.questDots do panel.questDots[index]:Hide() end
+    return count
+end
+
+local function HideQuestAreas()
+    if panel and panel.questBlob then
+        panel.questBlob:Hide()
+        panel.questBlob.drawnKey = nil
+    end
+end
+
+local function RenderQuestAreas(player, mapID, range)
+    local blob = panel.questBlob
+    if not (blob and player and mapID and Settings().vignetteRadarQuestAreas
+        and Settings().vignetteRadarNorthUp and #activeQuests > 0) then
+        HideQuestAreas()
+        return
+    end
+    -- Blizzard's quest widget draws in map coordinates. Keep its full-map canvas
+    -- aligned with the north-up radar, and clip it to the plotting frame.
+    if not questMapBasis or questMapBasis.mapID ~= mapID then
+        local originX, originY, originInstance = MapToWorld(mapID, MapVector(0, 0))
+        local rightX, rightY, rightInstance = MapToWorld(mapID, MapVector(1, 0))
+        local downX, downY, downInstance = MapToWorld(mapID, MapVector(0, 1))
+        questMapBasis = { mapID = mapID }
+        if originX and rightX and downX
+            and (not originInstance or not rightInstance or originInstance == rightInstance)
+            and (not originInstance or not downInstance or originInstance == downInstance) then
+            local horizontal = math.sqrt((rightX - originX)^2 + (rightY - originY)^2)
+            local vertical = math.sqrt((downX - originX)^2 + (downY - originY)^2)
+            -- Native blobs cannot rotate. Only show them when map axes match the radar.
+            if horizontal > 0 and vertical > 0 and math.abs(rightX - originX) <= horizontal * 0.03
+                and rightY < originY and math.abs(downY - originY) <= vertical * 0.03 and downX < originX then
+                questMapBasis.horizontal, questMapBasis.vertical = horizontal, vertical
+            end
+        end
+    end
+    if not questMapBasis.horizontal then HideQuestAreas(); return end
+    local pixelsPerYard = panel.plotRadius / range
+    local width, height = questMapBasis.horizontal * pixelsPerYard, questMapBasis.vertical * pixelsPerYard
+    if width > 8192 or height > 8192 or width < 1 or height < 1 then HideQuestAreas(); return end
+    local key = tostring(mapID) .. ":" .. tostring(width) .. ":" .. tostring(height)
+    for _, quest in ipairs(activeQuests) do key = key .. ":" .. tostring(quest.questID) end
+    blob:SetSize(width, height)
+    blob:ClearAllPoints()
+    blob:SetPoint("CENTER", panel.field, "CENTER", (0.5 - player.mapX) * width, (player.mapY - 0.5) * height)
+    if blob.drawnKey ~= key then
+        local ok = pcall(blob.SetMapID, blob, mapID)
+        if ok then ok = pcall(blob.DrawNone, blob) end
+        if ok then
+            for _, quest in ipairs(activeQuests) do
+                if not pcall(blob.DrawBlob, blob, quest.questID, true) then ok = false; break end
+            end
+        end
+        if not ok then HideQuestAreas(); return end
+        blob.drawnKey = key
+    end
+    blob:Show()
+    return true
+end
+
 local function PlaceBlip(key, screenX, screenY, target)
     local blip = panel.blipByKey[key]
     if not blip then
@@ -863,11 +1015,14 @@ local function UpdateFocusReadout(target, player, selected)
     panel.layoutHint:SetShown(squat and target == nil)
     if squat then
         local outside = target and target.distance and target.distance > Settings().vignetteRadarRange
+        local questContext = not target and #activeQuests > 0 and (Settings().vignetteRadarQuestDots
+            or (Settings().vignetteRadarQuestAreas and Settings().vignetteRadarNorthUp))
         panel.sideCaption:SetText(selected and "TRACKING" or (outside and "OUTSIDE RADAR RANGE"
-            or (target and "NEAREST DETECTION" or "NO DETECTIONS")))
+            or (target and "NEAREST DETECTION" or (questContext and "QUEST LOCATIONS" or "NO DETECTIONS"))))
         panel.sideGuide:SetText(selected and "CLICK AGAIN TO SHOW ALL" or (outside and "ZOOM OUT TO SEE IT"
-            or (target and "CLICK TO FOCUS" or "MOVE OR CHECK THE MAP")))
-        if not target then panel.layoutHint:SetText("Nothing detected here yet.") end
+            or (target and "CLICK TO FOCUS" or (questContext and "ZOOM FOR QUEST DETAIL" or "MOVE OR CHECK THE MAP"))))
+        if not target then panel.layoutHint:SetText(questContext and "Your quest locations are on the radar."
+            or "Nothing detected here yet.") end
     end
     panel.edgeArrow:Hide()
     if not target then return end
@@ -961,6 +1116,8 @@ Render = function()
     UpdateFocusReadout(sidebarTarget, player, focusedTarget ~= nil)
 
     if preview then
+        HideQuestDots()
+        HideQuestAreas()
         panel.summary:SetText(FocusedTargetKey() and "PREVIEW FOCUS" or "PREVIEW")
         RenderCardinals(ViewFacing(0.65))
         DrawPlayerHeading(panel.direction, panel.field, 0.65, HEADING_TIP, panel.plotRadius * HEADING_RAY_RATIO)
@@ -978,6 +1135,8 @@ Render = function()
     end
 
     if not player then
+        HideQuestDots()
+        HideQuestAreas()
         panel.summary:SetText("POSITION UNAVAILABLE")
         if panel.layout == "squat" then
             panel.sideCaption:SetText("POSITION UNAVAILABLE")
@@ -996,6 +1155,8 @@ Render = function()
     DrawPlayerChevron(panel.headingChevron, panel.field, player.facing)
     panel.direction:SetShown(player.headingAvailable)
     for _, line in ipairs(panel.headingChevron) do line:SetShown(player.headingAvailable) end
+    local questAreasShown = RenderQuestAreas(player, mapID, range)
+    local questsInRange = RenderQuestDots(player, range)
     local shown, staleShown, totalInRange = 0, 0, 0
     for _, target in ipairs(targets) do
         if TargetVisible(target)
@@ -1020,6 +1181,9 @@ Render = function()
     else
         panel.summary:SetText(totalInRange > shown and (shown .. " OF " .. totalInRange .. " SHOWN")
             or staleShown > 0 and ((shown - staleShown) .. " LIVE / " .. staleShown .. " SEEN")
+            or (shown == 0 and questsInRange > 0 and (questsInRange == 1 and "1 QUEST IN RANGE"
+                or questsInRange .. " QUESTS IN RANGE"))
+            or (shown == 0 and questAreasShown and "QUEST AREAS")
             or (shown == 1 and "1 IN RANGE" or shown .. " IN RANGE"))
     end
     EndBlips()
@@ -1614,6 +1778,28 @@ local function EnsurePanel()
     panel.field.background:SetAllPoints()
     panel.field.background:SetTexture(CIRCLE_TEXTURE)
     panel.field.background:SetVertexColor(0.015, 0.022, 0.028, 0.94)
+    panel.questDots = {}
+    panel.questClip = CreateFrame("Frame", nil, panel.field)
+    panel.questClip:SetAllPoints(panel.field)
+    panel.questClip:SetFrameLevel(panel.field:GetFrameLevel() + 1)
+    panel.questClip:EnableMouse(false)
+    if type(panel.questClip.SetClipsChildren) == "function" then
+        panel.questClip:SetClipsChildren(true)
+        local ok, blob = pcall(CreateFrame, "QuestPOIFrame", nil, panel.questClip)
+        if ok and blob and type(blob.SetMapID) == "function" and type(blob.DrawBlob) == "function"
+            and type(blob.DrawNone) == "function" and type(blob.SetFillTexture) == "function"
+            and type(blob.SetBorderTexture) == "function" and type(blob.SetFillAlpha) == "function"
+            and type(blob.SetBorderAlpha) == "function" then
+            panel.questBlob = blob
+            blob:SetFrameLevel(panel.field:GetFrameLevel() + 2)
+            blob:EnableMouse(false)
+            blob:SetFillTexture("Interface\\WorldMap\\UI-QuestBlob-Inside")
+            blob:SetBorderTexture("Interface\\WorldMap\\UI-QuestBlob-Outside")
+            blob:SetFillAlpha(48)
+            blob:SetBorderAlpha(0)
+            blob:Hide()
+        end
+    end
     panel.field.halo = panel.field:CreateTexture(nil, "BACKGROUND", nil, -1)
     panel.field.halo:SetPoint("CENTER")
     panel.field.halo:SetSize(FIELD_SIZE + 4, FIELD_SIZE + 4)
@@ -1747,6 +1933,8 @@ local function EnsurePanel()
     end)
     panel:SetScript("OnHide", function()
         ReleaseAllBlips()
+        HideQuestDots()
+        HideQuestAreas()
         panel.legend:SetAlpha(0.68)
         UpdateTargetButton()
         local legend = LegendAPI()
@@ -1764,6 +1952,7 @@ ScanVignettes = function(mapID)
     if activeMapID ~= mapID or preview or Settings().vignetteRadarEnabled ~= true then pulseUntil = 0 end
     activeMapID = mapID
     activeTargets = CollectVignettes(mapID)
+    activeQuests = CollectQuests(mapID)
     if Features() then
         local worldMapMode = Settings().vignetteRadarWorldMap ~= false
         if activeWorldMapMode ~= nil and worldMapMode ~= activeWorldMapMode then
@@ -1808,7 +1997,9 @@ RefreshRadar = function(rescan)
     end
     if manualPanelState == false then
         if panel then panel:Hide() end
-    elseif manualPanelState == true or preview or settings.vignetteRadarHideWhenEmpty == false or #SelectableTargets() > 0 then
+    elseif manualPanelState == true or preview or settings.vignetteRadarHideWhenEmpty == false
+        or #SelectableTargets() > 0 or (#activeQuests > 0 and (settings.vignetteRadarQuestDots
+            or (settings.vignetteRadarQuestAreas and settings.vignetteRadarNorthUp))) then
         EnsurePanel():Show()
         Render()
     elseif panel then
@@ -1942,6 +2133,7 @@ local events = CreateFrame("Frame")
 for _, event in ipairs({
     "PLAYER_LOGIN", "PLAYER_ENTERING_WORLD", "ZONE_CHANGED_NEW_AREA",
     "VIGNETTES_UPDATED", "VIGNETTE_MINIMAP_UPDATED",
+    "QUEST_LOG_UPDATE", "QUEST_POI_UPDATE", "SUPER_TRACKING_CHANGED",
     "PLAYER_REGEN_DISABLED", "PLAYER_REGEN_ENABLED", "ZONE_CHANGED", "ZONE_CHANGED_INDOORS",
 }) do
     events:RegisterEvent(event)
