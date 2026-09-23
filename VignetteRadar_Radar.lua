@@ -12,8 +12,8 @@ local LAYOUTS = {
     compact = { width = 184, height = 260, field = 164, footer = 50, focus = 64 },
 }
 local LAUNCHER_SIZE, LAUNCHER_RADIUS, LAUNCHER_RANGE = 44, 13, 150
-local HEADING_BASE, HEADING_TIP, HEADING_HALF_WIDTH = 9, 18, 7
-local HEADING_RAY_RATIO = 0.72
+local HEADING_BASE, HEADING_TIP, HEADING_HALF_WIDTH = 7, 13, 5
+local HEADING_RAY_RATIO = 0.38
 local UPDATE_SECONDS, RESCAN_SECONDS = 0.05, 1
 local MAX_BLIPS = 64
 local ACCENT = { 0.05, 0.82, 0.62 }
@@ -1619,10 +1619,10 @@ local function EnsurePanel()
     panel.field.halo:SetSize(FIELD_SIZE + 4, FIELD_SIZE + 4)
     panel.field.halo:SetTexture(CIRCLE_TEXTURE)
     panel.field.halo:SetVertexColor(ACCENT[1], ACCENT[2], ACCENT[3], 0.18)
-    panel.outerRing = AddRing(panel.field, FIELD_RADIUS, 0.44)
-    panel.rangeRing = AddRing(panel.field, PLOT_RADIUS, 0.23)
-    panel.middleRing = AddRing(panel.field, PLOT_RADIUS * (2 / 3), 0.23)
-    panel.innerRing = AddRing(panel.field, PLOT_RADIUS / 3, 0.18)
+    panel.outerRing = AddRing(panel.field, FIELD_RADIUS, 0.28)
+    panel.rangeRing = AddRing(panel.field, PLOT_RADIUS, 0.12)
+    panel.middleRing = AddRing(panel.field, PLOT_RADIUS * (2 / 3), 0.08)
+    panel.innerRing = AddRing(panel.field, PLOT_RADIUS / 3, 0.06)
 
     panel.innerLabel = Text(panel.field, 8, "150y")
     panel.innerLabel:SetTextColor(ACCENT[1], ACCENT[2], ACCENT[3], 0.55)
@@ -1645,7 +1645,7 @@ local function EnsurePanel()
     panel.headingChevron = {}
     for index = 1, 2 do
         local line = panel.field:CreateLine(nil, "OVERLAY")
-        line:SetThickness(3)
+        line:SetThickness(2.25)
         line:SetColorTexture(0.52, 1, 0.88, 1)
         panel.headingChevron[index] = line
     end
