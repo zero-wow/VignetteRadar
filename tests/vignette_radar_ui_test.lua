@@ -31,6 +31,13 @@ function methods:RegisterForDrag(...) self.dragButtons = { ... } end
 function methods:RegisterEvent(event) self.events = self.events or {}; self.events[event] = true end
 function methods:UnregisterEvent(event) self.events[event] = nil end
 function methods:SetScript(name, callback) self.scripts = self.scripts or {}; self.scripts[name] = callback end
+function methods:HookScript(name, callback)
+    local previous = self.scripts and self.scripts[name]
+    self:SetScript(name, function(...)
+        if previous then previous(...) end
+        callback(...)
+    end)
+end
 function methods:SetChecked(value) self.checked = value end
 function methods:GetChecked() return self.checked end
 function methods:LockHighlight() self.highlightLocked = true end
@@ -47,7 +54,8 @@ function methods:SetThickness(value) self.thickness = value end
 function methods:SetStartPoint(...) self.startPoint = { ... } end
 function methods:SetEndPoint(...) self.endPoint = { ... } end
 function methods:SetFont(...) self.font = { ... } end
-function methods:SetText(value) self.text = value end
+function methods:SetFontString(value) self.fontString = value end
+function methods:SetText(value) self.text = value; if self.fontString then self.fontString:SetText(value) end end
 function methods:SetTextColor(...) self.textColor = { ... } end
 function methods:SetJustifyH(value) self.justifyH = value end
 function methods:SetWordWrap(value) self.wordWrap = value end
@@ -76,7 +84,7 @@ function methods:CreateLine()
 end
 
 function CreateFrame(kind, name, parent)
-    local frame = setmetatable({ kind = kind, name = name, parent = parent, shown = false }, { __index = methods })
+    local frame = setmetatable({ kind = kind, name = name, parent = parent, shown = false, enabled = true }, { __index = methods })
     objects[#objects + 1] = frame
     if name then _G[name] = frame end
     return frame
@@ -121,6 +129,7 @@ local settings = { vignetteRadarEnabled = true, vignetteRadarHideWhenEmpty = tru
 local addon = { GetSettings = function() return settings end }
 VignetteRadarDB = settings
 assert(loadfile("VignetteRadar_Core.lua"))("VignetteRadar", addon)
+assert(loadfile("VignetteRadar_Controls.lua"))("VignetteRadar", addon)
 assert(loadfile("VignetteRadar_Features.lua"))("VignetteRadar", addon)
 assert(loadfile(legendSourcePath))("VignetteRadar", addon)
 assert(loadfile(targetPickerSourcePath))("VignetteRadar", addon)

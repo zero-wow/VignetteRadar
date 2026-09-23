@@ -73,10 +73,8 @@ local function AddCheckbox(parent, key, title, x, y, subkey, labelWidth)
 end
 
 local function AddButton(parent, title, x, y, width, callback)
-    local button = CreateFrame("Button", nil, parent, "UIPanelButtonTemplate")
-    button:SetSize(width, 24)
+    local button = addon.VignetteRadarControls.Button(parent, title, width, 24)
     button:SetPoint("TOPLEFT", parent, "TOPLEFT", x, y)
-    button:SetText(title)
     button:SetScript("OnClick", callback)
     return button
 end
@@ -121,8 +119,8 @@ local function BuildPanel()
     panel:Hide()
     panel.pages, panel.pageButtons = {}, {}
 
-    closeButton = CreateFrame("Button", nil, panel, "UIPanelCloseButton")
-    closeButton:SetPoint("TOPRIGHT", panel, "TOPRIGHT", -4, -4)
+    closeButton = addon.VignetteRadarControls.Button(panel, "×", 24, 24)
+    closeButton:SetPoint("TOPRIGHT", panel, "TOPRIGHT", -8, -8)
     closeButton:SetScript("OnClick", function() panel:Hide() end)
     closeButton:Hide()
 

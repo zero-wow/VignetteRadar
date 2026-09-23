@@ -37,6 +37,6 @@ Preview samples support focus without changing favorites, ignores, or navigation
 
 ## Development validation
 
-Current development build: `0.1.0-dev.3` (base version `0.1.0`).
+Current development build: `0.1.0-dev.4` (base version `0.1.0`).
 
 Run each `tests/*_test.lua` with Lua from the addon root and check Lua files with `luac -p`. The tests cover migration, radar projection, filters, target actions, alert/last-seen state, navigation fallbacks, quiet modes, mouse-wheel/button zoom, world-map visibility guards, and UI layout bounds using mocked game APIs. These checks do not replace in-game validation of rendering, navigation, or API availability.

@@ -6,7 +6,15 @@ function methods:SetSize(width, height) self.width, self.height = width, height 
 function methods:SetWidth(width) self.width = width end
 function methods:SetPoint(...) self.points = self.points or {}; self.points[#self.points + 1] = { ... } end
 function methods:ClearAllPoints() self.points = {} end
-function methods:SetText(value) self.text = value end
+function methods:SetFontString(value) self.fontString = value end
+function methods:SetText(value) self.text = value; if self.fontString then self.fontString:SetText(value) end end
+function methods:SetFont(...) self.font = { ... } end
+function methods:SetTextColor(...) self.textColor = { ... } end
+function methods:SetBackdrop(value) self.backdrop = value end
+function methods:SetBackdropColor(...) self.backdropColor = { ... } end
+function methods:SetBackdropBorderColor(...) self.backdropBorderColor = { ... } end
+function methods:SetAlpha(value) self.alpha = value end
+function methods:SetColorTexture(...) self.color = { ... } end
 function methods:SetWordWrap(value) self.wordWrap = value end
 function methods:SetJustifyH(value) self.justifyH = value end
 function methods:SetChecked(value) self.checked = value end
@@ -21,13 +29,19 @@ function methods:SetFrameStrata(value) self.strata = value end
 function methods:Show() self.shown = true; if self.scripts and self.scripts.OnShow then self.scripts.OnShow(self) end end
 function methods:Hide() self.shown = false end
 function methods:IsShown() return self.shown == true end
+function methods:SetShown(value) if value then self:Show() else self:Hide() end end
+function methods:CreateTexture()
+    local texture = setmetatable({ kind = "Texture", parent = self }, { __index = methods })
+    objects[#objects + 1] = texture
+    return texture
+end
 function methods:CreateFontString()
     local label = setmetatable({ kind = "FontString", parent = self }, { __index = methods })
     objects[#objects + 1] = label
     return label
 end
 function CreateFrame(kind, name, parent)
-    local frame = setmetatable({ kind = kind, name = name, parent = parent }, { __index = methods })
+    local frame = setmetatable({ kind = kind, name = name, parent = parent, enabled = true }, { __index = methods })
     objects[#objects + 1] = frame
     if name then _G[name] = frame end
     return frame
@@ -69,6 +83,7 @@ local addon = {
         db.vignetteRadarIgnored = {}
     end },
 }
+assert(loadfile("VignetteRadar_Controls.lua"))("VignetteRadar", addon)
 assert(loadfile(sourcePath))("VignetteRadar", addon)
 local event
 for _, object in ipairs(objects) do
