@@ -45,7 +45,14 @@ local function AddLabel(parent, title, x, y)
     return label
 end
 
-local function AddCheckbox(parent, key, title, x, y, subkey, labelWidth)
+local function AddDescription(parent, title, x, y, width)
+    local label = AddLabel(parent, title, x, y)
+    label:SetWidth(width)
+    label:SetWordWrap(true)
+    return label
+end
+
+local function AddCheckbox(parent, key, title, x, y, subkey, labelWidth, presentationOnly)
     local checkbox = CreateFrame("CheckButton", nil, parent, "UICheckButtonTemplate")
     checkbox:SetPoint("TOPLEFT", parent, "TOPLEFT", x, y)
     checkbox:SetSize(26, 26)
@@ -66,7 +73,12 @@ local function AddCheckbox(parent, key, title, x, y, subkey, labelWidth)
         else
             addon.GetSettings()[key] = enabled
         end
-        Changed()
+        if presentationOnly and type(addon.RefreshVignetteRadar) == "function" then
+            addon.RefreshVignetteRadar(false)
+            Refresh()
+        else
+            Changed()
+        end
     end)
     checkboxes[#checkboxes + 1] = checkbox
     return checkbox
@@ -86,6 +98,21 @@ local function AddChoice(parent, key, value, title, x, y, width)
     end)
     if not choiceGroups[key] then choiceGroups[key] = {} end
     choiceGroups[key][value] = button
+    return button
+end
+
+local function AddLayoutChoice(parent, value, title, x, y, width)
+    local button = AddButton(parent, title, x, y, width, function()
+        addon.GetSettings().vignetteRadarLayout = value
+        if type(addon.RefreshVignetteRadar) == "function" then
+            addon.RefreshVignetteRadar(false)
+            Refresh()
+        else
+            Changed()
+        end
+    end)
+    if not choiceGroups.vignetteRadarLayout then choiceGroups.vignetteRadarLayout = {} end
+    choiceGroups.vignetteRadarLayout[value] = button
     return button
 end
 
@@ -151,7 +178,7 @@ local function BuildPanel()
         page:SetSize(520, 365)
         page:Hide()
         panel.pages[name] = page
-        local button = AddButton(panel, name, 24 + (index - 1) * 156, -77, 144, function()
+        local button = AddButton(panel, name, 18 + (index - 1) * 120, -77, 114, function()
             SelectPage(name)
         end)
         panel.pageButtons[name] = button
@@ -178,7 +205,21 @@ local function BuildPanel()
     end)
     AddFooter(radar, "/vr toggles the full panel. Right-click the launcher for a layout preview.")
 
-    local alerts = AddPage("Alerts", 2)
+    local layout = AddPage("Layout", 2)
+    AddLabel(layout, "Choose the panel arrangement that fits your screen.", 24, -118)
+    AddLayoutChoice(layout, "classic", "Classic", 24, -148, 144)
+    AddLayoutChoice(layout, "squat", "Squat", 188, -148, 144)
+    AddLayoutChoice(layout, "compact", "Compact", 352, -148, 144)
+    AddDescription(layout, "Current portrait radar with details below.", 24, -181, 144)
+    AddDescription(layout, "Wide and short: radar left, details right, buttons below.", 188, -181, 144)
+    AddDescription(layout, "Smaller radar with range and controls below.", 352, -181, 144)
+    AddCheckbox(layout, "vignetteRadarNorthUp", "Keep north at the top", 18, -229, nil, nil, true)
+    AddButton(layout, "Preview layout", 24, -264, 144, function()
+        addon.ToggleVignetteRadarPreview()
+    end)
+    AddFooter(layout, "Layouts keep your range, filters, and saved positions.")
+
+    local alerts = AddPage("Alerts", 3)
     AddCheckbox(alerts, "vignetteRadarAlerts", "Pulse for newly seen vignettes", 18, -118)
     AddCheckbox(alerts, "vignetteRadarAlertSound", "Play an alert sound", 18, -153)
     AddLabel(alerts, "Alert categories", 24, -193)
@@ -192,7 +233,7 @@ local function BuildPanel()
     AddChoice(alerts, "vignetteRadarAlertCooldown", 120, "120 sec", 402, -278, 68)
     AddFooter(alerts, "Alerts apply to newly detected, enabled categories.")
 
-    local behavior = AddPage("Behavior", 3)
+    local behavior = AddPage("Behavior", 4)
     AddCheckbox(behavior, "vignetteRadarLastSeen", "Keep last-seen markers", 18, -118, nil, 185)
     AddLabel(behavior, "Keep for", 24, -157)
     AddChoice(behavior, "vignetteRadarLastSeenSeconds", 5, "5 sec", 24, -178, 62)

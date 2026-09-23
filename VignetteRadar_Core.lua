@@ -2,6 +2,7 @@ local _, addon = ...
 if type(addon) ~= "table" then return end
 
 addon.VignetteRadarRanges = { 150, 300, 450, 600, 1200, 2400, 4800 }
+addon.VignetteRadarLayouts = { "classic", "squat", "compact" }
 
 local MIGRATED_KEYS = {
     "vignetteRadarEnabled",
@@ -51,6 +52,15 @@ function addon.GetSettings()
         end
     end
     if not validRange then db.vignetteRadarRange = 450 end
+    local validLayout = false
+    for _, layout in ipairs(addon.VignetteRadarLayouts) do
+        if db.vignetteRadarLayout == layout then
+            validLayout = true
+            break
+        end
+    end
+    if not validLayout then db.vignetteRadarLayout = "classic" end
+    if type(db.vignetteRadarNorthUp) ~= "boolean" then db.vignetteRadarNorthUp = false end
     if type(db.vignetteRadarWorldMap) ~= "boolean" then db.vignetteRadarWorldMap = true end
     if type(db.vignetteRadarAlerts) ~= "boolean" then db.vignetteRadarAlerts = true end
     if type(db.vignetteRadarAlertSound) ~= "boolean" then db.vignetteRadarAlertSound = false end

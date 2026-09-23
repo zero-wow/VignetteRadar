@@ -37,7 +37,8 @@ assert(loadfile(sourcePath))("VignetteRadar", fresh)
 local defaults = fresh.GetSettings()
 assert(defaults.vignetteRadarEnabled == true and defaults.vignetteRadarHideWhenEmpty == true
     and defaults.vignetteRadarLauncherVisible == true and defaults.vignetteRadarRange == 450
-    and defaults.vignetteRadarWorldMap == true,
+    and defaults.vignetteRadarWorldMap == true and defaults.vignetteRadarLayout == "classic"
+    and defaults.vignetteRadarNorthUp == false,
     "the radar must work without either optional addon installed")
 local expectedRanges = { 150, 300, 450, 600, 1200, 2400, 4800 }
 assert(#fresh.VignetteRadarRanges == #expectedRanges, "all selectable ranges must be published")
@@ -47,12 +48,28 @@ for index, range in ipairs(expectedRanges) do
     fresh.GetSettings()
     assert(defaults.vignetteRadarRange == range, "supported range must remain valid: " .. range)
 end
+local expectedLayouts = { "classic", "squat", "compact" }
+assert(#fresh.VignetteRadarLayouts == #expectedLayouts, "all selectable layouts must be published")
+for index, layout in ipairs(expectedLayouts) do
+    assert(fresh.VignetteRadarLayouts[index] == layout, "layout order must stay stable")
+end
 defaults.vignetteRadarRange = 999
 defaults.vignetteRadarWorldMap = "bad"
+defaults.vignetteRadarLayout = "unsupported"
+defaults.vignetteRadarNorthUp = "bad"
 fresh.GetSettings()
-assert(defaults.vignetteRadarRange == 450 and defaults.vignetteRadarWorldMap == true,
-    "invalid range and mode values must reset to safe defaults")
+assert(defaults.vignetteRadarRange == 450 and defaults.vignetteRadarWorldMap == true
+    and defaults.vignetteRadarLayout == "classic" and defaults.vignetteRadarNorthUp == false,
+    "invalid range, mode, layout, and north-up values must reset to safe defaults")
 defaults.vignetteRadarWorldMap = false
+defaults.vignetteRadarNorthUp = true
+fresh.GetSettings()
+assert(defaults.vignetteRadarNorthUp == true, "north-up preference must persist when enabled")
+for _, layout in ipairs({ "classic", "squat", "compact" }) do
+    defaults.vignetteRadarLayout = layout
+    fresh.GetSettings()
+    assert(defaults.vignetteRadarLayout == layout, "supported layout must persist: " .. layout)
+end
 fresh.GetSettings()
 assert(defaults.vignetteRadarWorldMap == false, "world-map choice must persist when disabled")
 assert(defaults.vignetteRadarAlerts == true and defaults.vignetteRadarAlertSound == false

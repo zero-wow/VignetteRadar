@@ -6,6 +6,11 @@ local ZOOM_FOOTER_H = 26
 local HEADER_H, FIELD_SIZE = 34, 200
 local FIELD_RADIUS = (FIELD_SIZE / 2) - 9
 local PLOT_RADIUS = FIELD_RADIUS - 15
+local LAYOUTS = {
+    classic = { width = 220, height = 278, field = 200, footer = 26, focus = 46 },
+    squat = { width = 374, height = 230, field = 184 },
+    compact = { width = 184, height = 260, field = 164, footer = 50, focus = 64 },
+}
 local LAUNCHER_SIZE, LAUNCHER_RADIUS, LAUNCHER_RANGE = 44, 13, 150
 local UPDATE_SECONDS, RESCAN_SECONDS = 0.05, 1
 local MAX_BLIPS = 64
@@ -40,6 +45,22 @@ local PREVIEW_TARGETS = {
 
 local function Settings()
     return addon.GetSettings()
+end
+
+local function ViewFacing(facing)
+    return Settings().vignetteRadarNorthUp == true and 0 or facing
+end
+
+local function PreviewPosition(x, y)
+    local angle = Settings().vignetteRadarNorthUp == true and 0.65 or 0
+    return x * math.cos(angle) - y * math.sin(angle), x * math.sin(angle) + y * math.cos(angle)
+end
+
+local function DrawPlayerHeading(line, frame, facing, innerRadius, outerRadius)
+    local angle = facing - ViewFacing(facing)
+    local x, y = -math.sin(angle), math.cos(angle)
+    line:SetStartPoint("CENTER", frame, "CENTER", x * innerRadius, y * innerRadius)
+    line:SetEndPoint("CENTER", frame, "CENTER", x * outerRadius, y * outerRadius)
 end
 
 local function Ranges()
@@ -320,6 +341,14 @@ local function AddRing(field, radius, alpha)
         lines[index] = line
     end
     return lines
+end
+
+local function ResizeRing(lines, field, radius)
+    for index, line in ipairs(lines) do
+        local first, last = ((index - 1) / #lines) * TWO_PI, (index / #lines) * TWO_PI
+        line:SetStartPoint("CENTER", field, "CENTER", math.cos(first) * radius, math.sin(first) * radius)
+        line:SetEndPoint("CENTER", field, "CENTER", math.cos(last) * radius, math.sin(last) * radius)
+    end
 end
 
 local function LegendAPI()
@@ -674,7 +703,7 @@ local function RenderCardinals(facing)
         local label = panel.cardinals[index]
         label:ClearAllPoints()
         label:SetPoint("CENTER", panel.field, "CENTER",
-            -math.sin(relative) * (FIELD_RADIUS - 5), math.cos(relative) * (FIELD_RADIUS - 5))
+            -math.sin(relative) * (panel.fieldRadius - 5), math.cos(relative) * (panel.fieldRadius - 5))
     end
 end
 
@@ -683,13 +712,109 @@ local function UpdateRingLabels(range)
     panel.outerLabel:SetText(math.floor((range * 2) / 3) .. "y")
 end
 
+local function ApplyPanelLayout(focused)
+    local name = Settings().vignetteRadarLayout or "classic"
+    if not LAYOUTS[name] then name = "classic" end
+    if panel.layout == name and panel.layoutFocused == focused then return end
+    local changed = panel.layout ~= name
+    local layout = LAYOUTS[name]
+    local left, top = SafeNumber(panel:GetLeft()), SafeNumber(panel:GetTop())
+    panel.layout, panel.layoutFocused = name, focused
+    panel.fieldRadius = layout.field / 2 - 9
+    panel.plotRadius = panel.fieldRadius - 15
+    panel:SetSize(layout.width, layout.height + (focused and layout.focus or 0))
+    -- Resizing a dragged or bottom-adjacent panel must leave the entire new view on screen.
+    if left and top and UIParent and UIParent.GetWidth and UIParent.GetHeight then
+        local width, height = UIParent:GetWidth(), UIParent:GetHeight()
+        left = math.max(4, math.min(left, width - panel:GetWidth() - 4))
+        top = math.max(panel:GetHeight() + 4, math.min(top, height - 4))
+        panel:ClearAllPoints()
+        panel:SetPoint("TOPLEFT", UIParent, "TOPLEFT", left, top - height)
+    end
+    panel.field:SetSize(layout.field, layout.field)
+    panel.field.halo:SetSize(layout.field + 4, layout.field + 4)
+    ResizeRing(panel.outerRing, panel.field, panel.fieldRadius)
+    ResizeRing(panel.rangeRing, panel.field, panel.plotRadius)
+    ResizeRing(panel.middleRing, panel.field, panel.plotRadius * 2 / 3)
+    ResizeRing(panel.innerRing, panel.field, panel.plotRadius / 3)
+    local function Place(region, point, x, y, width, height)
+        region:ClearAllPoints()
+        region:SetPoint(point, x, y)
+        if width then region:SetWidth(width) end
+        if height then region:SetHeight(height) end
+    end
+    Place(panel.innerLabel, "CENTER", 0, -panel.plotRadius / 3)
+    Place(panel.outerLabel, "CENTER", 0, -panel.plotRadius * 2 / 3)
+    panel.layoutHint:SetShown(name == "squat" and not focused)
+    if name == "squat" then
+        -- A circular plotting area beside the readout keeps this view short even while focused.
+        Place(panel.field, "BOTTOMLEFT", 10, 38)
+        Place(panel.title, "TOPLEFT", 214, -16, 148, 13)
+        Place(panel.summary, "TOPLEFT", 214, -35, 148, 10)
+        Place(panel.drag, "TOPLEFT", 208, -8, 158, 47)
+        Place(panel.focusDivider, "BOTTOMLEFT", 202, 42, 1, 174)
+        Place(panel.focusReadout, "TOPLEFT", 214, -76, 148, 50)
+        Place(panel.zoomOut, "BOTTOMLEFT", 12, 8)
+        Place(panel.zoomLabel, "BOTTOMLEFT", 42, 12, 110, 12)
+        Place(panel.zoomIn, "BOTTOMLEFT", 160, 8)
+        Place(panel.compass, "BOTTOMLEFT", 214, 8)
+        Place(panel.target, "BOTTOMRIGHT", -74, 8)
+        Place(panel.legend, "BOTTOMRIGHT", -42, 8)
+        Place(panel.close, "BOTTOMRIGHT", -10, 8)
+    else
+        local compact = name == "compact"
+        local footer = layout.footer
+        Place(panel.field, "BOTTOM", 0, footer + (focused and layout.focus or 0) + 9)
+        Place(panel.title, "TOPLEFT", 12, -6, compact and 160 or 120, 13)
+        Place(panel.summary, "TOPLEFT", 12, -21, compact and 160 or 120, 10)
+        Place(panel.drag, "TOPLEFT", 4, -3, compact and 176 or 128, 28)
+        Place(panel.focusDivider, "BOTTOM", 0, footer + layout.focus, layout.width - 24, 1)
+        Place(panel.focusReadout, "BOTTOMLEFT", 12, footer + 8, layout.width - 24, compact and 50 or 32)
+        if compact then
+            Place(panel.zoomLabel, "BOTTOM", 0, 38, 92, 12)
+        else
+            Place(panel.zoomLabel, "BOTTOMLEFT", 76, 10, 96, 12)
+        end
+        -- Compact puts its range above a single, evenly spaced row of controls.
+        panel.zoomOut:ClearAllPoints()
+        panel.zoomOut:SetPoint("BOTTOMLEFT", panel, "BOTTOMLEFT", 12, compact and 8 or 6)
+        panel.zoomIn:ClearAllPoints()
+        if compact then
+            panel.zoomIn:SetPoint("BOTTOMLEFT", panel, "BOTTOMLEFT", 38, 8)
+            Place(panel.target, "BOTTOMLEFT", 64, 6)
+            Place(panel.legend, "BOTTOMLEFT", 92, 6)
+            Place(panel.compass, "BOTTOMLEFT", 120, 8)
+            Place(panel.close, "BOTTOMLEFT", 148, 6)
+        else
+            panel.zoomIn:SetPoint("BOTTOMRIGHT", panel, "BOTTOMRIGHT", -12, 6)
+            Place(panel.compass, "BOTTOMLEFT", 42, 6)
+            Place(panel.target, "TOPRIGHT", -57, -5)
+            Place(panel.legend, "TOPRIGHT", -31, -5)
+            Place(panel.close, "TOPRIGHT", -5, -5)
+        end
+    end
+    local textWidth = panel.focusReadout:GetWidth() - 24
+    panel.focusName:SetWidth(textWidth)
+    panel.focusMeta:SetSize(textWidth, name == "classic" and 12 or 28)
+    if changed then
+        -- Close pop-outs; opening them again chooses the side that fits the resized panel.
+        local legend, picker = LegendAPI(), TargetPickerAPI()
+        if legend and legend.Hide then legend.Hide() end
+        if picker and picker.Hide then picker.Hide() end
+        panel.legend:SetAlpha(0.68)
+        UpdateTargetButton()
+    else
+        local legend, picker = LegendAPI(), TargetPickerAPI()
+        if legend and legend.Reanchor then legend.Reanchor(panel) end
+        if picker and picker.Reanchor then picker.Reanchor(panel) end
+    end
+end
+
 local function UpdateFocusReadout(target, player)
     local focused = target ~= nil
-    panel:SetHeight(PANEL_H + (focused and 46 or 0))
-    panel.field:ClearAllPoints()
-    panel.field:SetPoint("BOTTOM", 0, ZOOM_FOOTER_H + (focused and 55 or 9))
+    ApplyPanelLayout(focused)
     panel.focusReadout:SetShown(focused)
-    panel.focusDivider:SetShown(focused)
+    panel.focusDivider:SetShown(focused or panel.layout == "squat")
     panel.edgeArrow:Hide()
     if not focused then return end
     panel.focusReadout.target = target
@@ -697,23 +822,24 @@ local function UpdateFocusReadout(target, player)
     local age = target.stale and math.floor(math.max(0, Now() - target.lastSeenAt)) or nil
     local detail = target.isWorldBoss and "BOSS | " or (target.category == "rare" and "RARE | " or "")
     detail = detail .. (target.distance and (math.floor(target.distance + 0.5) .. " yd") or "Distance unavailable")
-    if age then detail = detail .. " | seen " .. age .. "s ago"
-    elseif target.sample then detail = detail .. " | preview"
+    local separator = panel.layout == "classic" and " | " or "\n"
+    if age then detail = detail .. separator .. "seen " .. age .. "s ago"
+    elseif target.sample then detail = detail .. separator .. "preview"
     elseif Features() then
         if not target._healthAt or Now() - target._healthAt >= 1 then
             target._healthAt, target._health = Now(), Features().GetHealth(target)
         end
         if Settings().vignetteRadarShowHealth ~= false and target._health then
-            detail = detail .. " | " .. math.floor(target._health + 0.5) .. "% HP"
+            detail = detail .. separator .. math.floor(target._health + 0.5) .. "% HP"
         end
     end
     panel.focusMeta:SetText(detail)
     local r, g, b = TargetColor(target)
     local x, y
-    if target.sample then x, y = target.x, target.y
-    elseif player and player.headingAvailable then
+    if target.sample then x, y = PreviewPosition(target.x, target.y)
+    elseif player and (player.headingAvailable or Settings().vignetteRadarNorthUp == true) then
         x, y = Project(target.worldX - player.worldX, target.worldY - player.worldY,
-            target.distance or 0, player.facing, 1, math.max(1, target.distance or 1))
+            target.distance or 0, ViewFacing(player.facing), 1, math.max(1, target.distance or 1))
     end
     panel.focusArrow:SetShown(x ~= nil and y ~= nil)
     if x and y then
@@ -723,7 +849,8 @@ local function UpdateFocusReadout(target, player)
             local magnitude = math.sqrt(x * x + y * y)
             if magnitude > 0 then
                 panel.edgeArrow:ClearAllPoints()
-                panel.edgeArrow:SetPoint("CENTER", panel.field, "CENTER", x / magnitude * 76, y / magnitude * 76)
+                panel.edgeArrow:SetPoint("CENTER", panel.field, "CENTER",
+                    x / magnitude * panel.plotRadius, y / magnitude * panel.plotRadius)
                 panel.edgeArrow.target = target
                 DrawArrow(panel.edgeArrow, x, y, r, g, b)
                 panel.edgeArrow:Show()
@@ -741,6 +868,11 @@ Render = function()
     local ranges = Ranges()
     panel.zoomIn:SetEnabled(range ~= ranges[1])
     panel.zoomOut:SetEnabled(range ~= ranges[#ranges])
+    local northUp = Settings().vignetteRadarNorthUp == true
+    if panel.compass._northUp ~= northUp then
+        panel.compass._northUp = northUp
+        if northUp then panel.compass:LockHighlight() else panel.compass:UnlockHighlight() end
+    end
     panel:SetAlpha(Quiet() and 0.35 or 1)
     local mapID = CurrentMapID()
     if not preview and mapID ~= activeMapID then ScanVignettes(mapID) end
@@ -754,10 +886,14 @@ Render = function()
 
     if preview then
         panel.summary:SetText(FocusedTargetKey() and "PREVIEW FOCUS" or "PREVIEW")
-        RenderCardinals(0.65)
+        RenderCardinals(ViewFacing(0.65))
+        DrawPlayerHeading(panel.direction, panel.field, 0.65, 3, 21)
+        panel.direction:Show()
         for _, target in ipairs(PREVIEW_TARGETS) do
             target.distance = range * target.distanceFactor
-            if TargetVisible(target) then PlaceBlip(target.key, target.x, target.y, target) end
+            local scale = panel.plotRadius / PLOT_RADIUS
+            local x, y = PreviewPosition(target.x, target.y)
+            if TargetVisible(target) then PlaceBlip(target.key, x * scale, y * scale, target) end
         end
         EndBlips()
         return
@@ -767,10 +903,13 @@ Render = function()
     if not player then
         panel.summary:SetText("POSITION UNAVAILABLE")
         RenderCardinals(0)
+        panel.direction:Hide()
         EndBlips()
         return
     end
-    RenderCardinals(player.facing)
+    RenderCardinals(ViewFacing(player.facing))
+    DrawPlayerHeading(panel.direction, panel.field, player.facing, 3, 21)
+    panel.direction:SetShown(player.headingAvailable)
     local shown, staleShown, totalInRange = 0, 0, 0
     for _, target in ipairs(targets) do
         if TargetVisible(target)
@@ -779,7 +918,7 @@ Render = function()
             local distance = math.sqrt((dx * dx) + (dy * dy))
             if distance <= range then
                 totalInRange = totalInRange + 1
-                local screenX, screenY = Project(dx, dy, distance, player.facing, PLOT_RADIUS, range)
+                local screenX, screenY = Project(dx, dy, distance, ViewFacing(player.facing), panel.plotRadius, range)
                 if screenX and screenY and shown < MAX_BLIPS then
                     target.distance = distance
                     PlaceBlip(target.key, screenX, screenY, target)
@@ -924,6 +1063,11 @@ UpdateLauncher = function(elapsed, updateTargets)
     local shown, rares, bosses = 0, 0, 0
     local highlight = HighlightCategory()
     local player = not preview and Settings().vignetteRadarEnabled == true and PlayerSnapshot(CurrentMapID()) or nil
+    launcher.direction:SetShown(Settings().vignetteRadarNorthUp == true
+        and (preview or (player and player.headingAvailable) == true))
+    if preview or player then
+        DrawPlayerHeading(launcher.direction, launcher, preview and 0.65 or player.facing, 2, 9)
+    end
     local function ShowDot(target, x, y)
         shown = shown + 1
         local dot = launcher.miniBlips[shown]
@@ -946,7 +1090,8 @@ UpdateLauncher = function(elapsed, updateTargets)
 
     if preview then
         for _, target in ipairs(PREVIEW_TARGETS) do
-            if TargetVisible(target) then ShowDot(target, target.launcherX, target.launcherY) end
+            local x, y = PreviewPosition(target.launcherX, target.launcherY)
+            if TargetVisible(target) then ShowDot(target, x, y) end
         end
     elseif player then
         for _, target in ipairs(SelectableTargets()) do
@@ -955,7 +1100,7 @@ UpdateLauncher = function(elapsed, updateTargets)
                 local dx, dy = target.worldX - player.worldX, target.worldY - player.worldY
                 local distance = math.sqrt((dx * dx) + (dy * dy))
                 if distance <= range then
-                    local x, y = Project(dx, dy, distance, player.facing, LAUNCHER_RADIUS - 5, range)
+                    local x, y = Project(dx, dy, distance, ViewFacing(player.facing), LAUNCHER_RADIUS - 5, range)
                     if x and y and not ShowDot(target, x, y) then break end
                 end
             end
@@ -1018,6 +1163,10 @@ EnsureLauncher = function()
     launcher.center:SetPoint("CENTER")
     launcher.center:SetTexture(CIRCLE_TEXTURE)
     launcher.center:SetVertexColor(ACCENT[1], ACCENT[2], ACCENT[3], 1)
+    launcher.direction = launcher:CreateLine(nil, "OVERLAY")
+    launcher.direction:SetThickness(1.5)
+    launcher.direction:SetColorTexture(ACCENT[1], ACCENT[2], ACCENT[3], 0.95)
+    launcher.direction:Hide()
     launcher.miniBlips = {}
     for index = 1, 5 do
         local dot = CreateFrame("Frame", nil, launcher)
@@ -1131,6 +1280,12 @@ local function EnsurePanel()
     panel.summary:SetPoint("TOPLEFT", 12, -21)
     panel.summary:SetJustifyH("LEFT")
     panel.summary:SetWidth(120)
+
+    panel.layoutHint = Text(panel, 10, "Click a marker to focus.\nScroll to zoom.")
+    panel.layoutHint:SetPoint("TOPLEFT", 214, -76)
+    panel.layoutHint:SetSize(148, 40)
+    panel.layoutHint:SetTextColor(0.65, 0.69, 0.71, 1)
+    panel.layoutHint:Hide()
 
     panel.drag = CreateFrame("Frame", nil, panel)
     panel.drag:SetPoint("TOPLEFT", 4, -3)
@@ -1293,9 +1448,9 @@ local function EnsurePanel()
         label:SetJustifyH("CENTER")
         panel.cardinals[index] = label
     end
-    panel.direction = panel.field:CreateTexture(nil, "ARTWORK")
-    panel.direction:SetSize(2, 18)
-    panel.direction:SetPoint("BOTTOM", panel.field, "CENTER", 0, 3)
+    panel.direction = panel.field:CreateLine(nil, "ARTWORK")
+    panel.direction:SetThickness(2)
+    DrawPlayerHeading(panel.direction, panel.field, 0, 3, 21)
     panel.direction:SetColorTexture(ACCENT[1], ACCENT[2], ACCENT[3], 0.9)
     panel.playerGlow = panel.field:CreateTexture(nil, "OVERLAY")
     panel.playerGlow:SetSize(14, 14)
@@ -1360,6 +1515,22 @@ local function EnsurePanel()
     end
     panel.zoomOut = ZoomButton("-", false, 1, "Zoom out: show a wider area")
     panel.zoomIn = ZoomButton("+", true, -1, "Zoom in: show nearby detail")
+    panel.compass = addon.VignetteRadarControls.Button(panel, "N", 24, 20)
+    panel.compass:SetScript("OnClick", function()
+        addon.SetVignetteRadarNorthUp(Settings().vignetteRadarNorthUp ~= true)
+    end)
+    panel.compass:HookScript("OnEnter", function(self)
+        if not GameTooltip then return end
+        local northUp = Settings().vignetteRadarNorthUp == true
+        GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+        GameTooltip:SetText(northUp and "North up" or "Facing up", 1, 1, 1)
+        GameTooltip:AddLine(northUp and "North stays at the top. Your direction line turns as you turn."
+            or "The radar turns with you. Your direction line points up.", 0.7, 0.8, 0.8, true)
+        GameTooltip:AddLine(northUp and "Click to follow your facing." or "Click to keep north at the top.",
+            0.55, 0.86, 0.76, true)
+        GameTooltip:Show()
+    end)
+    panel.compass:HookScript("OnLeave", function() if GameTooltip then GameTooltip:Hide() end end)
 
     panel:SetScript("OnUpdate", function(self, elapsed)
         self._renderElapsed = (self._renderElapsed or 0) + elapsed
@@ -1383,6 +1554,7 @@ local function EnsurePanel()
         local picker = TargetPickerAPI()
         if picker and type(picker.Hide) == "function" then pcall(picker.Hide) end
     end)
+    ApplyPanelLayout(false)
     RenderCardinals(0)
     UpdateTargetButton()
     return panel
@@ -1446,7 +1618,7 @@ RefreshRadar = function(rescan)
     UpdateTargetButton()
 end
 
-addon.RefreshVignetteRadar = function() RefreshRadar(true) end
+addon.RefreshVignetteRadar = function(rescan) RefreshRadar(rescan ~= false) end
 addon.VignetteRadarAPI = {
     GetTargets = function() return activeTargets end,
     GetSelectableTargets = SelectableTargets,
@@ -1510,6 +1682,20 @@ function addon.SetVignetteRadarEnabled(enabled)
     RefreshRadar(true)
 end
 
+function addon.SetVignetteRadarLayout(layout)
+    if not LAYOUTS[layout] then return false end
+    Settings().vignetteRadarLayout = layout
+    RefreshRadar(false)
+    if addon.RefreshVignetteRadarOptions then addon.RefreshVignetteRadarOptions() end
+    return true
+end
+
+function addon.SetVignetteRadarNorthUp(enabled)
+    Settings().vignetteRadarNorthUp = enabled == true
+    RefreshRadar(false)
+    if addon.RefreshVignetteRadarOptions then addon.RefreshVignetteRadarOptions() end
+end
+
 function addon.ToggleVignetteRadarPreview()
     preview = not preview
     manualPanelState = preview and true or nil
@@ -1524,6 +1710,16 @@ SlashCmdList.VIGNETTERADAR = function(message)
     message = (message or ""):lower():match("^%s*(.-)%s*$")
     if message == "config" or message == "options" then
         if addon.OpenOptions then addon.OpenOptions() end
+        return
+    elseif message == "layout" or message:match("^layout%s+") then
+        local layout = message:match("^layout%s+(%S+)$")
+        if not layout and message == "layout" then
+            local nextLayout = { classic = "squat", squat = "compact", compact = "classic" }
+            layout = nextLayout[Settings().vignetteRadarLayout or "classic"]
+        end
+        if not addon.SetVignetteRadarLayout(layout) and DEFAULT_CHAT_FRAME then
+            DEFAULT_CHAT_FRAME:AddMessage("Vignette Radar: /vr layout [classic, squat, compact]")
+        end
         return
     elseif message == "preview" then
         addon.ToggleVignetteRadarPreview()

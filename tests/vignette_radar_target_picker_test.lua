@@ -4,7 +4,11 @@ local methods = {}
 function methods:SetSize(width, height) self.width, self.height = width, height end
 function methods:SetWidth(width) self.width = width end
 function methods:GetWidth() return self.width or 0 end
+function methods:GetHeight() return self.height or 0 end
+function methods:GetLeft() return self.left end
 function methods:GetRight() return self.right or 100 end
+function methods:GetTop() return self.top end
+function methods:GetBottom() return self.bottom end
 function methods:SetPoint(...) self.point = { ... }; self.points = self.points or {}; self.points[#self.points + 1] = self.point end
 function methods:ClearAllPoints() self.point, self.points = nil, {} end
 function methods:SetAllPoints(...) self.allPoints = { ... } end
@@ -214,5 +218,22 @@ assert(panel.rows[4].dot.texture == "Interface\\CharacterFrame\\TempPortraitAlph
     and panel.rows[4].dot.width == 7,
     "non-rare rows must retain their compact category dot")
 assert(picker.Toggle(anchor) == false and not picker.IsShown(), "focus button must close the target list")
+
+UIParent:SetSize(800, 600)
+local squat = CreateFrame("Frame", nil, UIParent)
+squat:SetSize(374, 230)
+squat.left, squat.right, squat.top, squat.bottom = 213, 587, 415, 185
+assert(picker.Toggle(squat) and picker.IsShown(), "target picker must open from a Squat panel anchor")
+assert(squat.point[1] == "TOPLEFT" and squat.point[2] == UIParent and squat.point[4] == 164
+    and squat.point[5] == -185,
+    "a centered Squat panel must shift only enough to leave the picker an 8px right gutter")
+assert(panel.point[1] == "TOPLEFT" and panel.point[2] == squat and panel.point[3] == "TOPRIGHT"
+    and panel.point[4] == 8,
+    "the shifted Squat anchor must place the picker beside the panel without overlap")
+squat.left, squat.right = 164, 538
+assert(picker.Reanchor(squat) and panel.point[1] == "TOPLEFT" and panel.point[2] == squat
+    and panel.point[3] == "TOPRIGHT" and panel.point[4] == 8,
+    "an open target picker must reanchor against the shifted Squat panel")
+assert(picker.Toggle(squat) == false, "target picker Squat toggle must close")
 
 io.write("vignette radar target picker tests passed\n")

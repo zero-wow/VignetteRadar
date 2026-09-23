@@ -61,6 +61,8 @@ Settings = {
 local db = {
     vignetteRadarEnabled = true, vignetteRadarHideWhenEmpty = true,
     vignetteRadarLauncherVisible = true, vignetteRadarRange = 450,
+    vignetteRadarLayout = "classic",
+    vignetteRadarNorthUp = false,
     vignetteRadarWorldMap = true,
     vignetteRadarAlerts = true, vignetteRadarAlertSound = false,
     vignetteRadarAlertCategories = { rare = true, treasure = 1, event = false, other = false },
@@ -70,13 +72,17 @@ local db = {
     vignetteRadarShapes = true, vignetteRadarShowHealth = true,
     vignetteRadarIgnored = { hidden = true },
 }
-local refreshes, previews, resets, clears = 0, 0, 0, 0
+local refreshes, layoutRefreshes, previews, resets, clears = 0, 0, 0, 0, 0
 local addon = {
     VignetteRadarRanges = { 150, 300, 450, 600, 1200, 2400, 4800 },
     GetSettings = function() return db end,
     SetVignetteRadarEnabled = function(value) db.vignetteRadarEnabled = value end,
     ToggleVignetteRadarPreview = function() previews = previews + 1 end,
     ResetVignetteRadarPositions = function() resets = resets + 1 end,
+    RefreshVignetteRadar = function(rescan)
+        assert(rescan == false, "layout changes must refresh presentation without rescanning")
+        layoutRefreshes = layoutRefreshes + 1
+    end,
     VignetteRadarAPI = { Refresh = function(rescan) assert(rescan == true); refreshes = refreshes + 1 end },
     VignetteRadarFeatures = { ClearIgnored = function()
         clears = clears + 1
@@ -113,7 +119,7 @@ local controls = {}
 local byKey = {}
 local choices = {}
 local action = {}
-for _, pageName in ipairs({ "Radar", "Alerts", "Behavior" }) do
+for _, pageName in ipairs({ "Radar", "Layout", "Alerts", "Behavior" }) do
     local page, tab = assert(panel.pages[pageName]), assert(panel.pageButtons[pageName])
     tab.scripts.OnClick(tab)
     assert(panel.selectedPage == pageName and tab.highlightLocked and page:IsShown())
@@ -151,10 +157,16 @@ for _, pageName in ipairs({ "Radar", "Alerts", "Behavior" }) do
         if otherName ~= pageName then assert(not otherPage:IsShown()) end
     end
 end
+for _, pageName in ipairs({ "Radar", "Layout", "Alerts", "Behavior" }) do
+    local tab = panel.pageButtons[pageName]
+    local x1, _, x2 = rect(tab)
+    assert(x1 >= 18 and x2 <= 496,
+        pageName .. " tab must stay inside the 520px panel")
+end
 assert(#controls >= 26, "each feature must have a usable control")
 for _, key in ipairs({
     "vignetteRadarEnabled", "vignetteRadarHideWhenEmpty", "vignetteRadarLauncherVisible",
-    "vignetteRadarWorldMap",
+    "vignetteRadarWorldMap", "vignetteRadarNorthUp",
     "vignetteRadarAlerts", "vignetteRadarAlertSound", "vignetteRadarAlertCategories.rare",
     "vignetteRadarAlertCategories.treasure", "vignetteRadarAlertCategories.event",
     "vignetteRadarAlertCategories.other", "vignetteRadarLastSeen", "vignetteRadarQuietCombat",
@@ -174,6 +186,19 @@ for _, object in ipairs(objects) do
 end
 assert(rangeReadout and rangeReadout.width == 118 and choices["-"] and choices["+"],
     "the compact range selector must show the saved value")
+for _, layout in ipairs({ "classic", "squat", "compact" }) do
+    assert(choices[layout:sub(1, 1):upper() .. layout:sub(2)], "missing selectable layout: " .. layout)
+end
+local layoutHelp = {}
+for _, object in ipairs(objects) do
+    if object.parent == panel.pages.Layout and object.kind == "FontString" and object.text then
+        layoutHelp[object.text] = true
+    end
+end
+assert(layoutHelp["Current portrait radar with details below."]
+    and layoutHelp["Wide and short: radar left, details right, buttons below."]
+    and layoutHelp["Smaller radar with range and controls below."],
+    "layout choices need plain-language descriptions")
 local behaviorFooter
 for _, object in ipairs(objects) do
     if object.parent == panel.pages.Behavior and object.kind == "FontString"
@@ -206,17 +231,30 @@ assert(db.vignetteRadarWorldMap == false)
 clickCheck("vignetteRadarEnabled", false)
 assert(db.vignetteRadarEnabled == false)
 for key, control in pairs(byKey) do
-    local value
-    if control.subkey then value = db[control.optionKey][control.subkey]
-    else value = db[control.optionKey] end
-    local nextValue = not (value == true or value == 1)
-    clickCheck(key, nextValue)
-    local saved
-    if control.subkey then saved = db[control.optionKey][control.subkey]
-    else saved = db[control.optionKey] end
-    assert(saved == nextValue and control.checked == nextValue,
-        key .. " must persist and display its updated state")
+    if key ~= "vignetteRadarNorthUp" then
+        local value
+        if control.subkey then value = db[control.optionKey][control.subkey]
+        else value = db[control.optionKey] end
+        local nextValue = not (value == true or value == 1)
+        clickCheck(key, nextValue)
+        local saved
+        if control.subkey then saved = db[control.optionKey][control.subkey]
+        else saved = db[control.optionKey] end
+        assert(saved == nextValue and control.checked == nextValue,
+            key .. " must persist and display its updated state")
+    end
 end
+
+local northUp = assert(byKey["vignetteRadarNorthUp"])
+assert(northUp.points[1][4] == 18 and northUp.points[1][5] == -229
+    and northUp.label.text == "Keep north at the top",
+    "north-up must remain between the layout descriptions and preview action")
+local northBefore, scanBefore = layoutRefreshes, refreshes
+northUp:SetChecked(true)
+northUp.scripts.OnClick(northUp)
+assert(db.vignetteRadarNorthUp == true and northUp.checked == true
+    and layoutRefreshes == northBefore + 1 and refreshes == scanBefore,
+    "north-up must save and redraw orientation without a detection rescan")
 
 local function clickChoice(title, key, value)
     local button = assert(choices[title], "missing choice " .. title)
@@ -258,6 +296,14 @@ clickChoice("30 sec", "vignetteRadarAlertCooldown", 30)
 clickChoice("15 sec", "vignetteRadarLastSeenSeconds", 15)
 clickChoice("Large", "vignetteRadarMarkerSize", 9)
 assert(not choices["Medium"].highlightLocked, "old choice must lose its highlight")
+for _, layout in ipairs({ "Squat", "Compact", "Classic" }) do
+    local before = layoutRefreshes
+    local button = choices[layout]
+    button.scripts.OnClick(button)
+    assert(db.vignetteRadarLayout == layout:lower() and layoutRefreshes == before + 1
+        and button.highlightLocked,
+        layout .. " must save and refresh its panel layout without a rescan")
+end
 action["Preview layout"].scripts.OnClick(action["Preview layout"])
 action["Reset positions"].scripts.OnClick(action["Reset positions"])
 assert(previews == 1 and resets == 1, "existing layout actions must remain available")

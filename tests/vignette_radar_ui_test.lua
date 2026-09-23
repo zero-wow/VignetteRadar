@@ -65,8 +65,9 @@ function methods:Show() self.shown = true end
 function methods:Hide() self.shown = false; if self.scripts and self.scripts.OnHide then self.scripts.OnHide(self) end end
 function methods:StartMoving() self.moving = true end
 function methods:StopMovingOrSizing() self.moving = false end
-function methods:GetLeft() return 30 end
-function methods:GetTop() return 380 end
+function methods:GetLeft() return self.left or 30 end
+function methods:GetTop() return self.top or 380 end
+function methods:GetBottom() return self.bottom or (self:GetTop() - self:GetHeight()) end
 function methods:CreateTexture()
     local texture = setmetatable({ kind = "Texture", parent = self }, { __index = methods })
     objects[#objects + 1] = texture
@@ -435,5 +436,251 @@ assert(not addon.SetVignetteRadarRange(999999) and settings.vignetteRadarRange =
     "unsupported zoom ranges must not corrupt saved settings")
 for _ = 1, 10 do panel.zoomIn.scripts.OnClick(panel.zoomIn) end
 assert(settings.vignetteRadarRange == 150, "zoom-in must clamp at the minimum")
+
+-- Resolve frame anchors, rather than assuming each layout uses the same origin.
+local anchors = {
+    TOPLEFT = { 0, 1 }, TOP = { 0.5, 1 }, TOPRIGHT = { 1, 1 },
+    LEFT = { 0, 0.5 }, CENTER = { 0.5, 0.5 }, RIGHT = { 1, 0.5 },
+    BOTTOMLEFT = { 0, 0 }, BOTTOM = { 0.5, 0 }, BOTTOMRIGHT = { 1, 0 },
+}
+local function bounds(region)
+    if region == panel then return { 0, 0, panel.width, panel.height } end
+    local p = assert(region.point, "region needs an explicit anchor")
+    local relative, relativePoint, x, y
+    if type(p[2]) == "table" then relative, relativePoint, x, y = p[2], p[3], p[4] or 0, p[5] or 0
+    else relative, relativePoint, x, y = region.parent, p[1], p[2] or 0, p[3] or 0 end
+    local base, origin, target = bounds(relative), anchors[p[1]], anchors[relativePoint]
+    local width, height = assert(region.width), assert(region.height)
+    local left = base[1] + (base[3] - base[1]) * target[1] + x - width * origin[1]
+    local bottom = base[2] + (base[4] - base[2]) * target[2] + y - height * origin[2]
+    return { left, bottom, left + width, bottom + height }
+end
+local function separate(first, second, gap, label)
+    local a, b = bounds(first), bounds(second)
+    assert(a[3] + gap <= b[1] or b[3] + gap <= a[1]
+        or a[4] + gap <= b[2] or b[4] + gap <= a[2], "layout gutter: " .. label)
+end
+local function inside(region, parent, gutter)
+    local a, b = bounds(region), bounds(parent or panel)
+    assert(a[1] >= b[1] + gutter and a[2] >= b[2] + gutter
+        and a[3] <= b[3] - gutter and a[4] <= b[4] - gutter,
+        "layout region escapes its parent: " .. tostring(region.text or region.kind))
+end
+local function checkLayout(focused)
+    local controls = { panel.target, panel.legend, panel.close, panel.zoomOut, panel.zoomIn, panel.zoomLabel, panel.compass }
+    inside(panel.field.halo, panel, 4)
+    inside(panel.title, panel, 4)
+    inside(panel.summary, panel, 4)
+    separate(panel.field.halo, panel.title, 4, "radar/title")
+    separate(panel.field.halo, panel.summary, 4, "radar/summary")
+    for index, control in ipairs(controls) do
+        inside(control, panel, 4)
+        separate(control, panel.field.halo, 4, "toolbar/radar")
+        separate(control, panel.drag, 2, "toolbar/drag")
+        for other = index + 1, #controls do separate(control, controls[other], 2, "toolbar hit targets") end
+        if panel.layout ~= "classic" then
+            assert(bounds(control)[4] <= 50, "alternate layouts must keep all controls below the radar")
+        end
+    end
+    if focused then
+        inside(panel.focusReadout, panel, 4)
+        inside(panel.focusName, panel.focusReadout, 0)
+        inside(panel.focusMeta, panel.focusReadout, 0)
+        separate(panel.focusName, panel.focusMeta, 4, "focus name/metadata")
+        separate(panel.focusReadout, panel.field.halo, 6, "focus/radar")
+        separate(panel.focusDivider, panel.field.halo, 6, "divider/radar")
+        separate(panel.focusDivider, panel.focusReadout, 6, "divider/focus")
+        for _, control in ipairs(controls) do separate(control, panel.focusReadout, 6, "toolbar/focus") end
+    elseif panel.layout == "squat" then
+        inside(panel.layoutHint, panel, 4)
+        separate(panel.layoutHint, panel.field.halo, 6, "hint/radar")
+    end
+    assert(panel.field.width == panel.field.height, "layout must preserve circular radar geometry")
+    for _, line in ipairs(panel.rangeRing) do
+        local x, y = line.startPoint[4], line.startPoint[5]
+        assert(math.abs(math.sqrt(x*x + y*y) - panel.plotRadius) < 0.001, "rings must follow the active layout radius")
+    end
+end
+
+addon.SetVignetteRadarRange(4800)
+local savedPosition, savedCategories = { x = 90, y = -80 }, settings.vignetteRadarCategories
+settings.vignetteRadarPosition = savedPosition
+local originalPanel, originalField = panel, panel.field
+local scanCount, getVignettes = 0, C_VignetteInfo.GetVignettes
+C_VignetteInfo.GetVignettes = function() scanCount = scanCount + 1; return getVignettes() end
+for _, name in ipairs({ "squat", "compact", "classic", "compact", "squat", "classic" }) do
+    panel.legend.scripts.OnClick(panel.legend)
+    assert(legendPanel:IsShown())
+    local before = scanCount
+    local choice
+    for _, object in ipairs(objects) do
+        if object.parent == optionsPanel.pages.Layout and object.kind == "Button"
+            and object.text:lower() == name then choice = object; break end
+    end
+    assert(choice).scripts.OnClick(choice)
+    assert(panel == originalPanel and panel.field == originalField and scanCount == before,
+        "view changes must reuse existing frames without rescanning detection data")
+    assert(settings.vignetteRadarLayout == name and panel.layout == name and not legendPanel:IsShown(),
+        "switching views must save the selection and close old pop-outs")
+    assert(settings.vignetteRadarRange == 4800 and settings.vignetteRadarPosition == savedPosition
+        and settings.vignetteRadarCategories == savedCategories, "view changes must preserve range, filters and position")
+    checkLayout(false)
+    local far = assert(panel.blipByKey.far)
+    local x, y = far.point[4], far.point[5]
+    assert(math.abs(math.sqrt(x*x+y*y) - panel.plotRadius * 3000 / 4800) < 0.001,
+        "live target distances must project to the resized plotting area")
+    far.scripts.OnClick(far, "LeftButton")
+    local baseHeight = panel.height
+    checkLayout(true)
+    assert(panel.focusMeta.text:find("3000 yd", 1, true), "focus must retain actual yard distances in every layout")
+    for _, other in ipairs({ "squat", "compact", "classic", name }) do
+        addon.SetVignetteRadarLayout(other)
+        assert(addon.VignetteRadarTargetPicker.GetFocus() == "far" and panel.focusReadout:IsShown(),
+            "switching a focused view must preserve the target and disclosed details")
+        checkLayout(true)
+    end
+    addon.SetVignetteRadarRange(150)
+    assert(panel.edgeArrow:IsShown())
+    x, y = panel.edgeArrow.point[4], panel.edgeArrow.point[5]
+    assert(math.abs(math.sqrt(x*x+y*y) - panel.plotRadius) < 0.001
+        and math.sqrt(x*x+y*y) + 7 < panel.fieldRadius, "rim arrow must track the resized plotting radius")
+    addon.SetVignetteRadarRange(4800)
+    for _, right in ipairs({ 400, 1590 }) do
+        panel.right, panel.left = right, right - panel.width
+        panel.target.scripts.OnClick(panel.target, "LeftButton")
+        assert(targetPanel:IsShown() and targetPanel.clamped)
+        separate(targetPanel, panel, 8, "target picker/panel")
+        assert(targetPanel.point[1] == (right == 400 and "TOPLEFT" or "TOPRIGHT"),
+            "target picker must choose the side that has space")
+        panel.legend.scripts.OnClick(panel.legend)
+        assert(legendPanel:IsShown() and legendPanel.clamped and not targetPanel:IsShown())
+        separate(legendPanel, panel, 8, "legend/panel")
+        panel.legend.scripts.OnClick(panel.legend)
+    end
+    panel.right, panel.left = nil, nil
+    addon.VignetteRadarTargetPicker.ClearFocus()
+    assert(name ~= "squat" or panel.height == baseHeight, "Squat must not grow taller when focusing a target")
+    checkLayout(false)
+end
+assert(not addon.SetVignetteRadarLayout("invalid") and settings.vignetteRadarLayout == "classic")
+for _, expected in ipairs({ "squat", "compact", "classic" }) do
+    SlashCmdList.VIGNETTERADAR("layout")
+    assert(settings.vignetteRadarLayout == expected, "bare layout command must cycle through all three views")
+end
+SlashCmdList.VIGNETTERADAR("layout compact")
+assert(settings.vignetteRadarLayout == "compact", "layout command must also select a style by name")
+SlashCmdList.VIGNETTERADAR("off")
+addon.SetVignetteRadarLayout("squat")
+assert(not panel:IsShown() and settings.vignetteRadarEnabled == false,
+    "changing layout must not reopen or re-enable disabled tracking")
+SlashCmdList.VIGNETTERADAR("preview")
+for _, name in ipairs({ "squat", "compact", "classic" }) do
+    addon.SetVignetteRadarLayout(name)
+    checkLayout(false)
+    for _, blip in pairs(panel.blipByKey) do
+        local x, y = blip.point[4], blip.point[5]
+        assert(math.sqrt(x*x+y*y) + blip.width / 2 < panel.fieldRadius,
+            "preview markers must remain inside the smallest radar with maximum marker size")
+    end
+end
+assert(settings.vignetteRadarEnabled == false, "previewing alternate views must not enable tracking")
+
+-- A narrow game canvas and saved positions next to screen edges must fit after resizing/focusing.
+UIParent:SetSize(800, 600)
+for _, name in ipairs({ "squat", "compact", "classic" }) do
+    panel.left, panel.top = 780, 250
+    addon.SetVignetteRadarLayout(name)
+    addon.HandleVignetteClick(panel.blipByKey["preview-rare"].target, "LeftButton")
+    local x, top = panel.point[4], UIParent.height + panel.point[5]
+    assert(x >= 4 and x + panel.width <= UIParent.width - 4
+        and top <= UIParent.height - 4 and top - panel.height >= 4,
+        "expanded layout must reclamp with a visible gutter on an 800x600 canvas")
+    checkLayout(true)
+    addon.VignetteRadarTargetPicker.ClearFocus()
+end
+panel.left, panel.top = nil, nil
+UIParent:SetSize(1600, 900)
+
+-- Fixed north keeps both radars' detections still while the player direction line turns.
+local playerFacing = 0
+GetPlayerFacing = function() return playerFacing end
+guids, now, mapID = { "rare" }, 400, 780
+livePositions.rare = { x = 0.507, y = 0.5 }
+addon.SetVignetteRadarRange(450)
+SlashCmdList.VIGNETTERADAR("on")
+local northOption
+for _, object in ipairs(objects) do
+    if object.optionKey == "vignetteRadarNorthUp" then northOption = object; break end
+end
+assert(northOption, "north-up must also be available in Layout settings")
+local function near(actual, expected, message)
+    assert(math.abs(actual - expected) < 0.001, message)
+end
+for _, name in ipairs({ "classic", "squat", "compact" }) do
+    addon.SetVignetteRadarLayout(name)
+    checkLayout(false)
+    assert(panel.compass.text == "N" and not panel.compass._selected,
+        "the compass must clearly show whether north is locked")
+    playerFacing = 0
+    addon.VignetteRadarAPI.RefreshPresentation()
+    local northX, northY = panel.blipByKey.rare.point[4], panel.blipByKey.rare.point[5]
+    playerFacing = math.pi / 2
+    addon.VignetteRadarAPI.RefreshPresentation()
+    near(panel.blipByKey.rare.point[4], northY, "heading-up must rotate the radar with the player")
+    near(panel.direction.endPoint[4], 0, "heading-up player line must point straight up")
+    near(panel.direction.endPoint[5], 21, "heading-up line must preserve its length")
+    local before = scanCount
+    panel.compass.scripts.OnClick(panel.compass)
+    assert(settings.vignetteRadarNorthUp and panel.compass._selected and northOption.checked
+        and scanCount == before, "compass click must save north-up and sync options without rescanning")
+    local miniX, miniY = launcher.miniBlips[1].point[4], launcher.miniBlips[1].point[5]
+    for _, angle in ipairs({ 0, math.pi / 2, math.pi, 3 * math.pi / 2 }) do
+        playerFacing = angle
+        addon.VignetteRadarAPI.RefreshPresentation()
+        near(panel.blipByKey.rare.point[4], northX, "north-up marker horizontal position must stay fixed")
+        near(panel.blipByKey.rare.point[5], northY, "north-up marker vertical position must stay fixed")
+        near(panel.cardinals[1].point[4], 0, "N must remain above the player in north-up")
+        near(panel.cardinals[1].point[5], panel.fieldRadius - 5, "N must remain at the top of the ring")
+        near(panel.direction.endPoint[4], -math.sin(angle) * 21, "player line must turn toward actual facing")
+        near(panel.direction.endPoint[5], math.cos(angle) * 21, "player line must turn toward actual facing")
+        near(launcher.miniBlips[1].point[4], miniX, "launcher must use the same fixed orientation")
+        near(launcher.miniBlips[1].point[5], miniY, "launcher must use the same fixed orientation")
+        assert(launcher.direction:IsShown(), "north-up launcher needs a player direction cue")
+        near(launcher.direction.endPoint[4], -math.sin(angle) * 9, "launcher player line must turn")
+    end
+    playerFacing = nil
+    addon.VignetteRadarAPI.RefreshPresentation()
+    assert(not panel.direction:IsShown() and not launcher.direction:IsShown() and panel.blipByKey.rare,
+        "unknown facing must hide its direction cue without losing north-up positions")
+    playerFacing = 0
+    addon.HandleVignetteClick(panel.blipByKey.rare.target, "LeftButton")
+    livePositions.rare = { x = 0.53, y = 0.5 }
+    addon.VignetteRadarAPI.Refresh(true)
+    addon.SetVignetteRadarRange(150)
+    for _, angle in ipairs({ 0, math.pi / 2 }) do
+        playerFacing = angle
+        addon.VignetteRadarAPI.RefreshPresentation()
+        assert(panel.edgeArrow:IsShown())
+        near(panel.edgeArrow.point[4], 0, "north-up out-of-range direction must remain fixed")
+        near(panel.edgeArrow.point[5], panel.plotRadius, "north-up edge arrow must stay at north")
+    end
+    checkLayout(true)
+    panel.compass.scripts.OnClick(panel.compass)
+    assert(not settings.vignetteRadarNorthUp and not panel.compass._selected and not northOption.checked,
+        "clicking compass again must restore facing-up and synchronize the checkbox")
+    near(panel.edgeArrow.point[4], panel.plotRadius, "restoring facing-up must rotate the focused edge arrow")
+    assert(not launcher.direction:IsShown(), "heading-up launcher must retain its existing appearance")
+    addon.VignetteRadarTargetPicker.ClearFocus()
+    livePositions.rare = { x = 0.507, y = 0.5 }
+    addon.SetVignetteRadarRange(450)
+    addon.VignetteRadarAPI.Refresh(true)
+end
+-- The checkbox and toolbar share one saved mode, including in preview.
+northOption:SetChecked(true)
+northOption.scripts.OnClick(northOption)
+assert(panel.compass._selected and settings.vignetteRadarNorthUp)
+SlashCmdList.VIGNETTERADAR("preview")
+near(panel.cardinals[1].point[4], 0, "preview must honor fixed north")
+near(panel.direction.endPoint[4], -math.sin(0.65) * 21, "preview must demonstrate the rotating player cue")
 
 io.write("vignette radar UI tests passed\n")

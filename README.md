@@ -1,8 +1,18 @@
 # Vignette Radar
 
-A compact, heading-up radar for the rare, treasure, event, and other vignettes that World of Warcraft already exposes on the minimap and world map. It uses Blizzard's current vignette and map data; it does not reveal hidden objects or use a location database.
+A compact radar for the rare, treasure, event, and other vignettes that World of Warcraft already exposes on the minimap and world map. It uses Blizzard's current vignette and map data; it does not reveal hidden objects or use a location database.
 
 The small draggable launcher covers 150 yards. Click it to show or tuck away the full radar. The full radar has a category legend and a picker for focusing one current detection. Right-click the launcher for a layout preview.
+
+Choose a saved panel style under `/vr config` → Layout, or use `/vr layout` to cycle through them:
+
+- **Classic:** the original portrait panel, with header buttons and details below the radar.
+- **Squat:** a wider, shorter panel with the radar on the left, details on the right, and every button along the bottom. Focusing a target keeps the same panel height.
+- **Compact:** a narrower radar with its range readout and all buttons underneath. Target details expand the panel when needed.
+
+Styles preserve your range, filters, focus, and saved position. Switching closes open legend/target pickers; reopen them against the new panel edges. The radar stays circular in every style, and resized panels stay inside the screen. Use **Preview layout** on the Layout tab to try a style without enabling tracking.
+
+Click the small **N** compass button to switch orientation. When highlighted, north stays at the top and your center direction line turns as you turn. Click it again to restore the default facing-up radar. This choice is saved, applies to the small launcher too, and is also available as **Keep north at the top** on the Layout tab.
 
 The full radar supports 150, 300, 450, 600, 1,200, 2,400, and 4,800-yard radii. Scroll down over it or click `-` to zoom out; scroll up or click `+` to zoom in. The range readout is the distance from you to the outer range ring. The launcher stays at 150 yards.
 
@@ -17,6 +27,7 @@ Copy the `VignetteRadar` folder to `_retail_/Interface/AddOns/`, then reload the
 - `/vr` toggles the full radar.
 - `/vr on`, `/vr off`, and `/vr preview` control visibility.
 - `/vr config` opens the addon settings.
+- `/vr layout` cycles styles; `/vr layout classic`, `/vr layout squat`, and `/vr layout compact` select one directly.
 - `/vradar`, `/vignetteradar`, and `/whradar` remain aliases.
 
 The addon also appears under the game's AddOns settings when the current Retail Settings API is available.
@@ -37,6 +48,6 @@ Preview samples support focus without changing favorites, ignores, or navigation
 
 ## Development validation
 
-Current development build: `0.1.0-dev.4` (base version `0.1.0`).
+Current development build: `0.1.0-dev.5` (base version `0.1.0`).
 
-Run each `tests/*_test.lua` with Lua from the addon root and check Lua files with `luac -p`. The tests cover migration, radar projection, filters, target actions, alert/last-seen state, navigation fallbacks, quiet modes, mouse-wheel/button zoom, world-map visibility guards, and UI layout bounds using mocked game APIs. These checks do not replace in-game validation of rendering, navigation, or API availability.
+Run each `tests/*_test.lua` with Lua from the addon root and check Lua files with `luac -p`. The tests cover migration, radar projection, filters, target actions, alert/last-seen state, navigation fallbacks, quiet modes, mouse-wheel/button zoom, world-map visibility guards, and UI layout bounds using mocked game APIs. Layout checks exercise repeated style changes, focused and unfocused states, pop-outs, resized rings and markers, and an 800×600 canvas. Orientation checks cover quarter turns, fixed markers/cardinals, the player direction line, both radars, preview, unknown facing, and out-of-range focus. These checks do not replace in-game validation of rendering, navigation, or API availability.

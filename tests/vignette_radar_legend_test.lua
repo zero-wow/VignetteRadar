@@ -6,7 +6,11 @@ function methods:SetSize(width, height) self.width, self.height = width, height 
 function methods:SetWidth(width) self.width = width end
 function methods:SetHeight(height) self.height = height end
 function methods:GetWidth() return self.width or 0 end
+function methods:GetHeight() return self.height or 0 end
+function methods:GetLeft() return self.left end
 function methods:GetRight() return self.right or 100 end
+function methods:GetTop() return self.top end
+function methods:GetBottom() return self.bottom end
 function methods:SetPoint(...) self.point = { ... }; self.points = self.points or {}; self.points[#self.points + 1] = self.point end
 function methods:ClearAllPoints() self.point, self.points = nil, {} end
 function methods:SetAllPoints(...) self.allPoints = { ... } end
@@ -153,6 +157,19 @@ local before = legend.IsCategoryEnabled("other")
 panel.rows.other.toggle.scripts.OnClick(panel.rows.other.toggle)
 assert(legend.IsCategoryEnabled("other") ~= before, "the row switch must toggle its category filter")
 assert(legend.Toggle(anchor) == false and not legend.IsShown(), "toggle must close an open legend")
+
+UIParent:SetSize(800, 600)
+local squat = CreateFrame("Frame", nil, UIParent)
+squat:SetSize(374, 230)
+squat.left, squat.right, squat.top, squat.bottom = 213, 587, 415, 185
+assert(legend.Toggle(squat) and legend.IsShown(), "legend must open from a Squat panel anchor")
+assert(panel.point[1] == "TOP" and panel.point[3] == "BOTTOM" and panel.point[5] == -8,
+    "when Squat has no horizontal room, the legend must use the available lower gutter")
+squat.bottom = 121
+assert(legend.Reanchor(squat) and panel.point[1] == "BOTTOM" and panel.point[3] == "TOP"
+    and panel.point[5] == 8,
+    "an open legend must reanchor above a focused Squat panel when its lower space closes")
+assert(legend.Toggle(squat) == false, "legend Squat toggle must close")
 
 -- Validate fallback behavior without native EllesmereUI helpers or fonts.
 EllesmereUI = nil

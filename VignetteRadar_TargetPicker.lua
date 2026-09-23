@@ -9,6 +9,7 @@ local SKULL_TEXTURE = "Interface\\TargetingFrame\\UI-TargetingFrame-Skull"
 local FONT_FALLBACK = "Fonts\\FRIZQT__.TTF"
 
 local panel
+local attachedTo
 local provider
 local changeCallback
 local focusKey, focusName
@@ -231,21 +232,45 @@ local function CreateRow(parent, index)
     return row
 end
 
+local function FrameValue(frame, method)
+    if not (frame and type(frame[method]) == "function") then return nil end
+    local value = frame[method](frame)
+    return type(value) == "number" and value or nil
+end
+
 local function Attach(anchor)
     if not panel then return end
     panel:ClearAllPoints()
-    if anchor and anchor.GetRight and UIParent and UIParent.GetWidth then
-        local right, width = anchor:GetRight(), UIParent:GetWidth()
-        if type(right) == "number" and type(width) == "number" and right + PANEL_W + 12 > width then
-            panel:SetPoint("TOPRIGHT", anchor, "TOPLEFT", -8, 0)
-        else
-            panel:SetPoint("TOPLEFT", anchor, "TOPRIGHT", 8, 0)
-        end
-    elseif anchor then
+    local screenWidth = FrameValue(UIParent, "GetWidth")
+    local screenHeight = FrameValue(UIParent, "GetHeight")
+    local left, right = FrameValue(anchor, "GetLeft"), FrameValue(anchor, "GetRight")
+    local top, bottom = FrameValue(anchor, "GetTop"), FrameValue(anchor, "GetBottom")
+    if anchor and screenWidth and right and screenWidth - right >= PANEL_W + 12 then
         panel:SetPoint("TOPLEFT", anchor, "TOPRIGHT", 8, 0)
+    elseif anchor and left and left >= PANEL_W + 12 then
+        panel:SetPoint("TOPRIGHT", anchor, "TOPLEFT", -8, 0)
+    elseif anchor and bottom and bottom >= PANEL_H + 12 then
+        panel:SetPoint("TOP", anchor, "BOTTOM", 0, -8)
+    elseif anchor and top and screenHeight and screenHeight - top >= PANEL_H + 12 then
+        panel:SetPoint("BOTTOM", anchor, "TOP", 0, 8)
     else
-        panel:SetPoint("CENTER", UIParent, "CENTER", 0, 0)
+        local anchorWidth = FrameValue(anchor, "GetWidth")
+        -- A centered Squat panel can leave no side or vertical space. Move the
+        -- whole panel only when it is the anchor, keeping the saved position intact.
+        if anchor and anchorWidth and anchorWidth >= 100 and left and top and screenWidth and screenHeight
+            and anchorWidth + PANEL_W + 24 <= screenWidth
+            and type(anchor.ClearAllPoints) == "function" and type(anchor.SetPoint) == "function" then
+            local shiftedLeft = math.max(8, screenWidth - PANEL_W - 12 - anchorWidth)
+            anchor:ClearAllPoints()
+            anchor:SetPoint("TOPLEFT", UIParent, "TOPLEFT", shiftedLeft, top - screenHeight)
+            panel:SetPoint("TOPLEFT", anchor, "TOPRIGHT", 8, 0)
+        elseif anchor then
+            panel:SetPoint("TOPLEFT", anchor, "TOPRIGHT", 8, 0)
+        else
+            panel:SetPoint("CENTER", UIParent, "CENTER", 0, 0)
+        end
     end
+    attachedTo = anchor
 end
 
 local function EnsurePanel()
@@ -377,6 +402,12 @@ function API.Toggle(anchor)
     Attach(anchor)
     API.Refresh()
     picker:Show()
+    return true
+end
+
+function API.Reanchor(anchor)
+    if not (panel and panel:IsShown()) then return false end
+    Attach(anchor or attachedTo)
     return true
 end
 
