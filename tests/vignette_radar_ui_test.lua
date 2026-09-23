@@ -372,15 +372,19 @@ combat, now, guids = true, 120, { "treasure", "rare" }
 addon.VignetteRadarAPI.Refresh(true)
 assert(panel:GetAlpha() == 0.35 and launcher:GetAlpha() == 0.35 and #sounds == 0,
     "combat must fade both surfaces and suppress detection sounds")
-assert(not panel.combatToggle.keepVisible and panel.combatToggle.label.text == "C",
-    "the footer square must show the current combat-visibility mode")
+assert(not panel.combatToggle.keepVisible and panel.combatToggle.backdrop == nil
+    and #panel.combatToggle.eye == 4 and panel.combatToggle.pupil,
+    "combat visibility must use a borderless eye icon rather than a lettered square")
+assert(panel.combatToggle.eye[1].color[4] < 1,
+    "the inactive eye must look subdued without introducing a boxed control")
 assert(panel.combatToggle.ignoreParentAlpha == true,
     "the quick combat switch must remain legible while the radar is faded")
 panel.combatToggle.scripts.OnClick(panel.combatToggle)
 assert(settings.vignetteRadarKeepVisibleCombat == true and settings.vignetteRadarQuietCombat == true
     and panel.combatToggle.keepVisible and panel:GetAlpha() == 1 and launcher:GetAlpha() == 1
+    and panel.combatToggle.eye[1].color[4] == 1
     and addon.VignetteRadarFeatures.IsQuiet() and #sounds == 0,
-    "the footer square must restore combat visibility without unmuting alerts or rescanning")
+    "the footer eye must restore combat visibility without unmuting alerts or rescanning")
 panel.combatToggle.scripts.OnClick(panel.combatToggle)
 assert(settings.vignetteRadarKeepVisibleCombat == false and settings.vignetteRadarQuietCombat == true
     and not panel.combatToggle.keepVisible
@@ -582,9 +586,16 @@ local function checkLayout(focused)
         end
     end
     assert(panel.field.width == panel.field.height, "layout must preserve circular radar geometry")
-    local toggleX, toggleY = panel.frameToggle.point[4], panel.frameToggle.point[5]
-    assert(math.sqrt(2 * (toggleX + panel.frameToggle.width / 2)^2) <= panel.fieldRadius + .001,
-        "the frame restore square must remain inside every radar circle")
+    inside(panel.frameToggle, panel, 4)
+    local fieldRect, toggleRect = bounds(panel.field), bounds(panel.frameToggle)
+    assert(toggleRect[1] >= (fieldRect[1] + fieldRect[3]) / 2 + panel.plotRadius + 8
+        and panel.frameToggle.backdrop == nil and panel.frameToggle.label == nil
+        and #panel.frameToggle.chevron == 2,
+        "the frame toggle must be a borderless chevron outside every radar plotting area")
+    if panel.layout == "squat" then
+        assert(toggleRect[3] + 4 <= bounds(panel.focusDivider)[1],
+            "the chevron must preserve a gutter before the squat details divider")
+    end
     for _, line in ipairs(panel.rangeRing) do
         local x, y = line.startPoint[3], line.startPoint[4]
         assert(math.abs(math.sqrt(x*x + y*y) - panel.plotRadius) < 0.001, "rings must follow the active layout radius")
@@ -992,12 +1003,14 @@ panel.frameToggle.scripts.OnClick(panel.frameToggle)
 assert(settings.vignetteRadarCircleOnly == true and panel.backdropColor[4] == 0
     and panel.backdropBorderColor[4] == 0 and not panel.title:IsShown()
     and not panel.combatToggle:IsShown() and not panel.resizeGrips.bottomRight:IsShown()
-    and panel.frameToggle:IsShown() and panel.field.point == savedFieldPoint,
-    "circle-only view must hide the rectangular frame without moving the radar or its restore control")
+    and panel.frameToggle:IsShown() and panel.field.point == savedFieldPoint
+    and panel.frameToggle.chevron[1].endPoint[3] > panel.frameToggle.chevron[1].startPoint[3],
+    "circle-only view must hide the rectangular frame without moving the radar or its restore chevron")
 panel.frameToggle.scripts.OnClick(panel.frameToggle)
 assert(settings.vignetteRadarCircleOnly == false and panel.backdropColor[4] == .98
     and panel.title:IsShown() and panel.combatToggle:IsShown()
-    and panel.resizeGrips.bottomRight:IsShown(),
+    and panel.resizeGrips.bottomRight:IsShown()
+    and panel.frameToggle.chevron[1].endPoint[3] < panel.frameToggle.chevron[1].startPoint[3],
     "the circle control must restore full panel chrome and resize grips")
 
 -- The compact panel owns every user-facing setting and remains usable at its

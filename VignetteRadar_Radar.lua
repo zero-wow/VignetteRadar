@@ -985,7 +985,7 @@ local function ApplyPanelLayout(focused)
     if panel.frameToggle then
         panel.frameToggle:ClearAllPoints()
         panel.frameToggle:SetPoint("CENTER", panel.field, "CENTER",
-            panel.fieldRadius * .58, panel.fieldRadius * .58)
+            panel.fieldRadius + 5, 0)
     end
     panel.field.halo:SetSize(layout.field + 4, layout.field + 4)
     ResizeRing(panel.outerRing, panel.field, panel.fieldRadius)
@@ -1178,12 +1178,19 @@ local function UpdatePanelChrome()
     end
     local button = panel.frameToggle
     if button then
-        button:SetBackdropColor(circleOnly and ACCENT[1] or .025,
-            circleOnly and ACCENT[2] or .03, circleOnly and ACCENT[3] or .035,
-            circleOnly and .9 or .8)
-        button:SetBackdropBorderColor(ACCENT[1], ACCENT[2], ACCENT[3], circleOnly and .9 or .6)
-        button.label:SetTextColor(circleOnly and .015 or ACCENT[1],
-            circleOnly and .035 or ACCENT[2], circleOnly and .038 or ACCENT[3], 1)
+        if button._circleOnly ~= circleOnly then
+            button._circleOnly = circleOnly
+            local direction = circleOnly and 1 or -1
+            button.chevron[1]:SetStartPoint("CENTER", button, -direction * 2, -4)
+            button.chevron[1]:SetEndPoint("CENTER", button, direction * 2, 0)
+            button.chevron[2]:SetStartPoint("CENTER", button, direction * 2, 0)
+            button.chevron[2]:SetEndPoint("CENTER", button, -direction * 2, 4)
+        end
+        local opacity = button._hovered and 1 or (circleOnly and .82 or .62)
+        for _, line in ipairs(button.chevron) do
+            line:SetColorTexture(ACCENT[1], ACCENT[2], ACCENT[3], opacity)
+        end
+        button.glow:SetVertexColor(ACCENT[1], ACCENT[2], ACCENT[3], button._hovered and .18 or 0)
     end
 end
 
@@ -1268,17 +1275,18 @@ local function UpdateCombatToggle()
     if not (panel and panel.combatToggle) then return end
     local button = panel.combatToggle
     local keepVisible = Settings().vignetteRadarKeepVisibleCombat == true
-    local red, green, blue = ACCENT[1], ACCENT[2], ACCENT[3]
+    local red, green, blue, opacity
     if keepVisible then
-        button:SetBackdropColor(red, green, blue, 1)
-        button:SetBackdropBorderColor(math.min(1, red + .3), math.min(1, green + .15),
-            math.min(1, blue + .2), 1)
-        button.label:SetTextColor(.015, .035, .038, 1)
+        red, green, blue, opacity = ACCENT[1], ACCENT[2], ACCENT[3], 1
     else
-        button:SetBackdropColor(.025, .03, .035, .96)
-        button:SetBackdropBorderColor(.55, .62, .62, .68)
-        button.label:SetTextColor(.65, .72, .72, 1)
+        red, green, blue, opacity = .62, .70, .71, button._hovered and .9 or .62
     end
+    for _, line in ipairs(button.eye) do
+        line:SetColorTexture(red, green, blue, opacity)
+    end
+    button.pupil:SetVertexColor(red, green, blue, opacity)
+    button.glow:SetVertexColor(ACCENT[1], ACCENT[2], ACCENT[3],
+        button._hovered and .16 or (keepVisible and .1 or 0))
     button.keepVisible = keepVisible
 end
 
@@ -2044,22 +2052,29 @@ local function EnsurePanel()
     end)
     panel.field:SetScript("OnDragStop", function() panel:StopMovingOrSizing(); SavePosition() end)
     panel.field:SetFrameLevel(panel:GetFrameLevel() + 1)
-    panel.frameToggle = CreateFrame("Button", nil, panel.field, "BackdropTemplate")
-    panel.frameToggle:SetSize(18, 18)
+    panel.frameToggle = CreateFrame("Button", nil, panel)
+    panel.frameToggle:SetSize(16, 20)
     panel.frameToggle:SetFrameLevel(panel.field:GetFrameLevel() + 6)
     if type(panel.frameToggle.SetIgnoreParentAlpha) == "function" then
         panel.frameToggle:SetIgnoreParentAlpha(true)
     end
-    panel.frameToggle:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8X8",
-        edgeFile = "Interface\\Buttons\\WHITE8X8", edgeSize = 1 })
-    panel.frameToggle.label = Text(panel.frameToggle, 11, "F")
-    panel.frameToggle.label:SetAllPoints()
-    panel.frameToggle.label:SetJustifyH("CENTER")
+    panel.frameToggle.glow = panel.frameToggle:CreateTexture(nil, "BACKGROUND")
+    panel.frameToggle.glow:SetSize(16, 16)
+    panel.frameToggle.glow:SetPoint("CENTER")
+    panel.frameToggle.glow:SetTexture(CIRCLE_TEXTURE)
+    panel.frameToggle.chevron = {}
+    for index = 1, 2 do
+        local line = panel.frameToggle:CreateLine(nil, "OVERLAY")
+        line:SetThickness(1.8)
+        panel.frameToggle.chevron[index] = line
+    end
     panel.frameToggle:Show()
     panel.frameToggle:SetScript("OnClick", function()
         addon.SetVignetteRadarCircleOnly(Settings().vignetteRadarCircleOnly ~= true)
     end)
     panel.frameToggle:SetScript("OnEnter", function(self)
+        self._hovered = true
+        UpdatePanelChrome()
         if not GameTooltip then return end
         local circleOnly = Settings().vignetteRadarCircleOnly == true
         GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
@@ -2067,7 +2082,11 @@ local function EnsurePanel()
         GameTooltip:AddLine("Click to switch views. Your choice is saved.", .7, .8, .8, true)
         GameTooltip:Show()
     end)
-    panel.frameToggle:SetScript("OnLeave", function() if GameTooltip then GameTooltip:Hide() end end)
+    panel.frameToggle:SetScript("OnLeave", function(self)
+        self._hovered = false
+        UpdatePanelChrome()
+        if GameTooltip then GameTooltip:Hide() end
+    end)
     panel.field.background = panel.field:CreateTexture(nil, "BACKGROUND")
     panel.field.background:SetAllPoints()
     panel.field.background:SetTexture(CIRCLE_TEXTURE)
@@ -2219,20 +2238,35 @@ local function EnsurePanel()
     end)
     panel.compass:HookScript("OnLeave", function() if GameTooltip then GameTooltip:Hide() end end)
 
-    panel.combatToggle = CreateFrame("Button", nil, panel, "BackdropTemplate")
+    panel.combatToggle = CreateFrame("Button", nil, panel)
     panel.combatToggle:SetSize(18, 18)
     if type(panel.combatToggle.SetIgnoreParentAlpha) == "function" then
         panel.combatToggle:SetIgnoreParentAlpha(true)
     end
-    panel.combatToggle:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8X8",
-        edgeFile = "Interface\\Buttons\\WHITE8X8", edgeSize = 1 })
-    panel.combatToggle.label = Text(panel.combatToggle, 11, "C")
-    panel.combatToggle.label:SetAllPoints()
-    panel.combatToggle.label:SetJustifyH("CENTER")
+    panel.combatToggle.glow = panel.combatToggle:CreateTexture(nil, "BACKGROUND")
+    panel.combatToggle.glow:SetSize(18, 18)
+    panel.combatToggle.glow:SetPoint("CENTER")
+    panel.combatToggle.glow:SetTexture(CIRCLE_TEXTURE)
+    panel.combatToggle.eye = {}
+    for index, points in ipairs({
+        { -6, 0, 0, 3 }, { 0, 3, 6, 0 }, { -6, 0, 0, -3 }, { 0, -3, 6, 0 },
+    }) do
+        local line = panel.combatToggle:CreateLine(nil, "OVERLAY")
+        line:SetThickness(1.5)
+        line:SetStartPoint("CENTER", panel.combatToggle, points[1], points[2])
+        line:SetEndPoint("CENTER", panel.combatToggle, points[3], points[4])
+        panel.combatToggle.eye[index] = line
+    end
+    panel.combatToggle.pupil = panel.combatToggle:CreateTexture(nil, "OVERLAY")
+    panel.combatToggle.pupil:SetSize(3, 3)
+    panel.combatToggle.pupil:SetPoint("CENTER")
+    panel.combatToggle.pupil:SetTexture(CIRCLE_TEXTURE)
     panel.combatToggle:SetScript("OnClick", function()
         addon.SetVignetteRadarKeepVisibleCombat(Settings().vignetteRadarKeepVisibleCombat ~= true)
     end)
     panel.combatToggle:SetScript("OnEnter", function(self)
+        self._hovered = true
+        UpdateCombatToggle()
         if not GameTooltip then return end
         local enabled = Settings().vignetteRadarKeepVisibleCombat == true
         GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
@@ -2242,7 +2276,11 @@ local function EnsurePanel()
         GameTooltip:AddLine("Instance fading is a separate setting.", .55, .7, .68, true)
         GameTooltip:Show()
     end)
-    panel.combatToggle:SetScript("OnLeave", function() if GameTooltip then GameTooltip:Hide() end end)
+    panel.combatToggle:SetScript("OnLeave", function(self)
+        self._hovered = false
+        UpdateCombatToggle()
+        if GameTooltip then GameTooltip:Hide() end
+    end)
     UpdateCombatToggle()
 
     AddResizeGrips()
