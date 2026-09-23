@@ -24,6 +24,8 @@ function methods:GetFrameLevel() return self.level or 1 end
 function methods:SetClampedToScreen(value) self.clamped = value end
 function methods:SetMovable(value) self.movable = value end
 function methods:EnableMouse(value) self.mouse = value end
+function methods:EnableMouseWheel(value) self.mouseWheel = value end
+function methods:SetEnabled(value) self.enabled = value end
 function methods:RegisterForClicks(...) self.clickButtons = { ... } end
 function methods:RegisterForDrag(...) self.dragButtons = { ... } end
 function methods:RegisterEvent(event) self.events = self.events or {}; self.events[event] = true end
@@ -134,19 +136,20 @@ optionsEvent.scripts.OnEvent(optionsEvent)
 local optionsPanel = assert(_G.VignetteRadarOptionsPanel, "standalone addon needs a populated settings panel")
 assert(optionsPanel.width == 520 and optionsPanel.height == 365 and registeredCategory,
     "standalone options must fit the Settings canvas without EllesmereUI")
-local toggles, range150
+local toggles, lowerRange
 toggles = {}
 for _, object in ipairs(objects) do
     if object.parent == optionsPanel.pages.Radar and object.kind == "CheckButton" then
         toggles[#toggles + 1] = object
-    elseif object.parent == optionsPanel.pages.Radar and object.text == "150 yd" then
-        range150 = object
+    elseif object.parent == optionsPanel.pages.Radar and object.text == "-" then
+        lowerRange = object
     end
 end
-assert(#toggles == 3 and range150, "standalone options must expose all visibility toggles and range choices")
-range150.scripts.OnClick(range150)
-assert(settings.vignetteRadarRange == 150 and range150.highlightLocked,
-    "range buttons must update and reflect the standalone saved setting")
+assert(#toggles == 4 and lowerRange, "standalone options must expose visibility, data scope, and range controls")
+lowerRange.scripts.OnClick(lowerRange)
+lowerRange.scripts.OnClick(lowerRange)
+assert(settings.vignetteRadarRange == 150 and lowerRange.enabled == false,
+    "range controls must update saved settings and stop at the smallest range")
 settings.vignetteRadarRange = 450
 SlashCmdList.VIGNETTERADAR("config")
 assert(openedCategory == 517, "config command must open the standalone AddOns settings category")
@@ -156,9 +159,9 @@ SlashCmdList.VIGNETTERADAR("preview")
 local panel = assert(_G.VignetteRadarPanel, "preview must construct the radar panel")
 local launcher = assert(_G.VignetteRadarLauncher, "preview must construct the draggable launcher")
 assert(settings.vignetteRadarEnabled == false, "layout preview must not silently enable live tracking")
-assert(panel:IsShown() and panel.width == 220 and panel.height == 252, "preview must show the intended compact panel")
+assert(panel:IsShown() and panel.width == 220 and panel.height == 278, "preview must reserve space for zoom controls")
 assert(panel.field.width == 200 and panel.field.height == 200 and panel.field.point[1] == "BOTTOM"
-    and panel.field.point[3] == 9, "radar field must fit below the header with a visible gutter")
+    and panel.field.point[3] == 35, "radar field must fit between header and zoom controls with visible gutters")
 assert(panel.drag.width == 128 and panel.target.point[1] == "TOPRIGHT"
     and panel.legend.point[1] == "TOPRIGHT" and panel.close.point[1] == "TOPRIGHT",
     "drag target must stop before the focus, legend, and close controls")
@@ -255,15 +258,15 @@ assert(#sounds == 0 and rareBlip.target.newUntil > now, "default detection alert
 assert(rareBlip.dot.texture:find("Skull", 1, true) and panel.blipByKey.treasure.dot.atlas == "VignetteLoot",
     "live rares and treasures must use familiar skull and chest imagery")
 rareBlip.scripts.OnClick(rareBlip, "LeftButton")
-assert(panel.focusReadout:IsShown() and panel.height == 298 and panel.field.point[3] == 55,
+assert(panel.focusReadout:IsShown() and panel.height == 324 and panel.field.point[3] == 81,
     "focusing must reserve exactly the footer space without moving the radar into its header")
 assert(panel.focusMeta.text:find("350 yd", 1, true) and panel.focusMeta.text:find("42% HP", 1, true),
     "focused live rare must show distance and available health")
 assert(panel.focusName.width == 172 and panel.focusMeta.width == 172,
     "long target text must stay bounded within the focus footer")
--- Field bottom is 55; divider y46 leaves a 9px gutter. Footer ends y40 (6px gutter).
-assert(panel.focusReadout.point[3] + panel.focusReadout.height <= 40
-    and panel.focusDivider.point[3] == 46 and panel.field.point[3] >= 55,
+-- Field bottom is 81; divider y72 leaves 9px. Focus ends y66, above the zoom row.
+assert(panel.focusReadout.point[3] + panel.focusReadout.height <= 66
+    and panel.focusDivider.point[3] == 72 and panel.field.point[3] >= 81,
     "focus controls and radar must keep clear gutters on both sides of their divider")
 settings.vignetteRadarRange = 150
 addon.VignetteRadarAPI.Refresh(true)
@@ -302,8 +305,8 @@ addon.VignetteRadarAPI.Refresh(true)
 assert(panel.blipByKey.rare:GetAlpha() < initialAlpha, "last-seen markers must fade with elapsed time")
 now = 113
 addon.VignetteRadarAPI.Refresh(true)
-assert(not panel.blipByKey.rare and not panel.focusReadout:IsShown() and panel.height == 252
-    and panel.field.point[3] == 9, "expiry must clear focus and release footer space")
+assert(not panel.blipByKey.rare and not panel.focusReadout:IsShown() and panel.height == 278
+    and panel.field.point[3] == 35, "expiry must clear focus and release its space while keeping zoom controls")
 
 settings.vignetteRadarAlertSound = true
 combat, now, guids = true, 120, { "treasure", "rare" }
@@ -375,5 +378,53 @@ now, guids = 282, { "rare" }
 addon.VignetteRadarAPI.Refresh(true)
 assert(panel.blipByKey.boss.target.stale and panel.blipByKey.boss.target.isWorldBoss
     and launcher.rangeLabel.text ~= "BOSS", "last-seen boss classification must persist without implying a live nearby boss")
+
+-- Wider ranges reveal only positions actually supplied by the game.
+addon.VignetteRadarTargetPicker.ClearFocus()
+settings.vignetteRadarAlertSound = false
+liveInfo.far = { name = "Far map treasure", atlasName = "VignetteLoot", vignetteID = 800,
+    onMinimap = false, onWorldMap = true, inFogOfWar = false }
+liveInfo.fogged = { name = "Fogged", atlasName = "VignetteLoot", vignetteID = 801,
+    onMinimap = false, onWorldMap = true, inFogOfWar = true }
+liveInfo.unpublished = { name = "Unpublished", atlasName = "VignetteLoot", vignetteID = 802,
+    onMinimap = false, onWorldMap = false, inFogOfWar = false }
+livePositions.far = { x = 0.8, y = 0.5 }
+livePositions.fogged = { x = 0.7, y = 0.5 }
+livePositions.unpublished = { x = 0.6, y = 0.5 }
+C_Map.GetWorldPosFromMapPos = function(_, position) return 42, { x = position.x * 10000, y = position.y * 10000 } end
+now, guids, mapID = 300, { "far", "fogged", "unpublished" }, 779
+addon.VignetteRadarAPI.Refresh(true)
+assert(#addon.VignetteRadarAPI.GetTargets() == 1 and addon.VignetteRadarAPI.GetTargets()[1].source == "worldMap",
+    "wide view must accept exposed map data while rejecting fogged and unpublished positions")
+assert(not panel.blipByKey.far, "distant data must stay outside the current display range")
+for _ = 1, 5 do panel.zoomOut.scripts.OnClick(panel.zoomOut) end
+assert(settings.vignetteRadarRange == 4800 and panel.zoomLabel.text == "4800 yd" and panel.blipByKey.far,
+    "zoom-out controls must reveal a supplied detection 3000 yards away")
+assert(panel.blipByKey.far.target.distance == 3000 and launcher.detected == 0,
+    "full-radar zoom must preserve yard distances and the launcher's fixed 150-yard radius")
+panel.field.scripts.OnMouseWheel(panel.field, 1)
+assert(settings.vignetteRadarRange == 2400 and not panel.blipByKey.far, "mouse wheel up must zoom in")
+panel.scripts.OnMouseWheel(panel, -1)
+assert(settings.vignetteRadarRange == 4800 and panel.blipByKey.far, "mouse wheel down must zoom out")
+panel.blipByKey.far.scripts.OnMouseWheel(panel.blipByKey.far, 1)
+assert(settings.vignetteRadarRange == 2400, "wheel zoom must also work while hovering a marker")
+panel.zoomOut.scripts.OnClick(panel.zoomOut)
+panel.blipByKey.far.scripts.OnClick(panel.blipByKey.far, "LeftButton")
+assert(panel.focusReadout:IsShown() and panel.height == 324 and panel.zoomOut.point[5] == 6
+    and panel.zoomOut.height == 20 and panel.focusReadout.point[3] >= 34,
+    "disclosed focus readout must reserve a gutter above the zoom controls")
+settings.vignetteRadarWorldMap = false
+addon.VignetteRadarAPI.Refresh(true)
+assert(#addon.VignetteRadarAPI.GetTargets() == 0 and not panel.blipByKey.far and not panel.focusReadout:IsShown(),
+    "disabling world-map entries must clear them and their focus without leaving ghosts")
+settings.vignetteRadarAlertSound = true
+local soundCount = #sounds
+settings.vignetteRadarWorldMap = true
+addon.VignetteRadarAPI.Refresh(true)
+assert(panel.blipByKey.far and #sounds == soundCount, "enabling wider data scope must seed silently")
+assert(not addon.SetVignetteRadarRange(999999) and settings.vignetteRadarRange == 4800,
+    "unsupported zoom ranges must not corrupt saved settings")
+for _ = 1, 10 do panel.zoomIn.scripts.OnClick(panel.zoomIn) end
+assert(settings.vignetteRadarRange == 150, "zoom-in must clamp at the minimum")
 
 io.write("vignette radar UI tests passed\n")

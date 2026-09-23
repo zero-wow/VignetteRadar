@@ -4,7 +4,7 @@ if type(addon) ~= "table" then return end
 local API = {}
 addon.VignetteRadarFeatures = API
 
-local MAX_TARGETS, MAX_RECENT, MAX_SESSION_IGNORED = 64, 256, 256
+local MAX_TARGETS, MAX_RECENT, MAX_SESSION_IGNORED = 256, 256, 256
 local GLOBAL_ALERT_SECONDS, PULSE_SECONDS = 3, 3
 local activeMapID, initialized, previewing = nil, false, false
 local live, stale, recent, sessionIgnored = {}, {}, {}, {}
@@ -147,7 +147,7 @@ end
 
 local SNAPSHOT_FIELDS = {
     "key", "vignetteID", "name", "category", "mapID", "mapX", "mapY",
-    "worldX", "worldY", "instanceID", "atlasName", "vignetteType", "isWorldBoss",
+    "worldX", "worldY", "instanceID", "atlasName", "vignetteType", "isWorldBoss", "source",
 }
 
 local function Snapshot(target, mapID, now)
@@ -229,7 +229,7 @@ function API.Update(targets, mapID, now, context)
     local canAlert = not firstScan and settings.vignetteRadarAlerts == true and not API.IsQuiet()
 
     if type(targets) == "table" and not IsSecret(targets) then
-        for index = 1, math.min(#targets, 128) do
+        for index = 1, math.min(#targets, 512) do
             local target = targets[index]
             local key = String(Field(target, "key"))
             if #output < MAX_TARGETS and key and not seen[key] and not API.IsIgnored(target) then

@@ -88,7 +88,8 @@ local function Tooltip(owner, target)
         GameTooltip:AddLine(age and ("Last seen " .. AgeLabel(age):lower() .. ".") or "Last seen recently.",
             0.72, 0.76, 0.78)
     elseif not target.sample then
-        GameTooltip:AddLine("Currently visible on the minimap.", 0.72, 0.76, 0.78)
+        GameTooltip:AddLine(target.source == "worldMap" and "Shown on Blizzard's world map."
+            or "Currently visible on the minimap.", 0.72, 0.76, 0.78)
     end
     if IsFavorite(target) then GameTooltip:AddLine("Favorite", 1, 0.82, 0.33) end
     GameTooltip:AddLine("Left-click: focus this vignette; click again to show all.", 0.55, 0.86, 0.76, true)

@@ -113,21 +113,23 @@ C_VignetteInfo.GetHealthPercent = function() error("protected") end
 assert(F.GetHealth(nav) == nil, "protected health failure must be harmless")
 assert(F.GetHealth(target("other", 200, "Other", "treasure")) == nil)
 
--- A scan can contain 128 Blizzard vignettes; ignored entries must not starve the visible cap.
+-- Wide scans can contain 512 Blizzard vignettes; ignored entries must not starve the visible cap.
 local many = {}
-for index = 1, 128 do
+for index = 1, 512 do
     many[index] = target("many-" .. index, 1000 + index, "Many " .. index)
-    if index <= 64 then F.Ignore(many[index], false) end
+    if index <= 200 then F.Ignore(many[index], false) end
 end
 local visible = F.Update(many, 4, 100, live)
-assert(#visible == 64 and visible[1].key == "many-65",
-    "ignored entries must not consume the 64 visible target slots")
+assert(#visible == 256 and visible[1].key == "many-201"
+    and visible[256].key == "many-456",
+    "ignored entries must not consume the 256 visible target slots")
 local nextMany = {}
-for index = 1, 64 do
+for index = 1, 300 do
     nextMany[index] = target("next-" .. index, 2000 + index, "Next " .. index)
 end
 visible = F.Update(nextMany, 4, 101, live)
-assert(#visible == 64, "live and fading state must remain bounded together")
+assert(#visible == 256 and visible[256].key == "next-256",
+    "live and fading state must remain bounded together")
 
 Enum = { QuestTagType = { Normal = 0, WorldBoss = 5 }, WorldQuestQuality = { Epic = 4 } }
 C_QuestLog = { GetQuestTagInfo = function(questID)
@@ -149,10 +151,12 @@ assert(not F.IsWorldBoss({ rewardQuestID = 0 }) and not F.IsWorldBoss({})
     "missing, secret, and protected quest metadata must fail closed")
 local boss = target("boss", 3000, "Verified boss")
 boss.isWorldBoss = F.IsWorldBoss({ rewardQuestID = 900 })
+boss.source = "worldMap"
 visible = F.Update({ boss }, 5, 110, live)
 assert(#visible == 1 and visible[1].isWorldBoss == true)
 visible = F.Update({}, 5, 111, live)
-assert(#visible == 1 and visible[1].stale and visible[1].isWorldBoss == true,
-    "last-seen snapshot must preserve verified world-boss classification")
+assert(#visible == 1 and visible[1].stale and visible[1].isWorldBoss == true
+    and visible[1].source == "worldMap",
+    "last-seen snapshot must preserve world-boss classification and map provenance")
 
 io.write("vignette radar feature tests passed\n")

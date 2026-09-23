@@ -17,6 +17,7 @@ local db = addon.GetSettings()
 assert(db.vignetteRadarEnabled == false and db.vignetteRadarHideWhenEmpty == false
     and db.vignetteRadarLauncherVisible == false and db.vignetteRadarRange == 600,
     "standalone addon must migrate the user's original radar choices")
+assert(db.vignetteRadarWorldMap == true, "world-map detections should be included by default")
 assert(db.vignetteRadarPosition.x == 111 and db.vignetteRadarLauncherPosition.y == -44
     and db.vignetteRadarCategories.rare == false and db.vignetteRadarHighlight == "treasure",
     "standalone addon must preserve placement and category choices")
@@ -35,8 +36,25 @@ local fresh = {}
 assert(loadfile(sourcePath))("VignetteRadar", fresh)
 local defaults = fresh.GetSettings()
 assert(defaults.vignetteRadarEnabled == true and defaults.vignetteRadarHideWhenEmpty == true
-    and defaults.vignetteRadarLauncherVisible == true and defaults.vignetteRadarRange == 450,
+    and defaults.vignetteRadarLauncherVisible == true and defaults.vignetteRadarRange == 450
+    and defaults.vignetteRadarWorldMap == true,
     "the radar must work without either optional addon installed")
+local expectedRanges = { 150, 300, 450, 600, 1200, 2400, 4800 }
+assert(#fresh.VignetteRadarRanges == #expectedRanges, "all selectable ranges must be published")
+for index, range in ipairs(expectedRanges) do
+    assert(fresh.VignetteRadarRanges[index] == range, "range order must stay stable")
+    defaults.vignetteRadarRange = range
+    fresh.GetSettings()
+    assert(defaults.vignetteRadarRange == range, "supported range must remain valid: " .. range)
+end
+defaults.vignetteRadarRange = 999
+defaults.vignetteRadarWorldMap = "bad"
+fresh.GetSettings()
+assert(defaults.vignetteRadarRange == 450 and defaults.vignetteRadarWorldMap == true,
+    "invalid range and mode values must reset to safe defaults")
+defaults.vignetteRadarWorldMap = false
+fresh.GetSettings()
+assert(defaults.vignetteRadarWorldMap == false, "world-map choice must persist when disabled")
 assert(defaults.vignetteRadarAlerts == true and defaults.vignetteRadarAlertSound == false
     and defaults.vignetteRadarAlertCategories.rare == true
     and defaults.vignetteRadarAlertCategories.treasure == true

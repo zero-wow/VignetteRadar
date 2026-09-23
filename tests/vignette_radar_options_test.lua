@@ -11,6 +11,7 @@ function methods:SetWordWrap(value) self.wordWrap = value end
 function methods:SetJustifyH(value) self.justifyH = value end
 function methods:SetChecked(value) self.checked = value end
 function methods:GetChecked() return self.checked end
+function methods:SetEnabled(value) self.enabled = value end
 function methods:LockHighlight() self.highlightLocked = true end
 function methods:UnlockHighlight() self.highlightLocked = false end
 function methods:SetScript(name, callback) self.scripts = self.scripts or {}; self.scripts[name] = callback end
@@ -46,6 +47,7 @@ Settings = {
 local db = {
     vignetteRadarEnabled = true, vignetteRadarHideWhenEmpty = true,
     vignetteRadarLauncherVisible = true, vignetteRadarRange = 450,
+    vignetteRadarWorldMap = true,
     vignetteRadarAlerts = true, vignetteRadarAlertSound = false,
     vignetteRadarAlertCategories = { rare = true, treasure = 1, event = false, other = false },
     vignetteRadarAlertCooldown = 60, vignetteRadarLastSeen = true,
@@ -56,6 +58,7 @@ local db = {
 }
 local refreshes, previews, resets, clears = 0, 0, 0, 0
 local addon = {
+    VignetteRadarRanges = { 150, 300, 450, 600, 1200, 2400, 4800 },
     GetSettings = function() return db end,
     SetVignetteRadarEnabled = function(value) db.vignetteRadarEnabled = value end,
     ToggleVignetteRadarPreview = function() previews = previews + 1 end,
@@ -136,6 +139,7 @@ end
 assert(#controls >= 26, "each feature must have a usable control")
 for _, key in ipairs({
     "vignetteRadarEnabled", "vignetteRadarHideWhenEmpty", "vignetteRadarLauncherVisible",
+    "vignetteRadarWorldMap",
     "vignetteRadarAlerts", "vignetteRadarAlertSound", "vignetteRadarAlertCategories.rare",
     "vignetteRadarAlertCategories.treasure", "vignetteRadarAlertCategories.event",
     "vignetteRadarAlertCategories.other", "vignetteRadarLastSeen", "vignetteRadarQuietCombat",
@@ -144,8 +148,17 @@ for _, key in ipairs({
     assert(byKey[key], "missing setting: " .. key)
 end
 assert(byKey["vignetteRadarAlertCategories.rare"].label.text == "Rares and bosses"
-    and byKey["vignetteRadarShapes"].label.text == "Recognizable icons",
+    and byKey["vignetteRadarShapes"].label.text == "Recognizable icons"
+    and byKey["vignetteRadarWorldMap"].label.text == "Include world-map detections",
     "rare alerts and icon settings must use recognizable player-facing names")
+local rangeReadout
+for _, object in ipairs(objects) do
+    if object.parent == panel.pages.Radar and object.kind == "FontString" and object.text == "450 yd" then
+        rangeReadout = object
+    end
+end
+assert(rangeReadout and rangeReadout.width == 118 and choices["-"] and choices["+"],
+    "the compact range selector must show the saved value")
 local behaviorFooter
 for _, object in ipairs(objects) do
     if object.parent == panel.pages.Behavior and object.kind == "FontString"
@@ -173,6 +186,8 @@ assert(db.vignetteRadarAlertCategories.event == true,
     "WoW's numeric checked state must be accepted")
 clickCheck("vignetteRadarAlertSound", true)
 assert(db.vignetteRadarAlertSound == true)
+clickCheck("vignetteRadarWorldMap", false)
+assert(db.vignetteRadarWorldMap == false)
 clickCheck("vignetteRadarEnabled", false)
 assert(db.vignetteRadarEnabled == false)
 for key, control in pairs(byKey) do
@@ -195,7 +210,35 @@ local function clickChoice(title, key, value)
     assert(db[key] == value and refreshes == before + 1 and button.highlightLocked,
         title .. " must save, rescan, and show its selection")
 end
-clickChoice("150 yd", "vignetteRadarRange", 150)
+local function stepRange(button, expected)
+    local before = refreshes
+    button.scripts.OnClick(button)
+    assert(db.vignetteRadarRange == expected and refreshes == before + 1
+        and rangeReadout.text == expected .. " yd", "range step must persist and refresh its readout")
+end
+stepRange(choices["+"], 600)
+stepRange(choices["+"], 1200)
+stepRange(choices["+"], 2400)
+stepRange(choices["+"], 4800)
+assert(choices["+"].enabled == false and choices["-"].enabled == true,
+    "the upper range endpoint must disable the next step")
+local endpointRefreshes = refreshes
+choices["+"].scripts.OnClick(choices["+"])
+assert(db.vignetteRadarRange == 4800 and refreshes == endpointRefreshes,
+    "the upper endpoint must not save an invalid range")
+for _, range in ipairs({ 2400, 1200, 600, 450, 300, 150 }) do
+    stepRange(choices["-"], range)
+end
+assert(choices["-"].enabled == false and choices["+"].enabled == true,
+    "the lower range endpoint must disable the previous step")
+endpointRefreshes = refreshes
+choices["-"].scripts.OnClick(choices["-"])
+assert(db.vignetteRadarRange == 150 and refreshes == endpointRefreshes,
+    "the lower endpoint must not save an invalid range")
+db.vignetteRadarRange = 450
+addon.RefreshVignetteRadarOptions()
+assert(rangeReadout.text == "450 yd" and choices["-"].enabled and choices["+"].enabled,
+    "external range changes must update open settings")
 clickChoice("30 sec", "vignetteRadarAlertCooldown", 30)
 clickChoice("15 sec", "vignetteRadarLastSeenSeconds", 15)
 clickChoice("Large", "vignetteRadarMarkerSize", 9)

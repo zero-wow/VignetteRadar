@@ -1,6 +1,8 @@
 local _, addon = ...
 if type(addon) ~= "table" then return end
 
+addon.VignetteRadarRanges = { 150, 300, 450, 600, 1200, 2400, 4800 }
+
 local MIGRATED_KEYS = {
     "vignetteRadarEnabled",
     "vignetteRadarHideWhenEmpty",
@@ -41,10 +43,15 @@ function addon.GetSettings()
     if type(db.vignetteRadarEnabled) ~= "boolean" then db.vignetteRadarEnabled = true end
     if type(db.vignetteRadarHideWhenEmpty) ~= "boolean" then db.vignetteRadarHideWhenEmpty = true end
     if type(db.vignetteRadarLauncherVisible) ~= "boolean" then db.vignetteRadarLauncherVisible = true end
-    if db.vignetteRadarRange ~= 150 and db.vignetteRadarRange ~= 300
-        and db.vignetteRadarRange ~= 450 and db.vignetteRadarRange ~= 600 then
-        db.vignetteRadarRange = 450
+    local validRange = false
+    for _, range in ipairs(addon.VignetteRadarRanges) do
+        if db.vignetteRadarRange == range then
+            validRange = true
+            break
+        end
     end
+    if not validRange then db.vignetteRadarRange = 450 end
+    if type(db.vignetteRadarWorldMap) ~= "boolean" then db.vignetteRadarWorldMap = true end
     if type(db.vignetteRadarAlerts) ~= "boolean" then db.vignetteRadarAlerts = true end
     if type(db.vignetteRadarAlertSound) ~= "boolean" then db.vignetteRadarAlertSound = false end
     if type(db.vignetteRadarAlertCategories) ~= "table" then db.vignetteRadarAlertCategories = {} end

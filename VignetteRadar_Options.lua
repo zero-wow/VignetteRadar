@@ -1,7 +1,7 @@
 local _, addon = ...
 if type(addon) ~= "table" then return end
 
-local panel, category, closeButton
+local panel, category, closeButton, rangeValue, previousRange, nextRange
 local checkboxes, choiceGroups = {}, {}
 
 local function Checked(value)
@@ -23,7 +23,15 @@ local function Refresh()
             if db[key] == value then button:LockHighlight() else button:UnlockHighlight() end
         end
     end
+    if rangeValue then
+        rangeValue:SetText(db.vignetteRadarRange .. " yd")
+        local ranges = addon.VignetteRadarRanges
+        previousRange:SetEnabled(db.vignetteRadarRange ~= ranges[1])
+        nextRange:SetEnabled(db.vignetteRadarRange ~= ranges[#ranges])
+    end
 end
+
+addon.RefreshVignetteRadarOptions = Refresh
 
 local function Changed()
     addon.VignetteRadarAPI.Refresh(true)
@@ -83,6 +91,21 @@ local function AddChoice(parent, key, value, title, x, y, width)
     return button
 end
 
+local function StepRange(direction)
+    local db = addon.GetSettings()
+    local ranges = addon.VignetteRadarRanges
+    for index, range in ipairs(ranges) do
+        if db.vignetteRadarRange == range then
+            local nextRangeValue = ranges[index + direction]
+            if nextRangeValue then
+                db.vignetteRadarRange = nextRangeValue
+                Changed()
+            end
+            return
+        end
+    end
+end
+
 local function AddFooter(parent, title)
     local label = parent:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
     label:SetPoint("TOPLEFT", parent, "TOPLEFT", 24, -326)
@@ -111,7 +134,7 @@ local function BuildPanel()
     description:SetPoint("TOPLEFT", title, "BOTTOMLEFT", 0, -11)
     description:SetPoint("RIGHT", panel, "RIGHT", -24, 0)
     description:SetJustifyH("LEFT")
-    description:SetText("Heading-up positions for active Blizzard minimap vignettes. Hidden locations are never revealed.")
+    description:SetText("Heading-up positions for Blizzard vignette detections. Hidden locations are never revealed.")
 
     local function SelectPage(name)
         for pageName, otherPage in pairs(panel.pages) do
@@ -138,17 +161,21 @@ local function BuildPanel()
     end
 
     local radar = AddPage("Radar", 1)
-    AddCheckbox(radar, "vignetteRadarEnabled", "Enable radar", 18, -118)
-    AddCheckbox(radar, "vignetteRadarHideWhenEmpty", "Hide full radar when there are no detections", 18, -153)
-    AddCheckbox(radar, "vignetteRadarLauncherVisible", "Show draggable 150-yard launcher", 18, -188)
-    AddLabel(radar, "Full radar range", 24, -236)
-    for index, range in ipairs({ 150, 300, 450, 600 }) do
-        AddChoice(radar, "vignetteRadarRange", range, range .. " yd", 169 + (index - 1) * 82, -227, 74)
-    end
-    AddButton(radar, "Preview layout", 24, -281, 133, function()
+    AddCheckbox(radar, "vignetteRadarEnabled", "Enable radar", 18, -114)
+    AddCheckbox(radar, "vignetteRadarHideWhenEmpty", "Hide full radar when there are no detections", 18, -146)
+    AddCheckbox(radar, "vignetteRadarLauncherVisible", "Show draggable 150-yard launcher", 18, -178)
+    AddCheckbox(radar, "vignetteRadarWorldMap", "Include world-map detections", 18, -210)
+    AddLabel(radar, "Full radar range", 24, -251)
+    previousRange = AddButton(radar, "-", 169, -247, 48, function() StepRange(-1) end)
+    rangeValue = radar:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
+    rangeValue:SetPoint("TOPLEFT", radar, "TOPLEFT", 229, -251)
+    rangeValue:SetWidth(118)
+    rangeValue:SetJustifyH("CENTER")
+    nextRange = AddButton(radar, "+", 359, -247, 48, function() StepRange(1) end)
+    AddButton(radar, "Preview layout", 24, -283, 133, function()
         addon.ToggleVignetteRadarPreview()
     end)
-    AddButton(radar, "Reset positions", 169, -281, 133, function()
+    AddButton(radar, "Reset positions", 169, -283, 133, function()
         addon.ResetVignetteRadarPositions()
     end)
     AddFooter(radar, "/vr toggles the full panel. Right-click the launcher for a layout preview.")

@@ -46,6 +46,17 @@ assert(T.DisplayableVignetteInfo(infos.live), "a live minimap vignette must be a
 assert(not T.DisplayableVignetteInfo(infos.worldOnly), "world-map-only vignettes must be rejected")
 assert(not T.DisplayableVignetteInfo(infos.dead), "dead vignettes must be rejected")
 assert(not T.DisplayableVignetteInfo(infos.hidden), "secret visibility values must be rejected")
+local distant = { onMinimap = false, onWorldMap = true, inFogOfWar = false, isDead = false }
+assert(T.DisplayableVignetteInfo(distant, true) and not T.DisplayableVignetteInfo(distant, false),
+    "world-map entries must require the broader data scope")
+distant.inFogOfWar = true
+assert(not T.DisplayableVignetteInfo(distant, true), "fogged map entries must stay excluded")
+distant.inFogOfWar = { secret = true }
+assert(not T.DisplayableVignetteInfo(distant, true), "unreadable fog state must not expose a world-map position")
+distant.inFogOfWar, distant.onWorldMap = false, { secret = true }
+assert(not T.DisplayableVignetteInfo(distant, true), "unreadable map visibility must stay excluded")
+distant.onWorldMap, distant.isDead = true, true
+assert(not T.DisplayableVignetteInfo(distant, true), "world-map scope must still exclude dead vignettes")
 
 local targets = T.CollectVignettes(777)
 assert(#targets == 1 and targets[1].name == "Live Treasure", "only usable active minimap vignettes should be collected")

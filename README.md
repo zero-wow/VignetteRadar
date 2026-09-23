@@ -1,8 +1,12 @@
 # Vignette Radar
 
-A compact, heading-up radar for the rare, treasure, event, and other vignettes that World of Warcraft already exposes on the minimap. It uses Blizzard's current vignette and map data; it does not reveal hidden objects or use a location database.
+A compact, heading-up radar for the rare, treasure, event, and other vignettes that World of Warcraft already exposes on the minimap and world map. It uses Blizzard's current vignette and map data; it does not reveal hidden objects or use a location database.
 
 The small draggable launcher covers 150 yards. Click it to show or tuck away the full radar. The full radar has a category legend and a picker for focusing one current detection. Right-click the launcher for a layout preview.
+
+The full radar supports 150, 300, 450, 600, 1,200, 2,400, and 4,800-yard radii. Scroll down over it or click `-` to zoom out; scroll up or click `+` to zoom in. The range readout is the distance from you to the outer range ring. The launcher stays at 150 yards.
+
+World-map detections are included by default and can be disabled on the Radar settings tab. Only publicly exposed, unfogged map entries with usable positions are included; tooltips identify their source. Changing this option clears incompatible last-seen markers and seeds the new view silently. Increasing the displayed radius cannot make Blizzard supply hidden or unloaded spawns, so there is no guaranteed detection distance. The addon maintains up to 256 current/last-seen entries and draws up to 64 at once; crowded views show an explicit count and individual entries remain available in the target picker.
 
 ## Install
 
@@ -29,10 +33,10 @@ The addon also appears under the game's AddOns settings when the current Retail 
 - Treasures and other detections use Blizzard's own icons when available, with simple fallback markers. Marker size and recognizable icons are configurable.
 - Combat and instance quiet modes fade the radar and launcher and suppress alerts, restoring them automatically afterward. Both modes can be disabled in Behavior.
 
-Preview samples support focus without changing favorites, ignores, or navigation. All live information still comes from Blizzard's exposed minimap vignettes; the addon does not discover hidden objects or determine whether a missing detection was killed or looted.
+Preview samples support focus without changing favorites, ignores, or navigation. All live information still comes from Blizzard's exposed vignettes; the addon does not discover hidden objects or determine whether a missing detection was killed or looted.
 
 ## Development validation
 
-Current development build: `0.1.0-dev.2` (base version `0.1.0`).
+Current development build: `0.1.0-dev.3` (base version `0.1.0`).
 
-Run each `tests/*_test.lua` with Lua from the addon root and check Lua files with `luac -p`. The tests cover migration, radar projection, filters, target actions, alert/last-seen state, navigation fallbacks, quiet modes, and UI layout bounds using mocked game APIs. These checks do not replace in-game validation of rendering, navigation, or API availability.
+Run each `tests/*_test.lua` with Lua from the addon root and check Lua files with `luac -p`. The tests cover migration, radar projection, filters, target actions, alert/last-seen state, navigation fallbacks, quiet modes, mouse-wheel/button zoom, world-map visibility guards, and UI layout bounds using mocked game APIs. These checks do not replace in-game validation of rendering, navigation, or API availability.

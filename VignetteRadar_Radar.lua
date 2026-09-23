@@ -1,13 +1,14 @@
 local _, addon = ...
 if type(addon) ~= "table" then return end
 
-local PANEL_W, PANEL_H = 220, 252
+local PANEL_W, PANEL_H = 220, 278
+local ZOOM_FOOTER_H = 26
 local HEADER_H, FIELD_SIZE = 34, 200
 local FIELD_RADIUS = (FIELD_SIZE / 2) - 9
 local PLOT_RADIUS = FIELD_RADIUS - 15
 local LAUNCHER_SIZE, LAUNCHER_RADIUS, LAUNCHER_RANGE = 44, 13, 150
 local UPDATE_SECONDS, RESCAN_SECONDS = 0.05, 1
-local MAX_BLIPS = 32
+local MAX_BLIPS = 64
 local ACCENT = { 0.05, 0.82, 0.62 }
 local RED = { 1, 0.18, 0.14 }
 local CIRCLE_TEXTURE = "Interface\\CharacterFrame\\TempPortraitAlphaMask"
@@ -23,6 +24,7 @@ local preview = false
 local manualPanelState
 local activeTargets = {}
 local activeMapID
+local activeWorldMapMode
 local pulseUntil = 0
 local RefreshRadar, ScanVignettes, Render, UpdateLauncher, EnsureLauncher
 local PREVIEW_TARGETS = {
@@ -38,6 +40,25 @@ local PREVIEW_TARGETS = {
 
 local function Settings()
     return addon.GetSettings()
+end
+
+local function Ranges()
+    return addon.VignetteRadarRanges or { 150, 300, 450, 600, 1200, 2400, 4800 }
+end
+
+local function StepRange(step)
+    local ranges, current = Ranges(), Settings().vignetteRadarRange
+    for index, value in ipairs(ranges) do
+        if current == value then
+            local nextIndex = math.max(1, math.min(#ranges, index + step))
+            addon.SetVignetteRadarRange(ranges[nextIndex])
+            return
+        end
+    end
+end
+
+local function OnZoomWheel(_, delta)
+    if delta > 0 then StepRange(-1) elseif delta < 0 then StepRange(1) end
 end
 
 local function Features()
@@ -144,10 +165,11 @@ local function PlayerSnapshot(mapID)
     }
 end
 
-local function DisplayableVignetteInfo(info)
-    return info ~= nil
-        and SafeBoolean(SafeField(info, "onMinimap")) == true
-        and SafeBoolean(SafeField(info, "isDead")) ~= true
+local function DisplayableVignetteInfo(info, includeWorldMap)
+    if info == nil or SafeBoolean(SafeField(info, "isDead")) == true then return false end
+    if SafeBoolean(SafeField(info, "onMinimap")) == true then return true end
+    return includeWorldMap == true and SafeBoolean(SafeField(info, "onWorldMap")) == true
+        and SafeBoolean(SafeField(info, "inFogOfWar")) == false
 end
 
 local function ClassifyVignette(info)
@@ -182,11 +204,18 @@ local function CollectVignettes(mapID)
     end
     local vignetteGUIDs = Call(C_VignetteInfo.GetVignettes)
     if IsSecret(vignetteGUIDs) or type(vignetteGUIDs) ~= "table" then return targets end
-    for index = 1, math.min(#vignetteGUIDs, 128) do
+    local includeWorldMap = Settings().vignetteRadarWorldMap ~= false
+    -- Honor maps where Blizzard explicitly suppresses world-map vignette pins.
+    if includeWorldMap and C_Map.GetMapInfo and FlagsUtil and FlagsUtil.IsSet and Enum and Enum.UIMapFlag then
+        local flags = SafeNumber(SafeField(Call(C_Map.GetMapInfo, mapID), "flags"))
+        local hiddenFlag = SafeNumber(Enum.UIMapFlag.HideVignettes)
+        if flags and hiddenFlag and Call(FlagsUtil.IsSet, flags, hiddenFlag) == true then includeWorldMap = false end
+    end
+    for index = 1, math.min(#vignetteGUIDs, 512) do
         local guid = vignetteGUIDs[index]
         if guid ~= nil and not IsSecret(guid) then
             local info = Call(C_VignetteInfo.GetVignetteInfo, guid)
-            if DisplayableVignetteInfo(info) then
+            if DisplayableVignetteInfo(info, includeWorldMap) then
                 local mapPosition = Call(C_VignetteInfo.GetVignettePosition, guid, mapID)
                 local mapX, mapY = ReadXY(mapPosition)
                 local worldX, worldY, instanceID = MapToWorld(mapID, mapPosition)
@@ -201,6 +230,7 @@ local function CollectVignettes(mapID)
                         name = SafeString(SafeField(info, "name")) or "Detected vignette",
                         category = worldBoss and "rare" or ClassifyVignette(info),
                         isWorldBoss = worldBoss,
+                        source = SafeBoolean(SafeField(info, "onMinimap")) == true and "minimap" or "worldMap",
                         vignetteType = SafeField(info, "type"),
                         atlasName = SafeString(SafeField(info, "atlasName")),
                         worldX = worldX,
@@ -212,6 +242,22 @@ local function CollectVignettes(mapID)
             end
         end
     end
+    -- Nearby entries get first claim on the bounded state pool in crowded zones.
+    local player = PlayerSnapshot(mapID)
+    for _, target in ipairs(targets) do
+        target.favorite = Features() and Features().IsFavorite(target) or false
+        if player and (not player.instanceID or not target.instanceID or player.instanceID == target.instanceID) then
+            local dx, dy = target.worldX - player.worldX, target.worldY - player.worldY
+            target.distance = math.sqrt(dx * dx + dy * dy)
+        end
+    end
+    table.sort(targets, function(left, right)
+        if left.favorite ~= right.favorite then return left.favorite end
+        if left.source ~= right.source then return left.source == "minimap" end
+        if left.isWorldBoss ~= right.isWorldBoss then return left.isWorldBoss end
+        if left.distance ~= right.distance then return (left.distance or math.huge) < (right.distance or math.huge) end
+        return left.key < right.key
+    end)
     return targets
 end
 
@@ -455,7 +501,8 @@ local function Tooltip(owner)
     if target.sample then
         GameTooltip:AddLine("Layout preview; this is not a live detection.", 0.55, 0.86, 0.76, true)
     elseif not target.stale then
-        GameTooltip:AddLine("Shown from Blizzard's active minimap vignette data.", 0.55, 0.86, 0.76, true)
+        GameTooltip:AddLine(target.source == "worldMap" and "Shown on Blizzard's world map; availability follows the game."
+            or "Shown from Blizzard's active minimap vignette data.", 0.55, 0.86, 0.76, true)
     end
     GameTooltip:AddLine("Click: focus; click again to show all.", 0.65, 0.80, 0.77, true)
     if not target.sample then
@@ -548,6 +595,8 @@ local function AcquireBlip()
         blip:SetScript("OnEnter", Tooltip)
         blip:SetScript("OnLeave", function() if GameTooltip then GameTooltip:Hide() end end)
         blip:RegisterForClicks("LeftButtonUp", "RightButtonUp")
+        blip:EnableMouseWheel(true)
+        blip:SetScript("OnMouseWheel", OnZoomWheel)
         blip:SetScript("OnClick", function(self, button) addon.HandleVignetteClick(self.target, button) end)
         blip.favorite = Text(blip, 9, "*")
         blip.favorite:SetPoint("BOTTOMLEFT", blip, "TOPRIGHT", -3, -3)
@@ -638,7 +687,7 @@ local function UpdateFocusReadout(target, player)
     local focused = target ~= nil
     panel:SetHeight(PANEL_H + (focused and 46 or 0))
     panel.field:ClearAllPoints()
-    panel.field:SetPoint("BOTTOM", 0, focused and 55 or 9)
+    panel.field:SetPoint("BOTTOM", 0, ZOOM_FOOTER_H + (focused and 55 or 9))
     panel.focusReadout:SetShown(focused)
     panel.focusDivider:SetShown(focused)
     panel.edgeArrow:Hide()
@@ -688,6 +737,10 @@ Render = function()
     BeginBlips()
     local range = tonumber(Settings().vignetteRadarRange) or 450
     UpdateRingLabels(range)
+    panel.zoomLabel:SetText(range .. " yd")
+    local ranges = Ranges()
+    panel.zoomIn:SetAlpha(range == ranges[1] and 0.35 or 1)
+    panel.zoomOut:SetAlpha(range == ranges[#ranges] and 0.35 or 1)
     panel:SetAlpha(Quiet() and 0.35 or 1)
     local mapID = CurrentMapID()
     if not preview and mapID ~= activeMapID then ScanVignettes(mapID) end
@@ -718,20 +771,20 @@ Render = function()
         return
     end
     RenderCardinals(player.facing)
-    local shown, staleShown = 0, 0
+    local shown, staleShown, totalInRange = 0, 0, 0
     for _, target in ipairs(targets) do
         if TargetVisible(target)
             and not (player.instanceID and target.instanceID and player.instanceID ~= target.instanceID) then
             local dx, dy = target.worldX - player.worldX, target.worldY - player.worldY
             local distance = math.sqrt((dx * dx) + (dy * dy))
             if distance <= range then
+                totalInRange = totalInRange + 1
                 local screenX, screenY = Project(dx, dy, distance, player.facing, PLOT_RADIUS, range)
-                if screenX and screenY then
+                if screenX and screenY and shown < MAX_BLIPS then
                     target.distance = distance
                     PlaceBlip(target.key, screenX, screenY, target)
                     shown = shown + 1
                     if target.stale then staleShown = staleShown + 1 end
-                    if shown >= MAX_BLIPS then break end
                 end
             end
         end
@@ -740,7 +793,8 @@ Render = function()
         panel.summary:SetText(focusedTarget and focusedTarget.stale and "LAST SEEN"
             or (shown > 0 and "TARGET FOCUS" or "OUT OF RANGE"))
     else
-        panel.summary:SetText(staleShown > 0 and ((shown - staleShown) .. " LIVE / " .. staleShown .. " SEEN")
+        panel.summary:SetText(totalInRange > shown and (shown .. " OF " .. totalInRange .. " SHOWN")
+            or staleShown > 0 and ((shown - staleShown) .. " LIVE / " .. staleShown .. " SEEN")
             or (shown == 1 and "1 IN RANGE" or shown .. " IN RANGE"))
     end
     EndBlips()
@@ -1062,6 +1116,8 @@ local function EnsurePanel()
     panel:SetFrameStrata("MEDIUM")
     panel:SetClampedToScreen(true)
     panel:SetMovable(true)
+    panel:EnableMouseWheel(true)
+    panel:SetScript("OnMouseWheel", OnZoomWheel)
     Surface(panel)
     local position = Settings().vignetteRadarPosition
     panel:SetPoint("TOPLEFT", UIParent, "TOPLEFT",
@@ -1205,7 +1261,9 @@ local function EnsurePanel()
 
     panel.field = CreateFrame("Frame", nil, panel)
     panel.field:SetSize(FIELD_SIZE, FIELD_SIZE)
-    panel.field:SetPoint("BOTTOM", 0, 9)
+    panel.field:SetPoint("BOTTOM", 0, 9 + ZOOM_FOOTER_H)
+    panel.field:EnableMouseWheel(true)
+    panel.field:SetScript("OnMouseWheel", OnZoomWheel)
     panel.field:SetFrameLevel(panel:GetFrameLevel() + 1)
     panel.field.background = panel.field:CreateTexture(nil, "BACKGROUND")
     panel.field.background:SetAllPoints()
@@ -1253,12 +1311,12 @@ local function EnsurePanel()
 
     panel.focusDivider = panel:CreateTexture(nil, "ARTWORK")
     panel.focusDivider:SetSize(PANEL_W - 24, 1)
-    panel.focusDivider:SetPoint("BOTTOM", 0, 46)
+    panel.focusDivider:SetPoint("BOTTOM", 0, 46 + ZOOM_FOOTER_H)
     panel.focusDivider:SetColorTexture(1, 1, 1, 0.12)
     panel.focusDivider:Hide()
     panel.focusReadout = CreateFrame("Button", nil, panel)
     panel.focusReadout:SetSize(PANEL_W - 24, 32)
-    panel.focusReadout:SetPoint("BOTTOMLEFT", 12, 8)
+    panel.focusReadout:SetPoint("BOTTOMLEFT", 12, 8 + ZOOM_FOOTER_H)
     panel.focusReadout:RegisterForClicks("LeftButtonUp", "RightButtonUp")
     panel.focusReadout:SetScript("OnEnter", Tooltip)
     panel.focusReadout:SetScript("OnLeave", function() if GameTooltip then GameTooltip:Hide() end end)
@@ -1281,6 +1339,29 @@ local function EnsurePanel()
     panel.edgeArrow:SetScript("OnLeave", function() if GameTooltip then GameTooltip:Hide() end end)
     panel.edgeArrow:SetScript("OnClick", function(self, button) addon.HandleVignetteClick(self.target, button) end)
     panel.edgeArrow:Hide()
+
+    panel.zoomLabel = Text(panel, 10, "450 yd")
+    panel.zoomLabel:SetPoint("BOTTOM", 0, 10)
+    panel.zoomLabel:SetSize(110, 12)
+    panel.zoomLabel:SetJustifyH("CENTER")
+    local function ZoomButton(label, right, step, title)
+        local button = CreateFrame("Button", nil, panel, "UIPanelButtonTemplate")
+        button:SetSize(22, 20)
+        button:SetPoint(right and "BOTTOMRIGHT" or "BOTTOMLEFT", panel, right and "BOTTOMRIGHT" or "BOTTOMLEFT", right and -12 or 12, 6)
+        button:SetText(label)
+        button:SetScript("OnClick", function() StepRange(step) end)
+        button:SetScript("OnEnter", function(self)
+            if not GameTooltip then return end
+            GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+            GameTooltip:SetText(title, 1, 1, 1)
+            GameTooltip:AddLine("Range is the distance from you to the outer range ring. You can also use the mouse wheel.", 0.7, 0.8, 0.8, true)
+            GameTooltip:Show()
+        end)
+        button:SetScript("OnLeave", function() if GameTooltip then GameTooltip:Hide() end end)
+        return button
+    end
+    panel.zoomOut = ZoomButton("-", false, 1, "Zoom out: show a wider area")
+    panel.zoomIn = ZoomButton("+", true, -1, "Zoom in: show nearby detail")
 
     panel:SetScript("OnUpdate", function(self, elapsed)
         self._renderElapsed = (self._renderElapsed or 0) + elapsed
@@ -1314,6 +1395,12 @@ ScanVignettes = function(mapID)
     activeMapID = mapID
     activeTargets = CollectVignettes(mapID)
     if Features() then
+        local worldMapMode = Settings().vignetteRadarWorldMap ~= false
+        if activeWorldMapMode ~= nil and worldMapMode ~= activeWorldMapMode then
+            Features().Update({}, mapID, Now(), { enabled = false })
+            pulseUntil = 0
+        end
+        activeWorldMapMode = worldMapMode
         local alerts
         activeTargets, alerts = Features().Update(activeTargets, mapID, Now(), {
             enabled = Settings().vignetteRadarEnabled == true, preview = preview,
@@ -1404,6 +1491,18 @@ function addon.ResetVignetteRadarPositions()
     Settings().vignetteRadarLauncherPosition = nil
     if panel then panel:ClearAllPoints(); panel:SetPoint("TOPLEFT", UIParent, "TOPLEFT", 30, -520) end
     if launcher then launcher:ClearAllPoints(); launcher:SetPoint("TOPLEFT", UIParent, "TOPLEFT", 30, -170) end
+end
+
+function addon.SetVignetteRadarRange(range)
+    for _, supported in ipairs(Ranges()) do
+        if range == supported then
+            Settings().vignetteRadarRange = supported
+            RefreshRadar(false)
+            if addon.RefreshVignetteRadarOptions then addon.RefreshVignetteRadarOptions() end
+            return true
+        end
+    end
+    return false
 end
 
 function addon.SetVignetteRadarEnabled(enabled)
