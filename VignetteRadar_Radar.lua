@@ -851,7 +851,6 @@ end
 local function RenderQuestAreas(player, mapID, range)
     local blob = panel.questBlob
     if not (blob and player and mapID and Settings().vignetteRadarQuestAreas
-        and Settings().vignetteRadarCircleOnly ~= true
         and Settings().vignetteRadarNorthUp and #activeQuests > 0) then
         HideQuestAreas()
         return

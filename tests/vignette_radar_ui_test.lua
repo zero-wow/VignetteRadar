@@ -981,8 +981,8 @@ GetCursorPosition = originalCursor
 panel.field.left, panel.field.top = nil, nil
 panel.questBlob.left, panel.questBlob.top = nil, nil
 panel.frameToggle.scripts.OnClick(panel.frameToggle)
-assert(settings.vignetteRadarCircleOnly and not panel.questBlob:IsShown() and questDot:IsShown(),
-    "circle-only view must keep quest dots but suppress unmasked area shading")
+assert(settings.vignetteRadarCircleOnly and panel.questBlob:IsShown() and questDot:IsShown(),
+    "circle-only view must keep both quest dots and available area shading")
 panel.frameToggle.scripts.OnClick(panel.frameToggle)
 assert(not settings.vignetteRadarCircleOnly and panel.questBlob:IsShown(),
     "restoring the frame must restore available quest-area shading")

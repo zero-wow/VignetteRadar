@@ -14,7 +14,7 @@ Choose a saved panel style under `/vr config` → Layout, or use `/vr layout` to
 
 Styles preserve your range, filters, focus, and saved position. Switching closes open legend/target pickers; reopen them against the new panel edges. The radar stays circular in every style. Drag any edge or corner of the full panel to scale it uniformly; the small bottom-right grip shows where to start. The size is saved and stays inside the screen. Use **Preview layout** on the Layout tab to try a style without enabling tracking.
 
-Click the small, borderless chevron in the empty margin to the right of the radar circle to hide the outer frame and controls. The chevron reverses direction so you can restore the frame. Drag the circle to move it while in this view. The choice is saved and also appears under Layout. Quest-area shading is hidden in circle-only view so the native area widget cannot draw outside the circular edge; quest dots and vignette markers remain visible.
+Click the small, borderless chevron in the empty margin to the right of the radar circle to hide the outer frame and controls. The chevron reverses direction so you can restore the frame. Drag the circle to move it while in this view. The choice is saved and also appears under Layout. Quest dots and area shading remain visible in circle-only view.
 
 Squat automatically fills its right side with the nearest visible detection's name, type, distance, and available health. Click that readout to focus it; when tracking a specific target, the readout and action label change. When no detection is available, the panel shows a clear empty state.
 
@@ -57,6 +57,6 @@ Preview samples support focus without changing favorites, ignores, or navigation
 
 ## Development validation
 
-Current development build: `0.1.0-dev.16` (base version `0.1.0`).
+Current development build: `0.1.0-dev.17` (base version `0.1.0`).
 
 Run each `tests/*_test.lua` with Lua from the addon root and check Lua files with `luac -p`. The tests cover migration, radar projection, filters, target actions, alert/last-seen state, navigation fallbacks, quiet modes, mouse-wheel/button zoom, world-map visibility guards, and UI layout bounds using mocked game APIs. Layout checks exercise repeated style changes, automatic Squat details, focused and unfocused states, edge and corner resizing, pop-outs, resized rings and markers, and an 800×600 canvas. Orientation checks cover quarter turns, fixed markers/cardinals, the player direction line, both radars, preview, unknown facing, and out-of-range focus. These checks do not replace in-game validation of rendering, navigation, or API availability.
