@@ -14,7 +14,7 @@ Styles preserve your range, filters, focus, and saved position. Switching closes
 
 Squat automatically fills its right side with the nearest visible detection's name, type, distance, and available health. Click that readout to focus it; when tracking a specific target, the readout and action label change. When no detection is available, the panel shows a clear empty state.
 
-Click the small **N** compass button to switch orientation. When highlighted, north stays at the top and your center direction line turns as you turn. Click it again to restore the default facing-up radar. This choice is saved, applies to the small launcher too, and is also available as **Keep north at the top** on the Layout tab.
+Click the small **N** compass button to switch orientation. A bright chevron above your center dot and its longer direction line show your facing. When the button is highlighted, north stays at the top and that cue turns as you turn. Click it again to restore the default facing-up radar. This choice is saved, applies to the small launcher too, and is also available as **Keep north at the top** on the Layout tab.
 
 The full radar supports 150, 300, 450, 600, 1,200, 2,400, and 4,800-yard radii. Scroll down over it or click `-` to zoom out; scroll up or click `+` to zoom in. The range readout is the distance from you to the outer range ring. The launcher stays at 150 yards.
 
@@ -50,6 +50,6 @@ Preview samples support focus without changing favorites, ignores, or navigation
 
 ## Development validation
 
-Current development build: `0.1.0-dev.6` (base version `0.1.0`).
+Current development build: `0.1.0-dev.7` (base version `0.1.0`).
 
 Run each `tests/*_test.lua` with Lua from the addon root and check Lua files with `luac -p`. The tests cover migration, radar projection, filters, target actions, alert/last-seen state, navigation fallbacks, quiet modes, mouse-wheel/button zoom, world-map visibility guards, and UI layout bounds using mocked game APIs. Layout checks exercise repeated style changes, automatic Squat details, focused and unfocused states, edge and corner resizing, pop-outs, resized rings and markers, and an 800×600 canvas. Orientation checks cover quarter turns, fixed markers/cardinals, the player direction line, both radars, preview, unknown facing, and out-of-range focus. These checks do not replace in-game validation of rendering, navigation, or API availability.

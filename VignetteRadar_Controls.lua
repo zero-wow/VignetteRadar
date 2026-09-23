@@ -94,13 +94,13 @@ function Controls.Checkbox(parent)
     })
     checkbox.mark = {}
     local segments = {
-        { -6, 0, -2, -4 },
-        { -2, -4, 7, 6 },
+        { -7, 0, -2, -5 },
+        { -2, -5, 8, 6 },
     }
     for index, segment in ipairs(segments) do
         local line = checkbox:CreateLine(nil, "OVERLAY")
-        line:SetThickness(2)
-        line:SetColorTexture(0.80, 1, 0.94, 1)
+        line:SetThickness(3)
+        line:SetColorTexture(0.015, 0.075, 0.06, 1)
         line:SetStartPoint("CENTER", checkbox, "CENTER", segment[1], segment[2])
         line:SetEndPoint("CENTER", checkbox, "CENTER", segment[3], segment[4])
         checkbox.mark[index] = line
@@ -111,17 +111,19 @@ function Controls.Checkbox(parent)
         local pressed = self._pressed == true
         for _, line in ipairs(self.mark) do line:SetShown(checked) end
         if checked then
-            self:SetBackdropColor(pressed and 0.02 or 0.035, 0.10, 0.08, 1)
-            self:SetBackdropBorderColor(ACCENT[1], ACCENT[2], ACCENT[3], hovered and 0.90 or 0.65)
+            self:SetBackdropColor(pressed and 0.03 or 0.06, hovered and 0.88 or 0.78,
+                hovered and 0.69 or 0.59, 1)
+            self:SetBackdropBorderColor(0.65, 1, 0.87, 1)
         else
             self:SetBackdropColor(hovered and 0.035 or 0.025, hovered and 0.065 or 0.03,
                 hovered and 0.055 or 0.035, 0.96)
-            self:SetBackdropBorderColor(hovered and ACCENT[1] or 1,
-                hovered and ACCENT[2] or 1, hovered and ACCENT[3] or 1, hovered and 0.55 or 0.18)
+            self:SetBackdropBorderColor(hovered and ACCENT[1] or 0.55,
+                hovered and ACCENT[2] or 0.62, hovered and ACCENT[3] or 0.62, hovered and 0.75 or 0.65)
         end
         if self.label then
-            self.label:SetTextColor(hovered and 0.95 or 0.82, hovered and 1 or 0.88,
-                hovered and 0.96 or 0.88, 1)
+            self.label:SetTextColor(checked and 0.90 or (hovered and 0.95 or 0.82),
+                checked and 1 or (hovered and 1 or 0.88),
+                checked and 0.94 or (hovered and 0.96 or 0.88), 1)
         end
     end
     local nativeSetChecked = checkbox.SetChecked

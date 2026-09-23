@@ -687,6 +687,11 @@ end
 for _, name in ipairs({ "classic", "squat", "compact" }) do
     addon.SetVignetteRadarLayout(name)
     checkLayout(false)
+    local headingLength = panel.plotRadius * 0.72
+    assert(panel.direction.thickness >= 2.5 and panel.direction.color[2] == 1
+        and headingLength > panel.plotRadius / 2 and #panel.headingChevron == 2
+        and panel.headingChevron[1].thickness >= 3,
+        "the player heading must show a clear chevron and line in every panel layout")
     assert(panel.compass.text == "N" and not panel.compass._selected,
         "the compass must clearly show whether north is locked")
     playerFacing = 0
@@ -696,7 +701,12 @@ for _, name in ipairs({ "classic", "squat", "compact" }) do
     addon.VignetteRadarAPI.RefreshPresentation()
     near(panel.blipByKey.rare.point[4], northY, "heading-up must rotate the radar with the player")
     near(panel.direction.endPoint[4], 0, "heading-up player line must point straight up")
-    near(panel.direction.endPoint[5], 21, "heading-up line must preserve its length")
+    near(panel.direction.endPoint[5], headingLength, "heading-up line must reach into the radar")
+    near(panel.direction.startPoint[5], 18, "heading ray must begin at the chevron tip")
+    near(panel.headingChevron[1].startPoint[4], -7, "heading-up chevron must straddle the dot")
+    near(panel.headingChevron[2].startPoint[4], 7, "heading-up chevron must straddle the dot")
+    assert(panel.direction:IsShown() and panel.headingChevron[1]:IsShown(),
+        "heading-up player cue must stay visible")
     local before = scanCount
     panel.compass.scripts.OnClick(panel.compass)
     assert(settings.vignetteRadarNorthUp and panel.compass._selected and northOption.checked
@@ -709,8 +719,14 @@ for _, name in ipairs({ "classic", "squat", "compact" }) do
         near(panel.blipByKey.rare.point[5], northY, "north-up marker vertical position must stay fixed")
         near(panel.cardinals[1].point[4], 0, "N must remain above the player in north-up")
         near(panel.cardinals[1].point[5], panel.fieldRadius - 5, "N must remain at the top of the ring")
-        near(panel.direction.endPoint[4], -math.sin(angle) * 21, "player line must turn toward actual facing")
-        near(panel.direction.endPoint[5], math.cos(angle) * 21, "player line must turn toward actual facing")
+        near(panel.direction.endPoint[4], -math.sin(angle) * headingLength, "player line must turn toward actual facing")
+        near(panel.direction.endPoint[5], math.cos(angle) * headingLength, "player line must turn toward actual facing")
+        near(panel.headingChevron[1].endPoint[4], -math.sin(angle) * 18,
+            "chevron tip must follow player facing")
+        near(panel.headingChevron[1].endPoint[5], math.cos(angle) * 18,
+            "chevron tip must follow player facing")
+        assert(panel.headingChevron[1]:IsShown() and panel.headingChevron[2]:IsShown(),
+            "both sides of the player chevron must stay visible")
         near(launcher.miniBlips[1].point[4], miniX, "launcher must use the same fixed orientation")
         near(launcher.miniBlips[1].point[5], miniY, "launcher must use the same fixed orientation")
         assert(launcher.direction:IsShown(), "north-up launcher needs a player direction cue")
@@ -718,7 +734,8 @@ for _, name in ipairs({ "classic", "squat", "compact" }) do
     end
     playerFacing = nil
     addon.VignetteRadarAPI.RefreshPresentation()
-    assert(not panel.direction:IsShown() and not launcher.direction:IsShown() and panel.blipByKey.rare,
+    assert(not panel.direction:IsShown() and not panel.headingChevron[1]:IsShown()
+        and not panel.headingChevron[2]:IsShown() and not launcher.direction:IsShown() and panel.blipByKey.rare,
         "unknown facing must hide its direction cue without losing north-up positions")
     playerFacing = 0
     addon.HandleVignetteClick(panel.blipByKey.rare.target, "LeftButton")
@@ -749,7 +766,10 @@ northOption.scripts.OnClick(northOption)
 assert(panel.compass._selected and settings.vignetteRadarNorthUp)
 SlashCmdList.VIGNETTERADAR("preview")
 near(panel.cardinals[1].point[4], 0, "preview must honor fixed north")
-near(panel.direction.endPoint[4], -math.sin(0.65) * 21, "preview must demonstrate the rotating player cue")
+near(panel.direction.endPoint[4], -math.sin(0.65) * panel.plotRadius * 0.72,
+    "preview must demonstrate the full-length rotating player cue")
+near(panel.headingChevron[1].endPoint[4], -math.sin(0.65) * 18,
+    "preview must demonstrate the player's rotating chevron")
 
 -- Border dragging uniformly scales the panel and keeps the opposite edge stable.
 UIParent:SetSize(800, 600)

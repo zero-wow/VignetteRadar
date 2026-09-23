@@ -12,6 +12,8 @@ local LAYOUTS = {
     compact = { width = 184, height = 260, field = 164, footer = 50, focus = 64 },
 }
 local LAUNCHER_SIZE, LAUNCHER_RADIUS, LAUNCHER_RANGE = 44, 13, 150
+local HEADING_BASE, HEADING_TIP, HEADING_HALF_WIDTH = 9, 18, 7
+local HEADING_RAY_RATIO = 0.72
 local UPDATE_SECONDS, RESCAN_SECONDS = 0.05, 1
 local MAX_BLIPS = 64
 local ACCENT = { 0.05, 0.82, 0.62 }
@@ -61,6 +63,20 @@ local function DrawPlayerHeading(line, frame, facing, innerRadius, outerRadius)
     local x, y = -math.sin(angle), math.cos(angle)
     line:SetStartPoint("CENTER", frame, "CENTER", x * innerRadius, y * innerRadius)
     line:SetEndPoint("CENTER", frame, "CENTER", x * outerRadius, y * outerRadius)
+end
+
+local function DrawPlayerChevron(lines, frame, facing)
+    local angle = facing - ViewFacing(facing)
+    local forwardX, forwardY = -math.sin(angle), math.cos(angle)
+    local rightX, rightY = math.cos(angle), math.sin(angle)
+    for index, line in ipairs(lines) do
+        local side = index == 1 and -1 or 1
+        line:SetStartPoint("CENTER", frame, "CENTER",
+            forwardX * HEADING_BASE + rightX * HEADING_HALF_WIDTH * side,
+            forwardY * HEADING_BASE + rightY * HEADING_HALF_WIDTH * side)
+        line:SetEndPoint("CENTER", frame, "CENTER",
+            forwardX * HEADING_TIP, forwardY * HEADING_TIP)
+    end
 end
 
 local function Ranges()
@@ -949,8 +965,10 @@ Render = function()
     if preview then
         panel.summary:SetText(FocusedTargetKey() and "PREVIEW FOCUS" or "PREVIEW")
         RenderCardinals(ViewFacing(0.65))
-        DrawPlayerHeading(panel.direction, panel.field, 0.65, 3, 21)
+        DrawPlayerHeading(panel.direction, panel.field, 0.65, HEADING_TIP, panel.plotRadius * HEADING_RAY_RATIO)
+        DrawPlayerChevron(panel.headingChevron, panel.field, 0.65)
         panel.direction:Show()
+        for _, line in ipairs(panel.headingChevron) do line:Show() end
         for _, target in ipairs(PREVIEW_TARGETS) do
             target.distance = range * target.distanceFactor
             local scale = panel.plotRadius / PLOT_RADIUS
@@ -970,12 +988,16 @@ Render = function()
         end
         RenderCardinals(0)
         panel.direction:Hide()
+        for _, line in ipairs(panel.headingChevron) do line:Hide() end
         EndBlips()
         return
     end
     RenderCardinals(ViewFacing(player.facing))
-    DrawPlayerHeading(panel.direction, panel.field, player.facing, 3, 21)
+    DrawPlayerHeading(panel.direction, panel.field, player.facing, HEADING_TIP,
+        panel.plotRadius * HEADING_RAY_RATIO)
+    DrawPlayerChevron(panel.headingChevron, panel.field, player.facing)
     panel.direction:SetShown(player.headingAvailable)
+    for _, line in ipairs(panel.headingChevron) do line:SetShown(player.headingAvailable) end
     local shown, staleShown, totalInRange = 0, 0, 0
     for _, target in ipairs(targets) do
         if TargetVisible(target)
@@ -1618,10 +1640,18 @@ local function EnsurePanel()
         label:SetJustifyH("CENTER")
         panel.cardinals[index] = label
     end
-    panel.direction = panel.field:CreateLine(nil, "ARTWORK")
-    panel.direction:SetThickness(2)
-    DrawPlayerHeading(panel.direction, panel.field, 0, 3, 21)
-    panel.direction:SetColorTexture(ACCENT[1], ACCENT[2], ACCENT[3], 0.9)
+    panel.direction = panel.field:CreateLine(nil, "OVERLAY")
+    panel.direction:SetThickness(2.5)
+    DrawPlayerHeading(panel.direction, panel.field, 0, HEADING_TIP, PLOT_RADIUS * HEADING_RAY_RATIO)
+    panel.direction:SetColorTexture(0.30, 1, 0.82, 0.8)
+    panel.headingChevron = {}
+    for index = 1, 2 do
+        local line = panel.field:CreateLine(nil, "OVERLAY")
+        line:SetThickness(3)
+        line:SetColorTexture(0.52, 1, 0.88, 1)
+        panel.headingChevron[index] = line
+    end
+    DrawPlayerChevron(panel.headingChevron, panel.field, 0)
     panel.playerGlow = panel.field:CreateTexture(nil, "OVERLAY")
     panel.playerGlow:SetSize(14, 14)
     panel.playerGlow:SetPoint("CENTER")

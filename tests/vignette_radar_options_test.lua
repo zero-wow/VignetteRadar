@@ -191,13 +191,19 @@ assert(themedCheck.backdrop and #themedCheck.mark == 2 and not themedCheck.mark[
     "every settings checkbox must use the addon surface and a recognizable empty state")
 local oldBorder = themedCheck.backdropBorderColor[4]
 themedCheck.scripts.OnEnter(themedCheck)
-assert(themedCheck.backdropBorderColor[4] > oldBorder,
-    "hovering a checkbox must visibly strengthen its border")
+local hoveredFill = themedCheck.backdropColor[2]
+assert(themedCheck.backdropBorderColor[4] > oldBorder and hoveredFill < 0.1
+    and not themedCheck.mark[1]:IsShown(),
+    "hovering must strengthen the outline without looking checked")
 themedCheck:SetChecked(true)
 assert(themedCheck.mark[1]:IsShown() and themedCheck.mark[2]:IsShown()
-    and themedCheck.backdropBorderColor[2] > themedCheck.backdropBorderColor[1],
-    "checked state needs a visible tick as well as an accent color")
+    and themedCheck.mark[1].thickness >= 3 and themedCheck.mark[1].color[2] < 0.2
+    and themedCheck.backdropColor[2] - hoveredFill > 0.6
+    and themedCheck.backdropBorderColor[4] == 1,
+    "checked state needs a large dark tick on a strongly contrasting solid fill")
 themedCheck.scripts.OnLeave(themedCheck)
+assert(themedCheck.backdropColor[2] > 0.7 and themedCheck.mark[1]:IsShown(),
+    "checked state must remain unmistakable after hover ends")
 themedCheck:SetChecked(false)
 local rangeReadout
 for _, object in ipairs(objects) do
