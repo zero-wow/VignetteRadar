@@ -2,14 +2,16 @@
 ## Title: Vignette Radar
 ## Notes: A radar for active vignettes with optional quest dots and area shading.
 ## Author: Zero
-## Version: 0.1.0-dev.12
+## Version: 0.1.0-dev.13
 ## OptionalDeps: WaffleHouse_EllesmereUI, EllesmereUI
 ## SavedVariables: VignetteRadarDB
 
 VignetteRadar_Core.lua
+VignetteRadar_Style.lua
 VignetteRadar_Controls.lua
 VignetteRadar_Features.lua
 VignetteRadar_Legend.lua
 VignetteRadar_TargetPicker.lua
 VignetteRadar_Radar.lua
 VignetteRadar_Options.lua
+VignetteRadar_QuickConfig.lua

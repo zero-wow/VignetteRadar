@@ -4,6 +4,16 @@ if type(addon) ~= "table" then return end
 local Controls = {}
 addon.VignetteRadarControls = Controls
 local ACCENT = { 0.05, 0.82, 0.62 }
+local controls = {}
+
+function Controls.RefreshTheme()
+    if addon.VignetteRadarStyle then
+        ACCENT[1], ACCENT[2], ACCENT[3] = addon.VignetteRadarStyle.Color("accent")
+    end
+    for _, control in ipairs(controls) do
+        if control.RefreshAppearance then control:RefreshAppearance() end
+    end
+end
 
 -- Keep ordinary buttons consistent with the radar legend and target picker.
 function Controls.Button(parent, title, width, height)
@@ -38,6 +48,7 @@ function Controls.Button(parent, title, width, height)
         button:SetAlpha(enabled and 1 or 0.38)
         button.label:ClearAllPoints()
         button.label:SetPoint("CENTER", 0, pressed and -1 or 0)
+        button.selection:SetColorTexture(ACCENT[1], ACCENT[2], ACCENT[3], .8)
         button.selection:SetShown(enabled and selected == true)
         if pressed then
             button:SetBackdropColor(0.018, 0.055, 0.05, 1)
@@ -54,6 +65,7 @@ function Controls.Button(parent, title, width, height)
             button.label:SetTextColor(0.72, 0.8, 0.79, 1)
         end
     end
+    button.RefreshAppearance = Refresh
 
     -- Preserve native enabled/selected semantics used by Settings range choices.
     local setEnabled, lockHighlight, unlockHighlight = button.SetEnabled, button.LockHighlight, button.UnlockHighlight
@@ -81,6 +93,7 @@ function Controls.Button(parent, title, width, height)
     button:SetScript("OnMouseUp", function(self) self._pressed = false; Refresh() end)
     button:SetScript("OnHide", function(self) self._hovered, self._pressed = false, false; Refresh() end)
     Refresh()
+    controls[#controls + 1] = button
     return button
 end
 
@@ -111,9 +124,11 @@ function Controls.Checkbox(parent)
         local pressed = self._pressed == true
         for _, line in ipairs(self.mark) do line:SetShown(checked) end
         if checked then
-            self:SetBackdropColor(pressed and 0.03 or 0.06, hovered and 0.88 or 0.78,
-                hovered and 0.69 or 0.59, 1)
-            self:SetBackdropBorderColor(0.65, 1, 0.87, 1)
+            self:SetBackdropColor(pressed and ACCENT[1] * .55 or ACCENT[1],
+                hovered and math.min(1, ACCENT[2] * 1.08) or ACCENT[2] * .95,
+                hovered and math.min(1, ACCENT[3] * 1.08) or ACCENT[3] * .95, 1)
+            self:SetBackdropBorderColor(math.min(1, ACCENT[1] + .45),
+                math.min(1, ACCENT[2] + .2), math.min(1, ACCENT[3] + .25), 1)
         else
             self:SetBackdropColor(hovered and 0.035 or 0.025, hovered and 0.065 or 0.03,
                 hovered and 0.055 or 0.035, 0.96)
@@ -143,5 +158,6 @@ function Controls.Checkbox(parent)
         self:RefreshAppearance()
     end)
     checkbox:RefreshAppearance()
+    controls[#controls + 1] = checkbox
     return checkbox
 end

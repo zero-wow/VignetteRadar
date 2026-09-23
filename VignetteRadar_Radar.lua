@@ -12,8 +12,7 @@ local LAYOUTS = {
     compact = { width = 184, height = 260, field = 164, footer = 50, focus = 64 },
 }
 local LAUNCHER_SIZE, LAUNCHER_RADIUS, LAUNCHER_RANGE = 44, 13, 150
-local HEADING_BASE, HEADING_TIP, HEADING_HALF_WIDTH = 4, 9, 4
-local HEADING_RAY_RATIO = 0.30
+local HEADING_HALF_WIDTH = 4
 local UPDATE_SECONDS, RESCAN_SECONDS = 0.05, 1
 local MAX_BLIPS = 64
 local MAX_QUEST_DOTS = 64
@@ -36,7 +35,7 @@ local questMapBasis
 local activeMapID
 local activeWorldMapMode
 local pulseUntil = 0
-local RefreshRadar, ScanVignettes, Render, UpdateLauncher, EnsureLauncher
+local RefreshRadar, ScanVignettes, Render, UpdateLauncher, EnsureLauncher, ApplyAppearance
 local PREVIEW_TARGETS = {
     { key = "preview-rare", x = 28, y = 52, launcherX = 3, launcherY = 6,
         distanceFactor = 0.34, name = "Sample rare", category = "rare", sample = true },
@@ -70,14 +69,21 @@ end
 
 local function DrawPlayerChevron(lines, frame, facing)
     local angle = facing - ViewFacing(facing)
+    local base = Settings().vignetteRadarChevronDistance or 4
+    local tip = base + 5
     local forwardX, forwardY = -math.sin(angle), math.cos(angle)
     local rightX, rightY = math.cos(angle), math.sin(angle)
     for index, line in ipairs(lines) do
         local side = index == 1 and -1 or 1
-        line:SetStartPoint("CENTER", frame, forwardX * HEADING_BASE + rightX * HEADING_HALF_WIDTH * side,
-            forwardY * HEADING_BASE + rightY * HEADING_HALF_WIDTH * side)
-        line:SetEndPoint("CENTER", frame, forwardX * HEADING_TIP, forwardY * HEADING_TIP)
+        line:SetStartPoint("CENTER", frame, forwardX * base + rightX * HEADING_HALF_WIDTH * side,
+            forwardY * base + rightY * HEADING_HALF_WIDTH * side)
+        line:SetEndPoint("CENTER", frame, forwardX * tip, forwardY * tip)
     end
+end
+
+local function HeadingGeometry(radius)
+    local tip = (Settings().vignetteRadarChevronDistance or 4) + 5
+    return tip, math.max(tip + 2, radius * (Settings().vignetteRadarHeadingLength or .30))
 end
 
 local function Ranges()
@@ -430,7 +436,10 @@ local function CategoryColor(category)
 end
 
 local function TargetColor(target)
-    if target.isWorldBoss then return 1, 0.18, 0.12 end
+    if target.isWorldBoss then
+        if addon.VignetteRadarStyle then return addon.VignetteRadarStyle.Color("boss") end
+        return RED[1], RED[2], RED[3]
+    end
     return CategoryColor(target.category)
 end
 
@@ -751,7 +760,11 @@ local function RenderQuestDots(player, range)
                         dot.fill:SetSize(5, 5)
                         dot.fill:SetPoint("CENTER")
                         dot.fill:SetTexture(CIRCLE_TEXTURE)
-                        dot.fill:SetVertexColor(1, 0.74, 0.27, 1)
+                        if addon.VignetteRadarStyle then
+                            dot.fill:SetVertexColor(addon.VignetteRadarStyle.Color("quest"))
+                        else
+                            dot.fill:SetVertexColor(1, 0.74, 0.27, 1)
+                        end
                         dot:EnableMouseWheel(true)
                         dot:SetScript("OnMouseWheel", OnZoomWheel)
                         dot:SetScript("OnEnter", function(self)
@@ -935,9 +948,10 @@ local function ApplyPanelLayout(focused)
     if name == "squat" then
         -- A circular plotting area beside the readout keeps this view short even while focused.
         Place(panel.field, "BOTTOMLEFT", 10, 38)
-        Place(panel.title, "TOPLEFT", 214, -16, 148, 13)
+        Place(panel.title, "TOPLEFT", 214, -16, 122, 13)
         Place(panel.summary, "TOPLEFT", 214, -35, 148, 10)
-        Place(panel.drag, "TOPLEFT", 208, -8, 158, 47)
+        Place(panel.drag, "TOPLEFT", 208, -8, 130, 47)
+        Place(panel.settingsDot, "TOPRIGHT", -10, -12)
         Place(panel.focusDivider, "BOTTOMLEFT", 202, 42, 1, 174)
         Place(panel.sideCaption, "TOPLEFT", 214, -68, 148, 12)
         Place(panel.focusReadout, "TOPLEFT", 214, -91, 148, 68)
@@ -954,9 +968,10 @@ local function ApplyPanelLayout(focused)
         local compact = name == "compact"
         local footer = layout.footer
         Place(panel.field, "BOTTOM", 0, footer + (focused and layout.focus or 0) + 9)
-        Place(panel.title, "TOPLEFT", 12, -6, compact and 160 or 120, 13)
-        Place(panel.summary, "TOPLEFT", 12, -21, compact and 160 or 120, 10)
-        Place(panel.drag, "TOPLEFT", 4, -3, compact and 176 or 128, 28)
+        Place(panel.title, "TOPLEFT", 12, -6, compact and 136 or 100, 13)
+        Place(panel.summary, "TOPLEFT", 12, -21, compact and 136 or 100, 10)
+        Place(panel.drag, "TOPLEFT", 4, -3, compact and 144 or 106, 28)
+        Place(panel.settingsDot, "TOPRIGHT", compact and -10 or -85, -6)
         Place(panel.focusDivider, "BOTTOM", 0, footer + layout.focus, layout.width - 24, 1)
         Place(panel.focusReadout, "BOTTOMLEFT", 12, footer + 8, layout.width - 24, compact and 50 or 32)
         if compact then
@@ -1005,6 +1020,8 @@ local function ApplyPanelLayout(focused)
         if legend and legend.Reanchor then legend.Reanchor(panel) end
         if picker and picker.Reanchor then picker.Reanchor(panel) end
     end
+    local quick = addon.VignetteRadarQuickConfig
+    if quick and quick.Reanchor then quick.Reanchor(panel) end
 end
 
 local function UpdateFocusReadout(target, player, selected)
@@ -1071,8 +1088,68 @@ local function UpdateFocusReadout(target, player, selected)
     end
 end
 
+local appearanceKey, appearancePanel, appearanceLauncher
+ApplyAppearance = function()
+    local style = addon.VignetteRadarStyle
+    if not style then return end
+    local db = Settings()
+    local key = table.concat({ db.vignetteRadarTheme or "verdant", style.revision or 0,
+        db.vignetteRadarRingOpacity or .5, db.vignetteRadarChevronOpacity or .72,
+        db.vignetteRadarHeadingOpacity or .46 }, ":")
+    if key == appearanceKey and panel == appearancePanel and launcher == appearanceLauncher then return end
+    appearanceKey, appearancePanel, appearanceLauncher = key, panel, launcher
+    local ar, ag, ab = style.Color("accent")
+    local rr, rg, rb = style.Color("rings")
+    local hr, hg, hb = style.Color("heading")
+    local br, bg, bb = style.Color("background")
+    ACCENT[1], ACCENT[2], ACCENT[3] = ar, ag, ab
+    RED[1], RED[2], RED[3] = style.Color("boss")
+    if panel then
+        panel:SetBackdropColor(math.min(.14, br * 2.7), math.min(.14, bg * 2.7),
+            math.min(.14, bb * 2.7), .98)
+        panel.title:SetTextColor(ar, ag, ab, 1)
+        panel.field.background:SetVertexColor(br, bg, bb, .94)
+        panel.field.halo:SetVertexColor(rr, rg, rb, .18 * db.vignetteRadarRingOpacity)
+        for _, group in ipairs({ { panel.outerRing, .02 }, { panel.rangeRing, .045 },
+            { panel.middleRing, .04 }, { panel.innerRing, .03 } }) do
+            for _, line in ipairs(group[1]) do
+                line:SetColorTexture(rr, rg, rb, group[2] * db.vignetteRadarRingOpacity)
+            end
+        end
+        panel.direction:SetColorTexture(hr, hg, hb, db.vignetteRadarHeadingOpacity)
+        for _, line in ipairs(panel.headingChevron) do
+            line:SetColorTexture(hr, hg, hb, db.vignetteRadarChevronOpacity)
+        end
+        panel.player:SetVertexColor(ar, ag, ab, 1)
+        panel.playerGlow:SetVertexColor(ar, ag, ab, .25)
+        panel.innerLabel:SetTextColor(rr, rg, rb, .55)
+        panel.outerLabel:SetTextColor(rr, rg, rb, .55)
+        panel.settingsDot.dot:SetVertexColor(ar, ag, ab, 1)
+        panel.settingsDot.rim:SetVertexColor(ar, ag, ab, .20)
+        panel.settingsDot.inner:SetVertexColor(br, bg, bb, 1)
+        if panel.legend and panel.legend.dots then
+            for index, slot in ipairs({ "rare", "treasure", "event" }) do
+                panel.legend.dots[index]:SetVertexColor(style.Color(slot))
+            end
+        end
+    end
+    if launcher then
+        launcher.face:SetVertexColor(br, bg, bb, .98)
+        launcher.center:SetVertexColor(ar, ag, ab, 1)
+        launcher.centerGlow:SetVertexColor(ar, ag, ab, .22)
+        launcher.direction:SetColorTexture(hr, hg, hb, db.vignetteRadarHeadingOpacity)
+        for _, line in ipairs(launcher.ring) do line:SetColorTexture(rr, rg, rb, .18) end
+    end
+    if addon.VignetteRadarControls and addon.VignetteRadarControls.RefreshTheme then
+        addon.VignetteRadarControls.RefreshTheme()
+    end
+    local legend = LegendAPI()
+    if legend and legend.Refresh then legend.Refresh() end
+end
+
 Render = function()
     if not panel or not panel:IsShown() then return end
+    ApplyAppearance()
     BeginBlips()
     local range = tonumber(Settings().vignetteRadarRange) or 450
     UpdateRingLabels(range)
@@ -1120,7 +1197,8 @@ Render = function()
         HideQuestAreas()
         panel.summary:SetText(FocusedTargetKey() and "PREVIEW FOCUS" or "PREVIEW")
         RenderCardinals(ViewFacing(0.65))
-        DrawPlayerHeading(panel.direction, panel.field, 0.65, HEADING_TIP, panel.plotRadius * HEADING_RAY_RATIO)
+        local tip, outer = HeadingGeometry(panel.plotRadius)
+        DrawPlayerHeading(panel.direction, panel.field, 0.65, tip, outer)
         DrawPlayerChevron(panel.headingChevron, panel.field, 0.65)
         panel.direction:Show()
         for _, line in ipairs(panel.headingChevron) do line:Show() end
@@ -1150,8 +1228,8 @@ Render = function()
         return
     end
     RenderCardinals(ViewFacing(player.facing))
-    DrawPlayerHeading(panel.direction, panel.field, player.facing, HEADING_TIP,
-        panel.plotRadius * HEADING_RAY_RATIO)
+    local tip, outer = HeadingGeometry(panel.plotRadius)
+    DrawPlayerHeading(panel.direction, panel.field, player.facing, tip, outer)
     DrawPlayerChevron(panel.headingChevron, panel.field, player.facing)
     panel.direction:SetShown(player.headingAvailable)
     for _, line in ipairs(panel.headingChevron) do line:SetShown(player.headingAvailable) end
@@ -1195,6 +1273,8 @@ local function SavePosition()
     if SafeNumber(left) and SafeNumber(top) and UIParent and UIParent.GetHeight then
         Settings().vignetteRadarPosition = { x = left, y = top - UIParent:GetHeight() }
     end
+    local quick = addon.VignetteRadarQuickConfig
+    if quick and quick.Reanchor then quick.Reanchor(panel) end
 end
 
 local function AddResizeGrips()
@@ -1353,6 +1433,7 @@ local function CreateLauncherRing(parent, radius, alpha)
 end
 
 local function UpdateLauncherSweep(frame, elapsed)
+    ApplyAppearance()
     frame:SetAlpha(Quiet() and 0.35 or 1)
     local active = Settings().vignetteRadarEnabled == true or preview
     frame._animationTime = (frame._animationTime or 0) + elapsed
@@ -1622,11 +1703,11 @@ local function EnsurePanel()
 
     panel.title = Text(panel, 11, "VIGNETTE RADAR", true)
     panel.title:SetPoint("TOPLEFT", 12, -6)
-    panel.title:SetWidth(120)
+    panel.title:SetWidth(100)
     panel.summary = Text(panel, 8, "0 IN RANGE")
     panel.summary:SetPoint("TOPLEFT", 12, -21)
     panel.summary:SetJustifyH("LEFT")
-    panel.summary:SetWidth(120)
+    panel.summary:SetWidth(100)
 
     panel.layoutHint = Text(panel, 10, "Nothing detected here yet.")
     panel.layoutHint:SetPoint("TOPLEFT", 214, -76)
@@ -1643,11 +1724,53 @@ local function EnsurePanel()
 
     panel.drag = CreateFrame("Frame", nil, panel)
     panel.drag:SetPoint("TOPLEFT", 4, -3)
-    panel.drag:SetSize(PANEL_W - 92, HEADER_H - 6)
+    panel.drag:SetSize(106, HEADER_H - 6)
     panel.drag:EnableMouse(true)
     panel.drag:RegisterForDrag("LeftButton")
     panel.drag:SetScript("OnDragStart", function() panel:StartMoving() end)
     panel.drag:SetScript("OnDragStop", function() panel:StopMovingOrSizing(); SavePosition() end)
+
+    panel.settingsDot = CreateFrame("Button", nil, panel)
+    panel.settingsDot:SetSize(20, 20)
+    panel.settingsDot:SetPoint("TOPRIGHT", -85, -6)
+    panel.settingsDot:SetFrameLevel(panel:GetFrameLevel() + 2)
+    panel.settingsDot.rim = panel.settingsDot:CreateTexture(nil, "ARTWORK")
+    panel.settingsDot.rim:SetSize(18, 18)
+    panel.settingsDot.rim:SetPoint("CENTER")
+    panel.settingsDot.rim:SetTexture(CIRCLE_TEXTURE)
+    panel.settingsDot.rim:SetVertexColor(ACCENT[1], ACCENT[2], ACCENT[3], 0.20)
+    panel.settingsDot.inner = panel.settingsDot:CreateTexture(nil, "ARTWORK")
+    panel.settingsDot.inner:SetSize(13, 13)
+    panel.settingsDot.inner:SetPoint("CENTER")
+    panel.settingsDot.inner:SetTexture(CIRCLE_TEXTURE)
+    panel.settingsDot.inner:SetVertexColor(0.018, 0.04, 0.042, 1)
+    panel.settingsDot.dot = panel.settingsDot:CreateTexture(nil, "OVERLAY")
+    panel.settingsDot.dot:SetSize(6, 6)
+    panel.settingsDot.dot:SetPoint("CENTER")
+    panel.settingsDot.dot:SetTexture(CIRCLE_TEXTURE)
+    panel.settingsDot.dot:SetVertexColor(ACCENT[1], ACCENT[2], ACCENT[3], 1)
+    panel.settingsDot:SetScript("OnClick", function()
+        local quick = addon.VignetteRadarQuickConfig
+        if not (quick and quick.Toggle) then return end
+        local legend, picker = LegendAPI(), TargetPickerAPI()
+        if legend and legend.Hide then legend.Hide() end
+        if picker and picker.Hide then picker.Hide() end
+        quick.Toggle(panel)
+    end)
+    panel.settingsDot:SetScript("OnEnter", function(self)
+        self.rim:SetVertexColor(ACCENT[1], ACCENT[2], ACCENT[3], 0.55)
+        if not GameTooltip then return end
+        GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+        GameTooltip:SetText("Quick settings", 1, 1, 1)
+        GameTooltip:AddLine("Open compact controls for every radar setting.", 0.65, 0.80, 0.77, true)
+        GameTooltip:Show()
+    end)
+    panel.settingsDot:SetScript("OnLeave", function(self)
+        local quick = addon.VignetteRadarQuickConfig
+        self.rim:SetVertexColor(ACCENT[1], ACCENT[2], ACCENT[3],
+            quick and quick.IsShown and quick.IsShown() and .68 or .20)
+        if GameTooltip then GameTooltip:Hide() end
+    end)
 
     panel.target = CreateFrame("Button", nil, panel)
     panel.target:SetSize(24, 24)
@@ -1675,6 +1798,7 @@ local function EnsurePanel()
     panel.target.dot:SetTexture(CIRCLE_TEXTURE)
     panel.target.dot:SetVertexColor(ACCENT[1], ACCENT[2], ACCENT[3], 1)
     panel.target:SetScript("OnClick", function(self, button)
+        if addon.VignetteRadarQuickConfig then addon.VignetteRadarQuickConfig.Hide() end
         local picker = TargetPickerAPI()
         if not picker then return end
         local legend = LegendAPI()
@@ -1723,6 +1847,7 @@ local function EnsurePanel()
         line:SetColorTexture(0.68, 0.72, 0.74, 0.72)
     end
     panel.legend:SetScript("OnClick", function(self)
+        if addon.VignetteRadarQuickConfig then addon.VignetteRadarQuickConfig.Hide() end
         local legend = LegendAPI()
         if not (legend and type(legend.Toggle) == "function") then return end
         local picker = TargetPickerAPI()
@@ -1749,6 +1874,7 @@ local function EnsurePanel()
     panel.close:SetHighlightTexture("Interface\\Buttons\\WHITE8X8")
     panel.close:GetHighlightTexture():SetVertexColor(1, 1, 1, 0.07)
     panel.close:SetScript("OnClick", function()
+        if addon.VignetteRadarQuickConfig then addon.VignetteRadarQuickConfig.Hide() end
         manualPanelState = false
         preview = false
         panel:Hide()
@@ -1826,7 +1952,8 @@ local function EnsurePanel()
     end
     panel.direction = panel.field:CreateLine(nil, "OVERLAY")
     panel.direction:SetThickness(2.5)
-    DrawPlayerHeading(panel.direction, panel.field, 0, HEADING_TIP, PLOT_RADIUS * HEADING_RAY_RATIO)
+    local tip, outer = HeadingGeometry(PLOT_RADIUS)
+    DrawPlayerHeading(panel.direction, panel.field, 0, tip, outer)
     panel.direction:SetColorTexture(ACCENT[1], ACCENT[2], ACCENT[3], 0.46)
     panel.headingChevron = {}
     for index = 1, 2 do
@@ -1981,6 +2108,9 @@ end
 
 RefreshRadar = function(rescan)
     local settings = Settings()
+    if addon.VignetteRadarQuickConfig and addon.VignetteRadarQuickConfig.Refresh then
+        addon.VignetteRadarQuickConfig.Refresh()
+    end
     if settings.vignetteRadarLauncherVisible ~= false then
         EnsureLauncher():Show()
     elseif launcher then
@@ -2052,6 +2182,7 @@ function addon.ResetVignetteRadarPositions()
     Settings().vignetteRadarLauncherPosition = nil
     if panel then panel:ClearAllPoints(); panel:SetPoint("TOPLEFT", UIParent, "TOPLEFT", 30, -520) end
     if launcher then launcher:ClearAllPoints(); launcher:SetPoint("TOPLEFT", UIParent, "TOPLEFT", 30, -170) end
+    if addon.VignetteRadarQuickConfig then addon.VignetteRadarQuickConfig.Reanchor(panel) end
 end
 
 function addon.SetVignetteRadarRange(range)
@@ -2078,6 +2209,18 @@ function addon.SetVignetteRadarLayout(layout)
     Settings().vignetteRadarLayout = layout
     RefreshRadar(false)
     if addon.RefreshVignetteRadarOptions then addon.RefreshVignetteRadarOptions() end
+    return true
+end
+
+function addon.SetVignetteRadarScale(scale)
+    if not SafeNumber(scale) then return false end
+    if not panel then
+        Settings().vignetteRadarScale = math.max(.8, math.min(1.8, scale))
+        return true
+    end
+    PlacePanel(panel:GetLeft(), panel:GetTop(), scale)
+    Settings().vignetteRadarScale = panel:GetScale()
+    SavePosition()
     return true
 end
 

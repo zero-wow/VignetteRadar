@@ -100,6 +100,25 @@ function addon.GetSettings()
     end
     if type(db.vignetteRadarShapes) ~= "boolean" then db.vignetteRadarShapes = true end
     if type(db.vignetteRadarShowHealth) ~= "boolean" then db.vignetteRadarShowHealth = true end
+    local themes = { verdant = true, ember = true, frost = true, violet = true,
+        amber = true, mono = true, rose = true, ocean = true }
+    if not themes[db.vignetteRadarTheme] then db.vignetteRadarTheme = "verdant" end
+    if type(db.vignetteRadarColors) ~= "table" then db.vignetteRadarColors = {} end
+    local appearance = {
+        vignetteRadarRingOpacity = { .5, 0, 2 },
+        vignetteRadarChevronOpacity = { .72, 0, 1 },
+        vignetteRadarHeadingOpacity = { .46, 0, 1 },
+        vignetteRadarChevronDistance = { 4, 2, 9 },
+        vignetteRadarHeadingLength = { .30, .12, .8 },
+    }
+    for key, limits in pairs(appearance) do
+        local value = db[key]
+        if type(value) ~= "number" or value ~= value or value == math.huge or value == -math.huge then
+            db[key] = limits[1]
+        else
+            db[key] = math.max(limits[2], math.min(limits[3], value))
+        end
+    end
     return db
 end
 

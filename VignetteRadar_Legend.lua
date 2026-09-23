@@ -71,6 +71,7 @@ function API.GetHighlight()
 end
 
 function API.ColorFor(category)
+    if addon.VignetteRadarStyle then return addon.VignetteRadarStyle.Color(CategoryKey(category)) end
     local color = CATEGORIES[CategoryKey(category)].color
     return color[1], color[2], color[3]
 end
@@ -357,14 +358,28 @@ function API.Refresh()
     API.ApplyDefaults()
     if not panel then return end
     local highlight = API.GetHighlight()
+    local style = addon.VignetteRadarStyle
+    local accentRed, accentGreen, accentBlue = ACCENT[1], ACCENT[2], ACCENT[3]
+    if style then
+        accentRed, accentGreen, accentBlue = style.Color("accent")
+        panel.accent:SetColorTexture(accentRed, accentGreen, accentBlue, .8)
+        panel.title:SetTextColor(accentRed, accentGreen, accentBlue, 1)
+        panel.divider:SetColorTexture(accentRed, accentGreen, accentBlue, .18)
+    end
     for _, category in ipairs(CATEGORY_ORDER) do
         local row = panel.rows[category]
+        row.selection:SetColorTexture(accentRed, accentGreen, accentBlue, .09)
+        local red, green, blue = API.ColorFor(category)
+        row.swatchGlow:SetColorTexture(red, green, blue, .14)
+        if category == "rare" or category == "treasure" then row.swatch:SetVertexColor(red, green, blue, 1)
+        else row.swatch:SetColorTexture(red, green, blue, 1) end
+        if row.bossSwatch and style then row.bossSwatch:SetVertexColor(style.Color("boss")) end
         local enabled = API.IsCategoryEnabled(category)
         local selected = highlight == category
         if enabled then
             row:SetAlpha((selected or not highlight) and 1 or 0.58)
             row.toggle.label:SetText("ON")
-            row.toggle.label:SetTextColor(ACCENT[1], ACCENT[2], ACCENT[3], 1)
+            row.toggle.label:SetTextColor(accentRed, accentGreen, accentBlue, 1)
             row.swatch:SetAlpha(1)
             if row.bossSwatch then row.bossSwatch:SetAlpha(1) end
         else
@@ -381,7 +396,7 @@ function API.Refresh()
         panel.all.label:SetTextColor(0.62, 0.66, 0.68, 1)
     else
         panel.status:SetText("NO SPOTLIGHT")
-        panel.all.label:SetTextColor(ACCENT[1], ACCENT[2], ACCENT[3], 1)
+        panel.all.label:SetTextColor(accentRed, accentGreen, accentBlue, 1)
     end
 end
 

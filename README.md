@@ -4,6 +4,8 @@ A compact radar for the rare, treasure, event, and other vignettes that World of
 
 The small draggable launcher covers 150 yards. Click it to show or tuck away the full radar. The full radar has a category legend and a picker for focusing one current detection. Right-click the launcher for a layout preview.
 
+Click the small colored dot in the radar header to open **Radar Settings** beside the panel. Its eight compact tabs cover detection, layouts, alerts, markers, guides, themes, behavior, and quests. Click a checkbox label as well as its box to toggle it; the settings apply immediately. The Guides tab adjusts ring visibility, chevron and facing-line opacity, chevron distance from the player dot, and facing-line length. The Themes tab offers eight palettes and a color picker for each radar element and marker type. Turn off **Use icons** there to display category-colored dots instead. Custom colors are saved; choosing a preset clears the custom colors.
+
 Choose a saved panel style under `/vr config` → Layout, or use `/vr layout` to cycle through them:
 
 - **Classic:** the original portrait panel, with header buttons and details below the radar.
@@ -44,12 +46,13 @@ The addon also appears under the game's AddOns settings when the current Retail 
 - Lost detections become fading hollow markers for 10 seconds by default. They are explicitly labeled as last seen, cannot trigger live navigation, and expire automatically. Zone changes clear them.
 - Rares use silver-blue skulls; confirmed world bosses use larger red skulls. The small launcher also says `RARE` or `BOSS` for nearby live enemies. Target rows and tooltips spell out the type, and both enemy types use the Rare / Boss filter. Boss identification uses Blizzard's reward-quest metadata; unavailable metadata keeps the normal rare treatment rather than guessing.
 - Treasures and other detections use Blizzard's own icons when available, with simple fallback markers. Marker size and recognizable icons are configurable.
+- Optional quest dots use quest positions supplied by the game. Optional translucent quest areas use Blizzard's own shape when the radar is north-up and the map axes align; otherwise the area is hidden rather than shown inaccurately.
 - Combat and instance quiet modes fade the radar and launcher and suppress alerts, restoring them automatically afterward. Both modes can be disabled in Behavior.
 
 Preview samples support focus without changing favorites, ignores, or navigation. All live information still comes from Blizzard's exposed vignettes; the addon does not discover hidden objects or determine whether a missing detection was killed or looted.
 
 ## Development validation
 
-Current development build: `0.1.0-dev.11` (base version `0.1.0`).
+Current development build: `0.1.0-dev.13` (base version `0.1.0`).
 
 Run each `tests/*_test.lua` with Lua from the addon root and check Lua files with `luac -p`. The tests cover migration, radar projection, filters, target actions, alert/last-seen state, navigation fallbacks, quiet modes, mouse-wheel/button zoom, world-map visibility guards, and UI layout bounds using mocked game APIs. Layout checks exercise repeated style changes, automatic Squat details, focused and unfocused states, edge and corner resizing, pop-outs, resized rings and markers, and an 800×600 canvas. Orientation checks cover quarter turns, fixed markers/cardinals, the player direction line, both radars, preview, unknown facing, and out-of-range focus. These checks do not replace in-game validation of rendering, navigation, or API availability.

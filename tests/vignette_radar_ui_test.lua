@@ -2,6 +2,7 @@ local sourcePath = arg[1] or "VignetteRadar_Radar.lua"
 local legendSourcePath = arg[2] or "VignetteRadar_Legend.lua"
 local targetPickerSourcePath = arg[3] or "VignetteRadar_TargetPicker.lua"
 local optionsSourcePath = arg[4] or "VignetteRadar_Options.lua"
+local quickSourcePath = arg[5] or "VignetteRadar_QuickConfig.lua"
 unpack = table.unpack
 
 local objects = {}
@@ -157,12 +158,14 @@ local settings = { vignetteRadarEnabled = true, vignetteRadarHideWhenEmpty = tru
 local addon = { GetSettings = function() return settings end }
 VignetteRadarDB = settings
 assert(loadfile("VignetteRadar_Core.lua"))("VignetteRadar", addon)
+assert(loadfile("VignetteRadar_Style.lua"))("VignetteRadar", addon)
 assert(loadfile("VignetteRadar_Controls.lua"))("VignetteRadar", addon)
 assert(loadfile("VignetteRadar_Features.lua"))("VignetteRadar", addon)
 assert(loadfile(legendSourcePath))("VignetteRadar", addon)
 assert(loadfile(targetPickerSourcePath))("VignetteRadar", addon)
 assert(loadfile(sourcePath))("VignetteRadar", addon)
 assert(loadfile(optionsSourcePath))("VignetteRadar", addon)
+assert(loadfile(quickSourcePath))("VignetteRadar", addon)
 
 local optionsEvent
 for _, object in ipairs(objects) do
@@ -203,7 +206,7 @@ assert(settings.vignetteRadarEnabled == false, "layout preview must not silently
 assert(panel:IsShown() and panel.width == 220 and panel.height == 278, "preview must reserve space for zoom controls")
 assert(panel.field.width == 200 and panel.field.height == 200 and panel.field.point[1] == "BOTTOM"
     and panel.field.point[3] == 35, "radar field must fit between header and zoom controls with visible gutters")
-assert(panel.drag.width == 128 and panel.target.point[1] == "TOPRIGHT"
+assert(panel.drag.width == 106 and panel.target.point[1] == "TOPRIGHT"
     and panel.legend.point[1] == "TOPRIGHT" and panel.close.point[1] == "TOPRIGHT",
     "drag target must stop before the focus, legend, and close controls")
 assert(panel.title.font[1] == STANDARD_TEXT_FONT, "radar must work with the standard client font")
@@ -499,6 +502,11 @@ local function inside(region, parent, gutter)
 end
 local function checkLayout(focused)
     local controls = { panel.target, panel.legend, panel.close, panel.zoomOut, panel.zoomIn, panel.zoomLabel, panel.compass }
+    inside(panel.settingsDot, panel, 4)
+    separate(panel.settingsDot, panel.title, 2, "settings/title")
+    separate(panel.settingsDot, panel.summary, 2, "settings/status")
+    separate(panel.settingsDot, panel.drag, 2, "settings/drag")
+    for _, control in ipairs(controls) do separate(panel.settingsDot, control, 2, "settings/toolbar") end
     inside(panel.field.halo, panel, 4)
     inside(panel.title, panel, 4)
     inside(panel.summary, panel, 4)
@@ -924,5 +932,130 @@ addon.VignetteRadarAPI.Refresh(true)
 assert(not panel.questBlob:IsShown(),
     "unrotatable native blobs must not appear on maps whose axes disagree with the radar")
 settings.vignetteRadarQuestAreas = false
+
+-- The compact panel owns every user-facing setting and remains usable at its
+-- smallest page bounds. Theme edits must affect the actual radar textures.
+addon.SetVignetteRadarNorthUp(false)
+SlashCmdList.VIGNETTERADAR("preview")
+panel.settingsDot.scripts.OnClick(panel.settingsDot)
+local quick = assert(addon.VignetteRadarQuickConfig.GetPanel())
+assert(quick:IsShown() and quick.width == 288 and quick.height == 365,
+    "the settings dot must open the narrow, self-contained panel")
+local tabCount, exposed, colorSlots = 0, {}, {}
+for _ in pairs(quick.tabs) do tabCount = tabCount + 1 end
+assert(tabCount == 8 and quick.pages.Themes and quick.pages.Guides,
+    "compact settings must include dedicated theme and guide controls")
+for _, object in ipairs(objects) do
+    if object.optionKey then exposed[object.optionKey] = true end
+    if object.colorSlot then colorSlots[object.colorSlot] = true end
+    local page = object.parent
+    if object.point and (object.kind == "Button" or object.kind == "CheckButton")
+        and page and page.parent == quick and page ~= quick then
+        local p = object.point
+        assert(p[1] == "TOPLEFT" and p[2] == page, "compact controls need explicit page anchors")
+        local x, y = p[4], p[5]
+        assert(x >= 10 and x + object.width <= quick.width - 10
+            and -y >= 0 and -y + object.height <= page.height - 10,
+            "compact control must not clip against a page border")
+    end
+end
+for _, key in ipairs({ "vignetteRadarEnabled", "vignetteRadarHideWhenEmpty", "vignetteRadarLauncherVisible",
+    "vignetteRadarWorldMap", "vignetteRadarRange", "vignetteRadarLayout", "vignetteRadarScale",
+    "vignetteRadarNorthUp",
+    "vignetteRadarAlerts", "vignetteRadarAlertSound", "vignetteRadarAlertCategories",
+    "vignetteRadarAlertCooldown", "vignetteRadarCategories", "vignetteRadarHighlight",
+    "vignetteRadarMarkerSize", "vignetteRadarShapes", "vignetteRadarShowHealth",
+    "vignetteRadarLastSeen", "vignetteRadarLastSeenSeconds", "vignetteRadarQuietCombat",
+    "vignetteRadarQuietInstances", "vignetteRadarQuestDots", "vignetteRadarQuestAreas",
+    "vignetteRadarRingOpacity", "vignetteRadarChevronOpacity", "vignetteRadarHeadingOpacity",
+    "vignetteRadarChevronDistance", "vignetteRadarHeadingLength", "vignetteRadarTheme" }) do
+    assert(exposed[key], "compact settings missing: " .. key)
+end
+for _, slot in ipairs(addon.VignetteRadarStyle.slots) do
+    assert(colorSlots[slot], "theme missing color slot: " .. slot)
+end
+local function quickControl(page, key, value)
+    for _, object in ipairs(objects) do
+        if object.parent == quick.pages[page] and object.optionKey == key
+            and (value == nil or object.optionValue == value) then return object end
+    end
+end
+quick.tabs.Themes.scripts.OnClick(quick.tabs.Themes)
+assert(quick.pages.Themes:IsShown() and not quick.pages.Radar:IsShown())
+quickControl("Themes", "vignetteRadarTheme", "ember").scripts.OnClick()
+assert(settings.vignetteRadarTheme == "ember" and panel.title.textColor[1] == 1
+    and panel.field.background.vertexColor[1] > .04,
+    "theme presets must recolor the panel and radar surface")
+ColorPickerFrame = {
+    SetupColorPickerAndShow = function(self, info) self.info = info end,
+    GetColorRGB = function() return .2, .4, .6 end,
+}
+for _, object in ipairs(objects) do
+    if object.parent == quick.pages.Themes and object.colorSlot == "accent" then
+        object.scripts.OnClick(object)
+        break
+    end
+end
+assert(ColorPickerFrame.info, "a color swatch must open Blizzard's color picker")
+ColorPickerFrame.info.swatchFunc()
+assert(math.abs(panel.player.vertexColor[1] - .2) < .001 and quick.customLabel.text == "CUSTOM COLORS",
+    "a custom accent must immediately recolor the player dot")
+quickControl("Themes", "vignetteRadarTheme", "frost").scripts.OnClick()
+assert(settings.vignetteRadarTheme == "frost" and not addon.VignetteRadarStyle.IsCustomized(),
+    "choosing a preset must replace the prior custom palette")
+local iconToggle = quickControl("Themes", "vignetteRadarShapes")
+iconToggle:SetChecked(false)
+iconToggle.scripts.OnClick(iconToggle)
+assert(settings.vignetteRadarShapes == false
+    and panel.blipByKey["preview-rare"].dot.texture == "Interface\\CharacterFrame\\TempPortraitAlphaMask"
+    and panel.blipByKey["preview-boss"].dot.vertexColor[1] > panel.blipByKey["preview-rare"].dot.vertexColor[1],
+    "dots-only mode must keep rare and boss colors visibly distinct")
+for _, object in ipairs(objects) do
+    if object.parent == quick.pages.Themes and object.colorSlot == "boss" then
+        object.scripts.OnClick(object)
+        break
+    end
+end
+ColorPickerFrame.info.swatchFunc()
+assert(math.abs(panel.blipByKey["preview-boss"].dot.vertexColor[1] - .2) < .001
+    and math.abs(panel.blipByKey["preview-rare"].dot.vertexColor[1] - .78) < .001,
+    "world-boss color must be independently editable from rare color")
+quick.tabs.Guides.scripts.OnClick(quick.tabs.Guides)
+local function plusFor(key)
+    for _, object in ipairs(objects) do
+        if object.parent == quick.pages.Guides and object.optionKey == key and object.text == "+" then
+            return object
+        end
+    end
+end
+plusFor("vignetteRadarRingOpacity").scripts.OnClick()
+assert(settings.vignetteRadarRingOpacity == .75
+    and math.abs(panel.rangeRing[1].color[4] - .045 * .75) < .001,
+    "ring visibility control must change the real ring alpha")
+plusFor("vignetteRadarChevronOpacity").scripts.OnClick()
+plusFor("vignetteRadarHeadingOpacity").scripts.OnClick()
+assert(math.abs(panel.headingChevron[1].color[4] - .8) < .001
+    and math.abs(panel.direction.color[4] - .5) < .001,
+    "chevron and facing-line opacity must be separate live controls")
+plusFor("vignetteRadarChevronDistance").scripts.OnClick()
+assert(settings.vignetteRadarChevronDistance == 5
+    and math.abs(panel.headingChevron[1].startPoint[4] - 5) < .001,
+    "chevron gap must redraw at the new distance from the center dot")
+plusFor("vignetteRadarHeadingLength").scripts.OnClick()
+assert(math.abs(panel.direction.endPoint[4] - panel.plotRadius * .35) < .001,
+    "facing-line length must redraw using the selected radius fraction")
+panel.settingsDot.scripts.OnClick(panel.settingsDot)
+assert(not quick:IsShown(), "clicking the dot again must close compact settings")
+UIParent:SetSize(800, 600)
+addon.SetVignetteRadarLayout("squat")
+panel:SetScale(1)
+panel:ClearAllPoints()
+panel:SetPoint("TOPLEFT", UIParent, "TOPLEFT", 210, -100)
+panel.settingsDot.scripts.OnClick(panel.settingsDot)
+assert(quick:IsShown() and quick.point[1] == "TOPLEFT" and quick.point[2] == panel
+    and quick:GetScale() > .65 and quick:GetScale() < .75,
+    "on an 800px canvas the settings panel must shrink beside Squat instead of covering it")
+panel.settingsDot.scripts.OnClick(panel.settingsDot)
+UIParent:SetSize(1600, 900)
 
 io.write("vignette radar UI tests passed\n")
