@@ -101,8 +101,8 @@ function Controls.Checkbox(parent)
         local line = checkbox:CreateLine(nil, "OVERLAY")
         line:SetThickness(3)
         line:SetColorTexture(0.015, 0.075, 0.06, 1)
-        line:SetStartPoint("CENTER", checkbox, "CENTER", segment[1], segment[2])
-        line:SetEndPoint("CENTER", checkbox, "CENTER", segment[3], segment[4])
+        line:SetStartPoint("CENTER", checkbox, segment[1], segment[2])
+        line:SetEndPoint("CENTER", checkbox, segment[3], segment[4])
         checkbox.mark[index] = line
     end
     function checkbox:RefreshAppearance()

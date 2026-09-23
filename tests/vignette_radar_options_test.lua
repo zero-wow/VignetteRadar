@@ -16,8 +16,16 @@ function methods:SetBackdropBorderColor(...) self.backdropBorderColor = { ... } 
 function methods:SetAlpha(value) self.alpha = value end
 function methods:SetColorTexture(...) self.color = { ... } end
 function methods:SetThickness(value) self.thickness = value end
-function methods:SetStartPoint(...) self.startPoint = { ... } end
-function methods:SetEndPoint(...) self.endPoint = { ... } end
+function methods:SetStartPoint(...)
+    assert(select("#", ...) == 4, "line endpoints take anchor, frame, x, y")
+    self.startPoint = { ... }
+    assert(type(self.startPoint[3]) == "number" and type(self.startPoint[4]) == "number")
+end
+function methods:SetEndPoint(...)
+    assert(select("#", ...) == 4, "line endpoints take anchor, frame, x, y")
+    self.endPoint = { ... }
+    assert(type(self.endPoint[3]) == "number" and type(self.endPoint[4]) == "number")
+end
 function methods:SetWordWrap(value) self.wordWrap = value end
 function methods:SetJustifyH(value) self.justifyH = value end
 function methods:SetChecked(value) self.checked = value end

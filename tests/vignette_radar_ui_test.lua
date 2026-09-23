@@ -54,8 +54,16 @@ function methods:SetScale(value) self.scale = value end
 function methods:GetScale() return self.scale or 1 end
 function methods:GetEffectiveScale() return 1 end
 function methods:SetThickness(value) self.thickness = value end
-function methods:SetStartPoint(...) self.startPoint = { ... } end
-function methods:SetEndPoint(...) self.endPoint = { ... } end
+function methods:SetStartPoint(...)
+    assert(select("#", ...) == 4, "line endpoints take anchor, frame, x, y")
+    self.startPoint = { ... }
+    assert(type(self.startPoint[3]) == "number" and type(self.startPoint[3]) == "number")
+end
+function methods:SetEndPoint(...)
+    assert(select("#", ...) == 4, "line endpoints take anchor, frame, x, y")
+    self.endPoint = { ... }
+    assert(type(self.endPoint[3]) == "number" and type(self.endPoint[3]) == "number")
+end
 function methods:SetFont(...) self.font = { ... } end
 function methods:SetFontString(value) self.fontString = value end
 function methods:SetText(value) self.text = value; if self.fontString then self.fontString:SetText(value) end end
@@ -529,7 +537,7 @@ local function checkLayout(focused)
     end
     assert(panel.field.width == panel.field.height, "layout must preserve circular radar geometry")
     for _, line in ipairs(panel.rangeRing) do
-        local x, y = line.startPoint[4], line.startPoint[5]
+        local x, y = line.startPoint[3], line.startPoint[4]
         assert(math.abs(math.sqrt(x*x + y*y) - panel.plotRadius) < 0.001, "rings must follow the active layout radius")
     end
 end
@@ -700,11 +708,11 @@ for _, name in ipairs({ "classic", "squat", "compact" }) do
     playerFacing = math.pi / 2
     addon.VignetteRadarAPI.RefreshPresentation()
     near(panel.blipByKey.rare.point[4], northY, "heading-up must rotate the radar with the player")
-    near(panel.direction.endPoint[4], 0, "heading-up player line must point straight up")
-    near(panel.direction.endPoint[5], headingLength, "heading-up line must reach into the radar")
-    near(panel.direction.startPoint[5], 18, "heading ray must begin at the chevron tip")
-    near(panel.headingChevron[1].startPoint[4], -7, "heading-up chevron must straddle the dot")
-    near(panel.headingChevron[2].startPoint[4], 7, "heading-up chevron must straddle the dot")
+    near(panel.direction.endPoint[3], 0, "heading-up player line must point straight up")
+    near(panel.direction.endPoint[4], headingLength, "heading-up line must reach into the radar")
+    near(panel.direction.startPoint[4], 18, "heading ray must begin at the chevron tip")
+    near(panel.headingChevron[1].startPoint[3], -7, "heading-up chevron must straddle the dot")
+    near(panel.headingChevron[2].startPoint[3], 7, "heading-up chevron must straddle the dot")
     assert(panel.direction:IsShown() and panel.headingChevron[1]:IsShown(),
         "heading-up player cue must stay visible")
     local before = scanCount
@@ -719,18 +727,18 @@ for _, name in ipairs({ "classic", "squat", "compact" }) do
         near(panel.blipByKey.rare.point[5], northY, "north-up marker vertical position must stay fixed")
         near(panel.cardinals[1].point[4], 0, "N must remain above the player in north-up")
         near(panel.cardinals[1].point[5], panel.fieldRadius - 5, "N must remain at the top of the ring")
-        near(panel.direction.endPoint[4], -math.sin(angle) * headingLength, "player line must turn toward actual facing")
-        near(panel.direction.endPoint[5], math.cos(angle) * headingLength, "player line must turn toward actual facing")
-        near(panel.headingChevron[1].endPoint[4], -math.sin(angle) * 18,
+        near(panel.direction.endPoint[3], -math.sin(angle) * headingLength, "player line must turn toward actual facing")
+        near(panel.direction.endPoint[4], math.cos(angle) * headingLength, "player line must turn toward actual facing")
+        near(panel.headingChevron[1].endPoint[3], -math.sin(angle) * 18,
             "chevron tip must follow player facing")
-        near(panel.headingChevron[1].endPoint[5], math.cos(angle) * 18,
+        near(panel.headingChevron[1].endPoint[4], math.cos(angle) * 18,
             "chevron tip must follow player facing")
         assert(panel.headingChevron[1]:IsShown() and panel.headingChevron[2]:IsShown(),
             "both sides of the player chevron must stay visible")
         near(launcher.miniBlips[1].point[4], miniX, "launcher must use the same fixed orientation")
         near(launcher.miniBlips[1].point[5], miniY, "launcher must use the same fixed orientation")
         assert(launcher.direction:IsShown(), "north-up launcher needs a player direction cue")
-        near(launcher.direction.endPoint[4], -math.sin(angle) * 9, "launcher player line must turn")
+        near(launcher.direction.endPoint[3], -math.sin(angle) * 9, "launcher player line must turn")
     end
     playerFacing = nil
     addon.VignetteRadarAPI.RefreshPresentation()
@@ -766,9 +774,9 @@ northOption.scripts.OnClick(northOption)
 assert(panel.compass._selected and settings.vignetteRadarNorthUp)
 SlashCmdList.VIGNETTERADAR("preview")
 near(panel.cardinals[1].point[4], 0, "preview must honor fixed north")
-near(panel.direction.endPoint[4], -math.sin(0.65) * panel.plotRadius * 0.72,
+near(panel.direction.endPoint[3], -math.sin(0.65) * panel.plotRadius * 0.72,
     "preview must demonstrate the full-length rotating player cue")
-near(panel.headingChevron[1].endPoint[4], -math.sin(0.65) * 18,
+near(panel.headingChevron[1].endPoint[3], -math.sin(0.65) * 18,
     "preview must demonstrate the player's rotating chevron")
 
 -- Border dragging uniformly scales the panel and keeps the opposite edge stable.

@@ -61,8 +61,8 @@ end
 local function DrawPlayerHeading(line, frame, facing, innerRadius, outerRadius)
     local angle = facing - ViewFacing(facing)
     local x, y = -math.sin(angle), math.cos(angle)
-    line:SetStartPoint("CENTER", frame, "CENTER", x * innerRadius, y * innerRadius)
-    line:SetEndPoint("CENTER", frame, "CENTER", x * outerRadius, y * outerRadius)
+    line:SetStartPoint("CENTER", frame, x * innerRadius, y * innerRadius)
+    line:SetEndPoint("CENTER", frame, x * outerRadius, y * outerRadius)
 end
 
 local function DrawPlayerChevron(lines, frame, facing)
@@ -71,11 +71,9 @@ local function DrawPlayerChevron(lines, frame, facing)
     local rightX, rightY = math.cos(angle), math.sin(angle)
     for index, line in ipairs(lines) do
         local side = index == 1 and -1 or 1
-        line:SetStartPoint("CENTER", frame, "CENTER",
-            forwardX * HEADING_BASE + rightX * HEADING_HALF_WIDTH * side,
+        line:SetStartPoint("CENTER", frame, forwardX * HEADING_BASE + rightX * HEADING_HALF_WIDTH * side,
             forwardY * HEADING_BASE + rightY * HEADING_HALF_WIDTH * side)
-        line:SetEndPoint("CENTER", frame, "CENTER",
-            forwardX * HEADING_TIP, forwardY * HEADING_TIP)
+        line:SetEndPoint("CENTER", frame, forwardX * HEADING_TIP, forwardY * HEADING_TIP)
     end
 end
 
@@ -352,8 +350,8 @@ local function AddRing(field, radius, alpha)
         local last = (index / 64) * TWO_PI
         line:SetThickness(1)
         line:SetColorTexture(ACCENT[1], ACCENT[2], ACCENT[3], alpha)
-        line:SetStartPoint("CENTER", field, "CENTER", math.cos(first) * radius, math.sin(first) * radius)
-        line:SetEndPoint("CENTER", field, "CENTER", math.cos(last) * radius, math.sin(last) * radius)
+        line:SetStartPoint("CENTER", field, math.cos(first) * radius, math.sin(first) * radius)
+        line:SetEndPoint("CENTER", field, math.cos(last) * radius, math.sin(last) * radius)
         lines[index] = line
     end
     return lines
@@ -362,8 +360,8 @@ end
 local function ResizeRing(lines, field, radius)
     for index, line in ipairs(lines) do
         local first, last = ((index - 1) / #lines) * TWO_PI, (index / #lines) * TWO_PI
-        line:SetStartPoint("CENTER", field, "CENTER", math.cos(first) * radius, math.sin(first) * radius)
-        line:SetEndPoint("CENTER", field, "CENTER", math.cos(last) * radius, math.sin(last) * radius)
+        line:SetStartPoint("CENTER", field, math.cos(first) * radius, math.sin(first) * radius)
+        line:SetEndPoint("CENTER", field, math.cos(last) * radius, math.sin(last) * radius)
     end
 end
 
@@ -593,8 +591,8 @@ local function StyleMarker(owner, dot, target, size, r, g, b)
             local first, last = points[index], points[index % #points + 1]
             line:SetThickness(size < 5 and 1 or 1.3)
             line:SetColorTexture(r, g, b, 1)
-            line:SetStartPoint("CENTER", owner, "CENTER", first[1] * size, first[2] * size)
-            line:SetEndPoint("CENTER", owner, "CENTER", last[1] * size, last[2] * size)
+            line:SetStartPoint("CENTER", owner, first[1] * size, first[2] * size)
+            line:SetEndPoint("CENTER", owner, last[1] * size, last[2] * size)
             line:Show()
         elseif line then line:Hide() end
     end
@@ -616,8 +614,8 @@ local function DrawArrow(frame, x, y, r, g, b)
         local side = index == 1 and -1 or 1
         line:SetThickness(2)
         line:SetColorTexture(r, g, b, 1)
-        line:SetStartPoint("CENTER", frame, "CENTER", ux * 5, uy * 5)
-        line:SetEndPoint("CENTER", frame, "CENTER", -ux * 4 - uy * side * 4, -uy * 4 + ux * side * 4)
+        line:SetStartPoint("CENTER", frame, ux * 5, uy * 5)
+        line:SetEndPoint("CENTER", frame, -ux * 4 - uy * side * 4, -uy * 4 + ux * side * 4)
     end
 end
 
@@ -1124,8 +1122,8 @@ local function AddResizeGrips()
                 local line = grip:CreateLine(nil, "ARTWORK")
                 line:SetThickness(1)
                 line:SetColorTexture(ACCENT[1], ACCENT[2], ACCENT[3], 0.8)
-                line:SetStartPoint("CENTER", grip, "CENTER", stroke[1], stroke[2])
-                line:SetEndPoint("CENTER", grip, "CENTER", stroke[3], stroke[4])
+                line:SetStartPoint("CENTER", grip, stroke[1], stroke[2])
+                line:SetEndPoint("CENTER", grip, stroke[3], stroke[4])
             end
         end
         grips[key] = grip
@@ -1183,8 +1181,8 @@ local function CreateLauncherRing(parent, radius, alpha)
         local last = (index / 24) * TWO_PI
         line:SetThickness(1)
         line:SetColorTexture(ACCENT[1], ACCENT[2], ACCENT[3], alpha)
-        line:SetStartPoint("CENTER", parent, "CENTER", math.cos(first) * radius, math.sin(first) * radius)
-        line:SetEndPoint("CENTER", parent, "CENTER", math.cos(last) * radius, math.sin(last) * radius)
+        line:SetStartPoint("CENTER", parent, math.cos(first) * radius, math.sin(first) * radius)
+        line:SetEndPoint("CENTER", parent, math.cos(last) * radius, math.sin(last) * radius)
         ring[index] = line
     end
     return ring
@@ -1201,7 +1199,7 @@ local function UpdateLauncherSweep(frame, elapsed)
         local alpha = active and (0.30 / index) or (0.08 / index)
         line:SetColorTexture(active and ACCENT[1] or 0.45, active and ACCENT[2] or 0.49,
             active and ACCENT[3] or 0.50, alpha)
-        line:SetEndPoint("CENTER", frame, "CENTER", math.sin(angle) * LAUNCHER_RADIUS,
+        line:SetEndPoint("CENTER", frame, math.sin(angle) * LAUNCHER_RADIUS,
             math.cos(angle) * LAUNCHER_RADIUS)
     end
 
@@ -1335,7 +1333,7 @@ EnsureLauncher = function()
     for index = 1, 2 do
         local line = launcher:CreateLine(nil, "OVERLAY")
         line:SetThickness(index == 1 and 1.2 or 1)
-        line:SetStartPoint("CENTER", launcher, "CENTER", 0, 0)
+        line:SetStartPoint("CENTER", launcher, 0, 0)
         launcher.sweepLines[index] = line
     end
     launcher.centerGlow = launcher:CreateTexture(nil, "OVERLAY")
