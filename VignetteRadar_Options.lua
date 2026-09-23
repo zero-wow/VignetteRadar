@@ -66,6 +66,10 @@ local function AddCheckbox(parent, key, title, x, y, subkey, labelWidth, present
         local enabled = Checked(self:GetChecked())
         if key == "vignetteRadarEnabled" then
             addon.SetVignetteRadarEnabled(enabled)
+        elseif key == "vignetteRadarCircleOnly" then
+            addon.SetVignetteRadarCircleOnly(enabled)
+        elseif key == "vignetteRadarKeepVisibleCombat" then
+            addon.SetVignetteRadarKeepVisibleCombat(enabled)
         elseif subkey then
             local db = addon.GetSettings()
             if type(db[key]) ~= "table" then db[key] = {} end
@@ -214,7 +218,8 @@ local function BuildPanel()
     AddDescription(layout, "Wide and short: radar left, details right, buttons below.", 188, -181, 144)
     AddDescription(layout, "Smaller radar with range and controls below.", 352, -181, 144)
     AddCheckbox(layout, "vignetteRadarNorthUp", "Keep north at the top", 18, -229, nil, nil, true)
-    AddButton(layout, "Preview layout", 24, -264, 144, function()
+    AddCheckbox(layout, "vignetteRadarCircleOnly", "Circle-only view", 18, -264, nil, 185, true)
+    AddButton(layout, "Preview layout", 264, -264, 144, function()
         addon.ToggleVignetteRadarPreview()
     end)
     AddFooter(layout, "Drag the radar's edges or corners to resize it. Your size is saved.")
@@ -239,8 +244,9 @@ local function BuildPanel()
     AddChoice(behavior, "vignetteRadarLastSeenSeconds", 5, "5 sec", 24, -178, 62)
     AddChoice(behavior, "vignetteRadarLastSeenSeconds", 10, "10 sec", 98, -178, 62)
     AddChoice(behavior, "vignetteRadarLastSeenSeconds", 15, "15 sec", 172, -178, 62)
-    AddCheckbox(behavior, "vignetteRadarQuietCombat", "Fade in combat", 18, -224, nil, 185)
-    AddCheckbox(behavior, "vignetteRadarQuietInstances", "Fade in instances", 18, -258, nil, 185)
+    AddCheckbox(behavior, "vignetteRadarQuietCombat", "Mute alerts in combat", 18, -214, nil, 185)
+    AddCheckbox(behavior, "vignetteRadarKeepVisibleCombat", "Stay visible in combat", 18, -249, nil, 185, true)
+    AddCheckbox(behavior, "vignetteRadarQuietInstances", "Fade + mute in instances", 18, -284, nil, 185)
 
     AddLabel(behavior, "Marker size", 264, -122)
     AddChoice(behavior, "vignetteRadarMarkerSize", 5, "Small", 264, -145, 68)
@@ -255,7 +261,7 @@ local function BuildPanel()
             Changed()
         end
     end)
-    AddFooter(behavior, "Combat and instance fading also mutes alerts. Clear ignores above.")
+    AddFooter(behavior, "Combat visibility and alert muting are separate. Clear ignores.")
 
     local quests = AddPage("Quests", 5)
     AddLabel(quests, "QUEST LOCATIONS", 24, -119)

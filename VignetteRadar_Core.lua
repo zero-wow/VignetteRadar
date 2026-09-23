@@ -93,6 +93,12 @@ function addon.GetSettings()
     end
     if type(db.vignetteRadarQuietCombat) ~= "boolean" then db.vignetteRadarQuietCombat = true end
     if type(db.vignetteRadarQuietInstances) ~= "boolean" then db.vignetteRadarQuietInstances = true end
+    if type(db.vignetteRadarKeepVisibleCombat) ~= "boolean" then
+        -- Older versions tied combat fading to alert muting. Preserve their
+        -- visual choice when these two controls become independent.
+        db.vignetteRadarKeepVisibleCombat = db.vignetteRadarQuietCombat == false
+    end
+    if type(db.vignetteRadarCircleOnly) ~= "boolean" then db.vignetteRadarCircleOnly = false end
     if type(db.vignetteRadarMarkerSize) ~= "number" or db.vignetteRadarMarkerSize ~= db.vignetteRadarMarkerSize then
         db.vignetteRadarMarkerSize = 7
     else

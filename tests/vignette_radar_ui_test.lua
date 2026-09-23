@@ -34,6 +34,12 @@ function methods:SetFillAlpha(value) self.fillAlpha = value end
 function methods:SetBorderAlpha(value) self.borderAlpha = value end
 function methods:DrawNone() self.drawnQuests = {} end
 function methods:DrawBlob(questID) self.drawnQuests = self.drawnQuests or {}; self.drawnQuests[#self.drawnQuests + 1] = questID end
+function methods:UpdateMouseOverTooltip(x, y)
+    self.hoverPosition = { x, y }
+    if self.hoverQuestID and x >= .25 and x <= .75 and y >= .25 and y <= .75 then
+        return self.hoverQuestID, 1
+    end
+end
 function methods:SetMovable(value) self.movable = value end
 function methods:EnableMouse(value) self.mouse = value end
 function methods:EnableMouseWheel(value) self.mouseWheel = value end
@@ -62,6 +68,7 @@ function methods:SetColorTexture(...) self.color = { ... } end
 function methods:SetVertexColor(...) self.vertexColor = { ... } end
 function methods:SetAlpha(value) self.alpha = value end
 function methods:GetAlpha() return self.alpha == nil and 1 or self.alpha end
+function methods:SetIgnoreParentAlpha(value) self.ignoreParentAlpha = value end
 function methods:SetScale(value) self.scale = value end
 function methods:GetScale() return self.scale or 1 end
 function methods:GetEffectiveScale() return 1 end
@@ -128,8 +135,13 @@ UIParent:Show()
 STANDARD_TEXT_FONT = "default.ttf"
 SlashCmdList = {}
 GameTooltip = {
-    SetOwner = function() end, SetText = function() end, AddLine = function() end,
-    Show = function() end, Hide = function() end,
+    SetOwner = function(self, owner) self.owner = owner end,
+    GetOwner = function(self) return self.owner end,
+    SetText = function(self, value) self.text = value end,
+    AddLine = function(self, value) self.line = value end,
+    Show = function(self) self.shown = true end,
+    Hide = function(self) self.shown = false end,
+    IsShown = function(self) return self.shown == true end,
 }
 C_Timer = { After = function(_, callback) callback() end }
 C_Map = {
@@ -360,6 +372,20 @@ combat, now, guids = true, 120, { "treasure", "rare" }
 addon.VignetteRadarAPI.Refresh(true)
 assert(panel:GetAlpha() == 0.35 and launcher:GetAlpha() == 0.35 and #sounds == 0,
     "combat must fade both surfaces and suppress detection sounds")
+assert(not panel.combatToggle.keepVisible and panel.combatToggle.label.text == "C",
+    "the footer square must show the current combat-visibility mode")
+assert(panel.combatToggle.ignoreParentAlpha == true,
+    "the quick combat switch must remain legible while the radar is faded")
+panel.combatToggle.scripts.OnClick(panel.combatToggle)
+assert(settings.vignetteRadarKeepVisibleCombat == true and settings.vignetteRadarQuietCombat == true
+    and panel.combatToggle.keepVisible and panel:GetAlpha() == 1 and launcher:GetAlpha() == 1
+    and addon.VignetteRadarFeatures.IsQuiet() and #sounds == 0,
+    "the footer square must restore combat visibility without unmuting alerts or rescanning")
+panel.combatToggle.scripts.OnClick(panel.combatToggle)
+assert(settings.vignetteRadarKeepVisibleCombat == false and settings.vignetteRadarQuietCombat == true
+    and not panel.combatToggle.keepVisible
+    and panel:GetAlpha() == .35 and launcher:GetAlpha() == .35,
+    "clicking the square again must restore combat fading")
 combat, now = false, 125
 addon.VignetteRadarAPI.Refresh(true)
 assert(panel:GetAlpha() == 1 and launcher:GetAlpha() == 1 and #sounds == 0,
@@ -504,7 +530,8 @@ local function inside(region, parent, gutter)
         "layout region escapes its parent: " .. tostring(region.text or region.kind))
 end
 local function checkLayout(focused)
-    local controls = { panel.target, panel.legend, panel.close, panel.zoomOut, panel.zoomIn, panel.zoomLabel, panel.compass }
+    local controls = { panel.target, panel.legend, panel.close, panel.zoomOut, panel.zoomIn, panel.zoomLabel,
+        panel.compass, panel.combatToggle }
     inside(panel.settingsDot, panel, 4)
     separate(panel.settingsDot, panel.title, 2, "settings/title")
     separate(panel.settingsDot, panel.summary, 2, "settings/status")
@@ -555,6 +582,9 @@ local function checkLayout(focused)
         end
     end
     assert(panel.field.width == panel.field.height, "layout must preserve circular radar geometry")
+    local toggleX, toggleY = panel.frameToggle.point[4], panel.frameToggle.point[5]
+    assert(math.sqrt(2 * (toggleX + panel.frameToggle.width / 2)^2) <= panel.fieldRadius + .001,
+        "the frame restore square must remain inside every radar circle")
     for _, line in ipairs(panel.rangeRing) do
         local x, y = line.startPoint[3], line.startPoint[4]
         assert(math.abs(math.sqrt(x*x + y*y) - panel.plotRadius) < 0.001, "rings must follow the active layout radius")
@@ -923,6 +953,28 @@ assert(panel.questClip.clipsChildren and panel.questBlob:IsShown() and panel.que
     and panel.questBlob.drawnQuests[1] == 12345 and panel.questBlob.fillAlpha < 128
     and panel.questBlob.level < questDot.level,
     "native quest shapes must be translucent, clipped, and behind markers")
+local originalCursor = GetCursorPosition
+panel.field.left, panel.field.top = 0, panel.field:GetHeight()
+panel.questBlob.left, panel.questBlob.top = 0, panel.field:GetHeight()
+panel.questBlob:SetSize(panel.field:GetWidth(), panel.field:GetHeight())
+panel.questBlob.hoverQuestID = 12345
+GetCursorPosition = function() return panel.field:GetWidth() / 2, panel.field:GetHeight() / 2 end
+panel.scripts.OnUpdate(panel, .11)
+assert(GameTooltip:IsShown() and GameTooltip:GetOwner() == panel.questBlob
+    and GameTooltip.text == "Nearby quest" and GameTooltip.line == "Quest area",
+    "hovering a native quest shape must identify the quest without a clickable blob layer")
+GetCursorPosition = function() return panel.field:GetWidth() * .8, panel.field:GetHeight() / 2 end
+panel.scripts.OnUpdate(panel, .11)
+assert(not GameTooltip:IsShown(), "hovering outside the exact quest shape must clear its tooltip")
+GetCursorPosition = originalCursor
+panel.field.left, panel.field.top = nil, nil
+panel.questBlob.left, panel.questBlob.top = nil, nil
+panel.frameToggle.scripts.OnClick(panel.frameToggle)
+assert(settings.vignetteRadarCircleOnly and not panel.questBlob:IsShown() and questDot:IsShown(),
+    "circle-only view must keep quest dots but suppress unmasked area shading")
+panel.frameToggle.scripts.OnClick(panel.frameToggle)
+assert(not settings.vignetteRadarCircleOnly and panel.questBlob:IsShown(),
+    "restoring the frame must restore available quest-area shading")
 settings.vignetteRadarQuestAreas = false
 settings.vignetteRadarQuestDots = false
 addon.VignetteRadarAPI.Refresh(true)
@@ -935,6 +987,18 @@ addon.VignetteRadarAPI.Refresh(true)
 assert(not panel.questBlob:IsShown(),
     "unrotatable native blobs must not appear on maps whose axes disagree with the radar")
 settings.vignetteRadarQuestAreas = false
+local savedFieldPoint = panel.field.point
+panel.frameToggle.scripts.OnClick(panel.frameToggle)
+assert(settings.vignetteRadarCircleOnly == true and panel.backdropColor[4] == 0
+    and panel.backdropBorderColor[4] == 0 and not panel.title:IsShown()
+    and not panel.combatToggle:IsShown() and not panel.resizeGrips.bottomRight:IsShown()
+    and panel.frameToggle:IsShown() and panel.field.point == savedFieldPoint,
+    "circle-only view must hide the rectangular frame without moving the radar or its restore control")
+panel.frameToggle.scripts.OnClick(panel.frameToggle)
+assert(settings.vignetteRadarCircleOnly == false and panel.backdropColor[4] == .98
+    and panel.title:IsShown() and panel.combatToggle:IsShown()
+    and panel.resizeGrips.bottomRight:IsShown(),
+    "the circle control must restore full panel chrome and resize grips")
 
 -- The compact panel owns every user-facing setting and remains usable at its
 -- smallest page bounds. Theme edits must affect the actual radar textures.
@@ -964,11 +1028,12 @@ for _, object in ipairs(objects) do
 end
 for _, key in ipairs({ "vignetteRadarEnabled", "vignetteRadarHideWhenEmpty", "vignetteRadarLauncherVisible",
     "vignetteRadarWorldMap", "vignetteRadarRange", "vignetteRadarLayout", "vignetteRadarScale",
-    "vignetteRadarNorthUp",
+    "vignetteRadarNorthUp", "vignetteRadarCircleOnly",
     "vignetteRadarAlerts", "vignetteRadarAlertSound", "vignetteRadarAlertCategories",
     "vignetteRadarAlertCooldown", "vignetteRadarCategories", "vignetteRadarHighlight",
     "vignetteRadarMarkerSize", "vignetteRadarShapes", "vignetteRadarShowHealth",
     "vignetteRadarLastSeen", "vignetteRadarLastSeenSeconds", "vignetteRadarQuietCombat",
+    "vignetteRadarKeepVisibleCombat",
     "vignetteRadarQuietInstances", "vignetteRadarQuestDots", "vignetteRadarQuestAreas",
     "vignetteRadarRingOpacity", "vignetteRadarChevronOpacity", "vignetteRadarHeadingOpacity",
     "vignetteRadarChevronDistance", "vignetteRadarHeadingLength", "vignetteRadarFullSweep",
@@ -1120,8 +1185,27 @@ sweepToggle:SetChecked(false)
 sweepToggle.scripts.OnClick(sweepToggle)
 assert(not settings.vignetteRadarFullSweep and not sweep[1]:IsShown(),
     "turning the sweep off must hide its lines immediately")
+quick.tabs.Behavior.scripts.OnClick(quick.tabs.Behavior)
+local combatCheck = quickControl("Behavior", "vignetteRadarKeepVisibleCombat")
+combatCheck:SetChecked(true)
+combatCheck.scripts.OnClick(combatCheck)
+assert(settings.vignetteRadarKeepVisibleCombat == true and panel.combatToggle.keepVisible,
+    "the compact combat setting must update the footer square")
+panel.combatToggle.scripts.OnClick(panel.combatToggle)
+assert(settings.vignetteRadarKeepVisibleCombat == false and combatCheck:GetChecked() == false,
+    "the footer square must keep compact settings synchronized")
 panel.settingsDot.scripts.OnClick(panel.settingsDot)
 assert(not quick:IsShown(), "clicking the dot again must close compact settings")
+panel.settingsDot.scripts.OnClick(panel.settingsDot)
+quick.tabs.Layout.scripts.OnClick(quick.tabs.Layout)
+local circleCheck = quickControl("Layout", "vignetteRadarCircleOnly")
+circleCheck:SetChecked(true)
+circleCheck.scripts.OnClick(circleCheck)
+assert(settings.vignetteRadarCircleOnly and not quick:IsShown() and not panel.title:IsShown(),
+    "the compact layout setting must enter circle-only view and close the covered settings panel")
+panel.frameToggle.scripts.OnClick(panel.frameToggle)
+assert(not settings.vignetteRadarCircleOnly and circleCheck:GetChecked() == false,
+    "the on-circle restore control must synchronize the compact layout setting")
 UIParent:SetSize(800, 600)
 addon.SetVignetteRadarLayout("squat")
 panel:SetScale(1)

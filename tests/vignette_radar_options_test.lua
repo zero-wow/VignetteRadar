@@ -78,6 +78,7 @@ local db = {
     vignetteRadarEnabled = true, vignetteRadarHideWhenEmpty = true,
     vignetteRadarLauncherVisible = true, vignetteRadarRange = 450,
     vignetteRadarLayout = "classic",
+    vignetteRadarCircleOnly = false,
     vignetteRadarNorthUp = false,
     vignetteRadarWorldMap = true,
     vignetteRadarQuestDots = false, vignetteRadarQuestAreas = false,
@@ -94,6 +95,8 @@ local addon = {
     VignetteRadarRanges = { 150, 300, 450, 600, 1200, 2400, 4800 },
     GetSettings = function() return db end,
     SetVignetteRadarEnabled = function(value) db.vignetteRadarEnabled = value end,
+    SetVignetteRadarCircleOnly = function(value) db.vignetteRadarCircleOnly = value end,
+    SetVignetteRadarKeepVisibleCombat = function(value) db.vignetteRadarKeepVisibleCombat = value end,
     ToggleVignetteRadarPreview = function() previews = previews + 1 end,
     ResetVignetteRadarPositions = function() resets = resets + 1 end,
     RefreshVignetteRadar = function(rescan)
@@ -187,6 +190,7 @@ for _, key in ipairs({
     "vignetteRadarAlerts", "vignetteRadarAlertSound", "vignetteRadarAlertCategories.rare",
     "vignetteRadarAlertCategories.treasure", "vignetteRadarAlertCategories.event",
     "vignetteRadarAlertCategories.other", "vignetteRadarLastSeen", "vignetteRadarQuietCombat",
+    "vignetteRadarKeepVisibleCombat",
     "vignetteRadarQuietInstances", "vignetteRadarShapes", "vignetteRadarShowHealth",
 }) do
     assert(byKey[key], "missing setting: " .. key)
@@ -250,7 +254,7 @@ assert(layoutHelp["Current portrait radar with details below."]
 local behaviorFooter
 for _, object in ipairs(objects) do
     if object.parent == panel.pages.Behavior and object.kind == "FontString"
-        and object.text and object.text:find("mutes alerts", 1, true) then
+        and object.text and object.text:find("alert muting are separate", 1, true) then
         behaviorFooter = object
     end
 end
@@ -265,7 +269,9 @@ local function clickCheck(key, checked)
     control:SetChecked(checked)
     local before = refreshes
     control.scripts.OnClick(control)
-    assert(refreshes == before + 1, key .. " must rescan immediately")
+    assert(refreshes == before + ((key == "vignetteRadarCircleOnly"
+        or key == "vignetteRadarKeepVisibleCombat") and 0 or 1),
+        key .. " must use the appropriate refresh path")
 end
 clickCheck("vignetteRadarAlertCategories.treasure", false)
 assert(db.vignetteRadarAlertCategories.treasure == false)

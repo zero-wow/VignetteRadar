@@ -58,6 +58,11 @@ db.vignetteRadarAlertCategories.rare = true
 local d = target("d", 104, "Delta")
 InCombatLockdown = function() return true end
 assert(F.IsQuiet(), "combat should be quiet by default")
+assert(F.IsVisuallyQuiet(), "combat should dim both surfaces by default")
+db.vignetteRadarKeepVisibleCombat = true
+assert(not F.IsVisuallyQuiet() and F.IsQuiet(),
+    "staying visible in combat must not unmute alerts")
+db.vignetteRadarKeepVisibleCombat = false
 second, alerts = F.Update({ a, c, d }, 1, 21, live)
 assert(#alerts == 0, "combat discoveries must stay silent")
 InCombatLockdown = function() return false end
@@ -65,6 +70,9 @@ second, alerts = F.Update({ a, c, d }, 1, 22, live)
 assert(#alerts == 0, "leaving combat must not replay discoveries")
 IsInInstance = function() return true end
 assert(F.IsQuiet(), "instances should be quiet by default")
+db.vignetteRadarKeepVisibleCombat = true
+assert(F.IsVisuallyQuiet(), "instance fading must remain separate from combat visibility")
+db.vignetteRadarKeepVisibleCombat = false
 IsInInstance = function() return false end
 
 local e = target("e", 105, "Echo")

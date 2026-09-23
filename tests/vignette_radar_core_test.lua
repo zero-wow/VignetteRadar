@@ -18,6 +18,8 @@ assert(db.vignetteRadarEnabled == false and db.vignetteRadarHideWhenEmpty == fal
     and db.vignetteRadarLauncherVisible == false and db.vignetteRadarRange == 600,
     "standalone addon must migrate the user's original radar choices")
 assert(db.vignetteRadarWorldMap == true, "world-map detections should be included by default")
+assert(db.vignetteRadarKeepVisibleCombat == false,
+    "existing quiet-combat settings should preserve combat fading")
 assert(db.vignetteRadarQuestDots == false and db.vignetteRadarQuestAreas == false,
     "new quest overlays should preserve the existing uncluttered radar until enabled")
 assert(db.vignetteRadarPosition.x == 111 and db.vignetteRadarLauncherPosition.y == -44
@@ -91,6 +93,8 @@ assert(defaults.vignetteRadarAlerts == true and defaults.vignetteRadarAlertSound
 assert(type(defaults.vignetteRadarFavorites) == "table" and type(defaults.vignetteRadarIgnored) == "table"
     and defaults.vignetteRadarLastSeen == true and defaults.vignetteRadarLastSeenSeconds == 10
     and defaults.vignetteRadarQuietCombat == true and defaults.vignetteRadarQuietInstances == true
+    and defaults.vignetteRadarKeepVisibleCombat == false
+    and defaults.vignetteRadarCircleOnly == false
     and defaults.vignetteRadarMarkerSize == 7 and defaults.vignetteRadarShapes == true
     and defaults.vignetteRadarShowHealth == true,
     "feature preferences need complete defaults")
@@ -102,5 +106,11 @@ fresh.GetSettings()
 assert(defaults.vignetteRadarAlertCooldown == 5 and defaults.vignetteRadarLastSeenSeconds == 60
     and defaults.vignetteRadarMarkerSize == 9 and defaults.vignetteRadarScale == 1.8,
     "numeric preferences must stay inside supported bounds")
+
+VignetteRadarDB = { vignetteRadarQuietCombat = false }
+local migrated = {}
+assert(loadfile(sourcePath))("VignetteRadar", migrated)
+assert(migrated.GetSettings().vignetteRadarKeepVisibleCombat == true,
+    "existing users who disabled combat quiet mode should retain a visible radar")
 
 io.write("vignette radar settings migration tests passed\n")

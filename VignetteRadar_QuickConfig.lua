@@ -46,10 +46,16 @@ local function Changed(key, value, subkey)
         addon.SetVignetteRadarRange(value)
     elseif key == "vignetteRadarLayout" then
         addon.SetVignetteRadarLayout(value)
+    elseif key == "vignetteRadarCircleOnly" then
+        addon.SetVignetteRadarCircleOnly(value)
     elseif key == "vignetteRadarNorthUp" then
         addon.SetVignetteRadarNorthUp(value)
     elseif key == "vignetteRadarScale" then
         addon.SetVignetteRadarScale(value)
+    elseif key == "vignetteRadarQuietCombat" then
+        addon.SetVignetteRadarQuietCombat(value)
+    elseif key == "vignetteRadarKeepVisibleCombat" then
+        addon.SetVignetteRadarKeepVisibleCombat(value)
     elseif key == "vignetteRadarCategories" and legend then
         legend.SetCategoryEnabled(subkey, value)
     elseif key == "vignetteRadarHighlight" and legend then
@@ -336,10 +342,11 @@ local function Build()
     Choice(layout, "vignetteRadarLayout", "squat", "Squat", 104, -23, 80)
     Choice(layout, "vignetteRadarLayout", "compact", "Compact", 194, -23, 80)
     Check(layout, "vignetteRadarNorthUp", "Keep north at the top", 14, -64)
-    Label(layout, "Drag the radar edges to change its size.", 14, -105, 10)
-    Label(layout, "Your view, position and size are saved.", 14, -126, 10)
-    Section(layout, "PANEL SIZE", -158)
-    Stepper(layout, "vignetteRadarScale", "Frame scale", -181,
+    Check(layout, "vignetteRadarCircleOnly", "Show only the radar circle", 14, -94)
+    Label(layout, "Drag the radar edges to change its size.", 14, -137, 10)
+    Label(layout, "Your view, position and size are saved.", 14, -156, 10)
+    Section(layout, "PANEL SIZE", -184)
+    Stepper(layout, "vignetteRadarScale", "Frame scale", -207,
         { .8, .9, 1, 1.1, 1.2, 1.3, 1.4, 1.5, 1.6, 1.7, 1.8 },
         function(value) return math.floor(value * 100 + .5) .. "%" end)
 
@@ -489,9 +496,10 @@ local function Build()
     Choice(behavior, "vignetteRadarLastSeenSeconds", 5, "5 sec", 14, -57, 80)
     Choice(behavior, "vignetteRadarLastSeenSeconds", 10, "10 sec", 104, -57, 80)
     Choice(behavior, "vignetteRadarLastSeenSeconds", 15, "15 sec", 194, -57, 80)
-    Check(behavior, "vignetteRadarQuietCombat", "Fade in combat", 14, -96)
-    Check(behavior, "vignetteRadarQuietInstances", "Fade in instances", 14, -124)
-    Button(behavior, "Clear ignored vignettes", 14, -166, 260, function()
+    Check(behavior, "vignetteRadarQuietCombat", "Mute combat alerts", 14, -91)
+    Check(behavior, "vignetteRadarKeepVisibleCombat", "Stay visible in combat", 14, -124)
+    Check(behavior, "vignetteRadarQuietInstances", "Fade + mute in instances", 14, -157)
+    Button(behavior, "Clear ignored vignettes", 14, -200, 260, function()
         if addon.VignetteRadarFeatures and addon.VignetteRadarFeatures.ClearIgnored then
             addon.VignetteRadarFeatures.ClearIgnored()
             addon.VignetteRadarAPI.Refresh(true)

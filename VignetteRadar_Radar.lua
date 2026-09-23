@@ -117,6 +117,10 @@ local function Quiet()
     return not preview and Features() and Features().IsQuiet() or false
 end
 
+local function VisuallyQuiet()
+    return not preview and Features() and Features().IsVisuallyQuiet() or false
+end
+
 local function Ignored(target)
     return Features() and Features().IsIgnored(target) or false
 end
@@ -791,14 +795,63 @@ end
 
 local function HideQuestAreas()
     if panel and panel.questBlob then
+        if GameTooltip and GameTooltip.GetOwner and GameTooltip:GetOwner() == panel.questBlob then
+            GameTooltip:Hide()
+        end
+        panel.questBlob.tooltipQuestID = nil
         panel.questBlob:Hide()
         panel.questBlob.drawnKey = nil
     end
 end
 
+local function UpdateQuestAreaTooltip()
+    local blob = panel and panel.questBlob
+    if not (blob and blob:IsShown() and GameTooltip and type(blob.UpdateMouseOverTooltip) == "function"
+        and type(GetCursorPosition) == "function") then return end
+    local owner = GameTooltip.GetOwner and GameTooltip:GetOwner()
+    if owner and owner ~= blob and GameTooltip.IsShown and GameTooltip:IsShown() then return end
+    local cursorX, cursorY = Call(GetCursorPosition)
+    local scale = UIParent and UIParent.GetEffectiveScale and SafeNumber(UIParent:GetEffectiveScale()) or 1
+    if not (SafeNumber(cursorX) and SafeNumber(cursorY) and scale and scale > 0) then return end
+    cursorX, cursorY = cursorX / scale, cursorY / scale
+    local field = panel.field
+    local fieldLeft, fieldTop = SafeNumber(field:GetLeft()), SafeNumber(field:GetTop())
+    local blobLeft, blobTop = SafeNumber(blob:GetLeft()), SafeNumber(blob:GetTop())
+    local width, height = SafeNumber(blob:GetWidth()), SafeNumber(blob:GetHeight())
+    local questID
+    if fieldLeft and fieldTop and blobLeft and blobTop and width and height and width > 0 and height > 0 then
+        local fromCenterX = cursorX - fieldLeft - field:GetWidth() / 2
+        local fromCenterY = cursorY - fieldTop + field:GetHeight() / 2
+        if fromCenterX * fromCenterX + fromCenterY * fromCenterY <= panel.fieldRadius * panel.fieldRadius then
+            local x, y = (cursorX - blobLeft) / width, (blobTop - cursorY) / height
+            if x >= 0 and x <= 1 and y >= 0 and y <= 1 then
+                questID = SafeNumber(Call(blob.UpdateMouseOverTooltip, blob, x, y))
+            end
+        end
+    end
+    local quest
+    if questID then
+        for _, candidate in ipairs(activeQuests) do
+            if candidate.questID == questID then quest = candidate; break end
+        end
+    end
+    if not quest then
+        if owner == blob then GameTooltip:Hide() end
+        blob.tooltipQuestID = nil
+        return
+    end
+    if blob.tooltipQuestID == questID and owner == blob and GameTooltip:IsShown() then return end
+    blob.tooltipQuestID = questID
+    GameTooltip:SetOwner(blob, "ANCHOR_CURSOR_RIGHT", 5, 2)
+    GameTooltip:SetText(quest.name, 1, .82, .35)
+    GameTooltip:AddLine("Quest area", .72, .76, .78)
+    GameTooltip:Show()
+end
+
 local function RenderQuestAreas(player, mapID, range)
     local blob = panel.questBlob
     if not (blob and player and mapID and Settings().vignetteRadarQuestAreas
+        and Settings().vignetteRadarCircleOnly ~= true
         and Settings().vignetteRadarNorthUp and #activeQuests > 0) then
         HideQuestAreas()
         return
@@ -929,6 +982,11 @@ local function ApplyPanelLayout(focused)
     panel:SetSize(layout.width, layout.height + (focused and layout.focus or 0))
     if left and top then PlacePanel(left, top, Settings().vignetteRadarScale or 1) end
     panel.field:SetSize(layout.field, layout.field)
+    if panel.frameToggle then
+        panel.frameToggle:ClearAllPoints()
+        panel.frameToggle:SetPoint("CENTER", panel.field, "CENTER",
+            panel.fieldRadius * .58, panel.fieldRadius * .58)
+    end
     panel.field.halo:SetSize(layout.field + 4, layout.field + 4)
     ResizeRing(panel.outerRing, panel.field, panel.fieldRadius)
     ResizeRing(panel.rangeRing, panel.field, panel.plotRadius)
@@ -960,6 +1018,7 @@ local function ApplyPanelLayout(focused)
         Place(panel.zoomOut, "BOTTOMLEFT", 12, 8)
         Place(panel.zoomLabel, "BOTTOMLEFT", 42, 12, 110, 12)
         Place(panel.zoomIn, "BOTTOMLEFT", 160, 8)
+        Place(panel.combatToggle, "BOTTOMLEFT", 192, 9)
         Place(panel.compass, "BOTTOMLEFT", 214, 8)
         Place(panel.target, "BOTTOMRIGHT", -74, 8)
         Place(panel.legend, "BOTTOMRIGHT", -42, 8)
@@ -976,8 +1035,10 @@ local function ApplyPanelLayout(focused)
         Place(panel.focusReadout, "BOTTOMLEFT", 12, footer + 8, layout.width - 24, compact and 50 or 32)
         if compact then
             Place(panel.zoomLabel, "BOTTOM", 0, 38, 92, 12)
+            Place(panel.combatToggle, "BOTTOMLEFT", 146, 32)
         else
-            Place(panel.zoomLabel, "BOTTOMLEFT", 76, 10, 96, 12)
+            Place(panel.zoomLabel, "BOTTOMLEFT", 96, 10, 76, 12)
+            Place(panel.combatToggle, "BOTTOMLEFT", 72, 7)
         end
         -- Compact puts its range above a single, evenly spaced row of controls.
         panel.zoomOut:ClearAllPoints()
@@ -1088,6 +1149,44 @@ local function UpdateFocusReadout(target, player, selected)
     end
 end
 
+local function UpdatePanelChrome()
+    local circleOnly = Settings().vignetteRadarCircleOnly == true
+    local style = addon.VignetteRadarStyle
+    local br, bg, bb = .02, .025, .03
+    if style then br, bg, bb = style.Color("background") end
+    panel:SetBackdropColor(math.min(.14, br * 2.7), math.min(.14, bg * 2.7),
+        math.min(.14, bb * 2.7), circleOnly and 0 or .98)
+    panel:SetBackdropBorderColor(1, 1, 1, circleOnly and 0 or .15)
+    panel:EnableMouseWheel(not circleOnly)
+    for _, control in ipairs({ panel.title, panel.summary, panel.drag, panel.settingsDot,
+        panel.zoomOut, panel.zoomIn, panel.zoomLabel, panel.combatToggle, panel.compass,
+        panel.target, panel.legend, panel.close }) do
+        control:SetShown(not circleOnly)
+    end
+    if circleOnly then
+        panel.focusReadout:Hide()
+        panel.focusDivider:Hide()
+        panel.layoutHint:Hide()
+        panel.sideCaption:Hide()
+        panel.sideGuide:Hide()
+    else
+        panel.sideCaption:SetShown(panel.layout == "squat")
+        panel.sideGuide:SetShown(panel.layout == "squat")
+    end
+    if panel.resizeGrips then
+        for _, grip in pairs(panel.resizeGrips) do grip:SetShown(not circleOnly) end
+    end
+    local button = panel.frameToggle
+    if button then
+        button:SetBackdropColor(circleOnly and ACCENT[1] or .025,
+            circleOnly and ACCENT[2] or .03, circleOnly and ACCENT[3] or .035,
+            circleOnly and .9 or .8)
+        button:SetBackdropBorderColor(ACCENT[1], ACCENT[2], ACCENT[3], circleOnly and .9 or .6)
+        button.label:SetTextColor(circleOnly and .015 or ACCENT[1],
+            circleOnly and .035 or ACCENT[2], circleOnly and .038 or ACCENT[3], 1)
+    end
+end
+
 local appearanceKey, appearancePanel, appearanceLauncher
 ApplyAppearance = function()
     local style = addon.VignetteRadarStyle
@@ -1165,9 +1264,28 @@ local function UpdateFullSweep(elapsed)
     end
 end
 
+local function UpdateCombatToggle()
+    if not (panel and panel.combatToggle) then return end
+    local button = panel.combatToggle
+    local keepVisible = Settings().vignetteRadarKeepVisibleCombat == true
+    local red, green, blue = ACCENT[1], ACCENT[2], ACCENT[3]
+    if keepVisible then
+        button:SetBackdropColor(red, green, blue, 1)
+        button:SetBackdropBorderColor(math.min(1, red + .3), math.min(1, green + .15),
+            math.min(1, blue + .2), 1)
+        button.label:SetTextColor(.015, .035, .038, 1)
+    else
+        button:SetBackdropColor(.025, .03, .035, .96)
+        button:SetBackdropBorderColor(.55, .62, .62, .68)
+        button.label:SetTextColor(.65, .72, .72, 1)
+    end
+    button.keepVisible = keepVisible
+end
+
 Render = function()
     if not panel or not panel:IsShown() then return end
     ApplyAppearance()
+    UpdateCombatToggle()
     UpdateFullSweep(0)
     BeginBlips()
     local range = tonumber(Settings().vignetteRadarRange) or 450
@@ -1181,7 +1299,7 @@ Render = function()
         panel.compass._northUp = northUp
         if northUp then panel.compass:LockHighlight() else panel.compass:UnlockHighlight() end
     end
-    panel:SetAlpha(Quiet() and 0.35 or 1)
+    panel:SetAlpha(VisuallyQuiet() and 0.35 or 1)
     local mapID = CurrentMapID()
     if not preview and mapID ~= activeMapID then ScanVignettes(mapID) end
     local targets = SelectableTargets()
@@ -1210,6 +1328,7 @@ Render = function()
         end
     end
     UpdateFocusReadout(sidebarTarget, player, focusedTarget ~= nil)
+    UpdatePanelChrome()
 
     if preview then
         HideQuestDots()
@@ -1453,7 +1572,7 @@ end
 
 local function UpdateLauncherSweep(frame, elapsed)
     ApplyAppearance()
-    frame:SetAlpha(Quiet() and 0.35 or 1)
+    frame:SetAlpha(VisuallyQuiet() and 0.35 or 1)
     local active = Settings().vignetteRadarEnabled == true or preview
     frame._animationTime = (frame._animationTime or 0) + elapsed
     local speed = frame._hovered and 1.35 or 0.72
@@ -1918,7 +2037,37 @@ local function EnsurePanel()
     panel.field:SetPoint("BOTTOM", 0, 9 + ZOOM_FOOTER_H)
     panel.field:EnableMouseWheel(true)
     panel.field:SetScript("OnMouseWheel", OnZoomWheel)
+    panel.field:EnableMouse(true)
+    panel.field:RegisterForDrag("LeftButton")
+    panel.field:SetScript("OnDragStart", function()
+        if Settings().vignetteRadarCircleOnly == true then panel:StartMoving() end
+    end)
+    panel.field:SetScript("OnDragStop", function() panel:StopMovingOrSizing(); SavePosition() end)
     panel.field:SetFrameLevel(panel:GetFrameLevel() + 1)
+    panel.frameToggle = CreateFrame("Button", nil, panel.field, "BackdropTemplate")
+    panel.frameToggle:SetSize(18, 18)
+    panel.frameToggle:SetFrameLevel(panel.field:GetFrameLevel() + 6)
+    if type(panel.frameToggle.SetIgnoreParentAlpha) == "function" then
+        panel.frameToggle:SetIgnoreParentAlpha(true)
+    end
+    panel.frameToggle:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8X8",
+        edgeFile = "Interface\\Buttons\\WHITE8X8", edgeSize = 1 })
+    panel.frameToggle.label = Text(panel.frameToggle, 11, "F")
+    panel.frameToggle.label:SetAllPoints()
+    panel.frameToggle.label:SetJustifyH("CENTER")
+    panel.frameToggle:Show()
+    panel.frameToggle:SetScript("OnClick", function()
+        addon.SetVignetteRadarCircleOnly(Settings().vignetteRadarCircleOnly ~= true)
+    end)
+    panel.frameToggle:SetScript("OnEnter", function(self)
+        if not GameTooltip then return end
+        local circleOnly = Settings().vignetteRadarCircleOnly == true
+        GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+        GameTooltip:SetText(circleOnly and "Show full radar frame" or "Show only radar circle", 1, 1, 1)
+        GameTooltip:AddLine("Click to switch views. Your choice is saved.", .7, .8, .8, true)
+        GameTooltip:Show()
+    end)
+    panel.frameToggle:SetScript("OnLeave", function() if GameTooltip then GameTooltip:Hide() end end)
     panel.field.background = panel.field:CreateTexture(nil, "BACKGROUND")
     panel.field.background:SetAllPoints()
     panel.field.background:SetTexture(CIRCLE_TEXTURE)
@@ -2070,11 +2219,42 @@ local function EnsurePanel()
     end)
     panel.compass:HookScript("OnLeave", function() if GameTooltip then GameTooltip:Hide() end end)
 
+    panel.combatToggle = CreateFrame("Button", nil, panel, "BackdropTemplate")
+    panel.combatToggle:SetSize(18, 18)
+    if type(panel.combatToggle.SetIgnoreParentAlpha) == "function" then
+        panel.combatToggle:SetIgnoreParentAlpha(true)
+    end
+    panel.combatToggle:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8X8",
+        edgeFile = "Interface\\Buttons\\WHITE8X8", edgeSize = 1 })
+    panel.combatToggle.label = Text(panel.combatToggle, 11, "C")
+    panel.combatToggle.label:SetAllPoints()
+    panel.combatToggle.label:SetJustifyH("CENTER")
+    panel.combatToggle:SetScript("OnClick", function()
+        addon.SetVignetteRadarKeepVisibleCombat(Settings().vignetteRadarKeepVisibleCombat ~= true)
+    end)
+    panel.combatToggle:SetScript("OnEnter", function(self)
+        if not GameTooltip then return end
+        local enabled = Settings().vignetteRadarKeepVisibleCombat == true
+        GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+        GameTooltip:SetText(enabled and "Stay visible in combat: ON" or "Stay visible in combat: OFF", 1, 1, 1)
+        GameTooltip:AddLine(enabled and "Click to restore combat fading."
+            or "Click to keep the radar and launcher fully visible in combat.", .7, .8, .8, true)
+        GameTooltip:AddLine("Instance fading is a separate setting.", .55, .7, .68, true)
+        GameTooltip:Show()
+    end)
+    panel.combatToggle:SetScript("OnLeave", function() if GameTooltip then GameTooltip:Hide() end end)
+    UpdateCombatToggle()
+
     AddResizeGrips()
 
     panel:SetScript("OnUpdate", function(self, elapsed)
         self._renderElapsed = (self._renderElapsed or 0) + elapsed
         self._scanElapsed = (self._scanElapsed or 0) + elapsed
+        self._questTooltipElapsed = (self._questTooltipElapsed or 0) + elapsed
+        if self._questTooltipElapsed >= .1 then
+            self._questTooltipElapsed = 0
+            UpdateQuestAreaTooltip()
+        end
         if self._scanElapsed >= RESCAN_SECONDS then
             self._scanElapsed = 0
             RefreshRadar(true)
@@ -2255,6 +2435,35 @@ end
 
 function addon.SetVignetteRadarNorthUp(enabled)
     Settings().vignetteRadarNorthUp = enabled == true
+    RefreshRadar(false)
+    if addon.RefreshVignetteRadarOptions then addon.RefreshVignetteRadarOptions() end
+end
+
+function addon.SetVignetteRadarQuietCombat(fadeInCombat)
+    Settings().vignetteRadarQuietCombat = fadeInCombat == true
+    RefreshRadar(false)
+    if addon.RefreshVignetteRadarOptions then addon.RefreshVignetteRadarOptions() end
+    local quick = addon.VignetteRadarQuickConfig
+    if quick and quick.Refresh then quick.Refresh() end
+end
+
+function addon.SetVignetteRadarKeepVisibleCombat(enabled)
+    Settings().vignetteRadarKeepVisibleCombat = enabled == true
+    RefreshRadar(false)
+    if addon.RefreshVignetteRadarOptions then addon.RefreshVignetteRadarOptions() end
+    local quick = addon.VignetteRadarQuickConfig
+    if quick and quick.Refresh then quick.Refresh() end
+end
+
+function addon.SetVignetteRadarCircleOnly(enabled)
+    Settings().vignetteRadarCircleOnly = enabled == true
+    if enabled then
+        local quick = addon.VignetteRadarQuickConfig
+        if quick and quick.Hide then quick.Hide() end
+        local legend, picker = LegendAPI(), TargetPickerAPI()
+        if legend and legend.Hide then legend.Hide() end
+        if picker and picker.Hide then picker.Hide() end
+    end
     RefreshRadar(false)
     if addon.RefreshVignetteRadarOptions then addon.RefreshVignetteRadarOptions() end
 end

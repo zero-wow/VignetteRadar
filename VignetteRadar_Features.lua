@@ -111,17 +111,28 @@ function API.ClearIgnored()
     sessionIgnored = {}
 end
 
+local function InCombat()
+    if type(InCombatLockdown) ~= "function" then return false end
+    local ok, combat = pcall(InCombatLockdown)
+    return not ok or IsSecret(combat) or combat == true
+end
+
+local function InInstance()
+    if type(IsInInstance) ~= "function" then return false end
+    local ok, inside = pcall(IsInInstance)
+    return not ok or IsSecret(inside) or inside == true
+end
+
 function API.IsQuiet()
     local settings = Settings()
-    if settings.vignetteRadarQuietCombat ~= false and type(InCombatLockdown) == "function" then
-        local ok, combat = pcall(InCombatLockdown)
-        if not ok or IsSecret(combat) or combat == true then return true end
-    end
-    if settings.vignetteRadarQuietInstances ~= false and type(IsInInstance) == "function" then
-        local ok, inside = pcall(IsInInstance)
-        if not ok or IsSecret(inside) or inside == true then return true end
-    end
-    return false
+    return (settings.vignetteRadarQuietCombat ~= false and InCombat())
+        or (settings.vignetteRadarQuietInstances ~= false and InInstance())
+end
+
+function API.IsVisuallyQuiet()
+    local settings = Settings()
+    return (settings.vignetteRadarKeepVisibleCombat ~= true and InCombat())
+        or (settings.vignetteRadarQuietInstances ~= false and InInstance())
 end
 
 function API.IsWorldBoss(info)
