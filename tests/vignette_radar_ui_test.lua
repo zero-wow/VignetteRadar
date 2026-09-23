@@ -695,12 +695,15 @@ end
 for _, name in ipairs({ "classic", "squat", "compact" }) do
     addon.SetVignetteRadarLayout(name)
     checkLayout(false)
-    local headingLength = panel.plotRadius * 0.38
-    assert(panel.direction.thickness >= 2.5 and panel.direction.color[2] == 1
-        and headingLength < panel.plotRadius / 2 and headingLength > 13
+    assert(panel.outerRing[1].color[4] < panel.rangeRing[1].color[4],
+        "the circle outside the cardinal labels must be the faintest boundary")
+    local headingLength = panel.plotRadius * 0.30
+    assert(panel.direction.thickness >= 2.5 and panel.direction.color[4] < 0.5
+        and headingLength < panel.plotRadius / 2 and headingLength > 9
         and #panel.headingChevron == 2
-        and panel.headingChevron[1].thickness >= 2,
-        "the player heading must show a compact chevron and short line in every panel layout")
+        and panel.headingChevron[1].thickness >= 2
+        and panel.headingChevron[1].color[4] < 0.8,
+        "the player heading must show a compact, translucent chevron and line in every panel layout")
     assert(panel.compass.text == "N" and not panel.compass._selected,
         "the compass must clearly show whether north is locked")
     playerFacing = 0
@@ -711,10 +714,10 @@ for _, name in ipairs({ "classic", "squat", "compact" }) do
     near(panel.blipByKey.rare.point[4], northY, "heading-up must rotate the radar with the player")
     near(panel.direction.endPoint[3], 0, "heading-up player line must point straight up")
     near(panel.direction.endPoint[4], headingLength, "heading-up line must stay short")
-    near(panel.direction.startPoint[4], 13, "heading ray must begin at the chevron tip")
-    near(panel.headingChevron[1].startPoint[3], -5, "heading-up chevron must hug the dot")
-    near(panel.headingChevron[2].startPoint[3], 5, "heading-up chevron must hug the dot")
-    near(panel.headingChevron[1].startPoint[4], 7, "heading-up chevron must sit close to the dot")
+    near(panel.direction.startPoint[4], 9, "heading ray must begin at the chevron tip")
+    near(panel.headingChevron[1].startPoint[3], -4, "heading-up chevron must hug the dot")
+    near(panel.headingChevron[2].startPoint[3], 4, "heading-up chevron must hug the dot")
+    near(panel.headingChevron[1].startPoint[4], 4, "heading-up chevron must meet the dot")
     assert(panel.direction:IsShown() and panel.headingChevron[1]:IsShown(),
         "heading-up player cue must stay visible")
     local before = scanCount
@@ -731,9 +734,9 @@ for _, name in ipairs({ "classic", "squat", "compact" }) do
         near(panel.cardinals[1].point[5], panel.fieldRadius - 5, "N must remain at the top of the ring")
         near(panel.direction.endPoint[3], -math.sin(angle) * headingLength, "player line must turn toward actual facing")
         near(panel.direction.endPoint[4], math.cos(angle) * headingLength, "player line must turn toward actual facing")
-        near(panel.headingChevron[1].endPoint[3], -math.sin(angle) * 13,
+        near(panel.headingChevron[1].endPoint[3], -math.sin(angle) * 9,
             "chevron tip must follow player facing")
-        near(panel.headingChevron[1].endPoint[4], math.cos(angle) * 13,
+        near(panel.headingChevron[1].endPoint[4], math.cos(angle) * 9,
             "chevron tip must follow player facing")
         assert(panel.headingChevron[1]:IsShown() and panel.headingChevron[2]:IsShown(),
             "both sides of the player chevron must stay visible")
@@ -776,9 +779,9 @@ northOption.scripts.OnClick(northOption)
 assert(panel.compass._selected and settings.vignetteRadarNorthUp)
 SlashCmdList.VIGNETTERADAR("preview")
 near(panel.cardinals[1].point[4], 0, "preview must honor fixed north")
-near(panel.direction.endPoint[3], -math.sin(0.65) * panel.plotRadius * 0.38,
+near(panel.direction.endPoint[3], -math.sin(0.65) * panel.plotRadius * 0.30,
     "preview must demonstrate the short rotating player cue")
-near(panel.headingChevron[1].endPoint[3], -math.sin(0.65) * 13,
+near(panel.headingChevron[1].endPoint[3], -math.sin(0.65) * 9,
     "preview must demonstrate the player's rotating chevron")
 
 -- Border dragging uniformly scales the panel and keeps the opposite edge stable.
