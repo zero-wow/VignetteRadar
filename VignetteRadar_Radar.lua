@@ -12,6 +12,11 @@ local LAYOUTS = {
     compact = { width = 184, height = 260, field = 164, footer = 50, focus = 64 },
 }
 local LAUNCHER_SIZE, LAUNCHER_RADIUS, LAUNCHER_RANGE = 44, 13, 150
+local LAUNCHER_AVOID_INTERVAL, LAUNCHER_AVOID_GAP = 1, 6
+local LAUNCHER_AVOID_DIRECTIONS = {
+    { 1, 0 }, { -1, 0 }, { 0, -1 }, { 0, 1 },
+    { 1, -1 }, { -1, -1 }, { 1, 1 }, { -1, 1 },
+}
 local HEADING_HALF_WIDTH = 4
 local UPDATE_SECONDS, RESCAN_SECONDS = 0.05, 1
 local MAX_BLIPS = 64
@@ -2570,6 +2575,107 @@ local function SaveLauncherPosition()
     end
 end
 
+-- Keep the saved anchor as the user's preferred spot. Collision avoidance only
+-- changes the live button position, so it returns home when the other UI hides.
+local function LauncherObstacle(frame, uiScale, screenWidth, screenHeight, inCombat)
+    if frame == launcher or frame == UIParent or frame == WorldFrame or frame == GameTooltip then return nil end
+    local visibleOK, visible, mouse = pcall(function()
+        return frame:IsVisible(), frame:IsMouseEnabled()
+    end)
+    if not visibleOK or SafeBoolean(visible) ~= true
+        or (frame ~= panel and SafeBoolean(mouse) ~= true) then return nil end
+    local ancestor = frame
+    for _ = 1, 20 do
+        if ancestor == launcher or ancestor == WorldFrame or ancestor == GameTooltip
+            or (ancestor == panel and frame ~= panel) then return nil end
+        if not (ancestor and ancestor.GetParent) then break end
+        local ok, parent = pcall(ancestor.GetParent, ancestor)
+        if not ok or not parent then break end
+        ancestor = parent
+    end
+    if inCombat then
+        local ok, protected = pcall(frame.IsProtected, frame)
+        if not ok or SafeBoolean(protected) ~= false then return nil end
+    end
+    local ok, alpha, left, right, top, bottom, scale = pcall(function()
+        return frame.GetEffectiveAlpha and frame:GetEffectiveAlpha() or frame:GetAlpha(),
+            frame:GetLeft(), frame:GetRight(), frame:GetTop(), frame:GetBottom(),
+            frame:GetEffectiveScale()
+    end)
+    if not ok or not SafeNumber(alpha) or alpha < 0.15 then return nil end
+    left, right, top, bottom, scale = SafeNumber(left), SafeNumber(right), SafeNumber(top),
+        SafeNumber(bottom), SafeNumber(scale)
+    if not (left and right and top and bottom and scale and scale > 0) then return nil end
+    scale = scale / uiScale
+    left, right, top, bottom = left * scale, right * scale, top * scale, bottom * scale
+    local width, height = right - left, top - bottom
+    if width < 12 or height < 12 or width * height > screenWidth * screenHeight * 0.5 then return nil end
+    return { left = left, right = right, top = top, bottom = bottom }
+end
+
+local function RectsOverlap(x, y, screenHeight, obstacle)
+    local top = screenHeight + y
+    return x < obstacle.right + LAUNCHER_AVOID_GAP
+        and x + LAUNCHER_SIZE > obstacle.left - LAUNCHER_AVOID_GAP
+        and top > obstacle.bottom - LAUNCHER_AVOID_GAP
+        and top - LAUNCHER_SIZE < obstacle.top + LAUNCHER_AVOID_GAP
+end
+
+local function UpdateLauncherPlacement()
+    if not (launcher and launcher:IsShown() and not launcher._dragging and type(EnumerateFrames) == "function") then return end
+    local width, height = SafeNumber(UIParent:GetWidth()), SafeNumber(UIParent:GetHeight())
+    local uiScale = UIParent.GetEffectiveScale and SafeNumber(UIParent:GetEffectiveScale())
+    if not (width and height and uiScale and uiScale > 0 and width > LAUNCHER_SIZE and height > LAUNCHER_SIZE) then return end
+    local position = Settings().vignetteRadarLauncherPosition
+    local homeX = type(position) == "table" and SafeNumber(tonumber(position.x)) or 30
+    local homeY = type(position) == "table" and SafeNumber(tonumber(position.y)) or -170
+    local x = math.max(4, math.min(homeX, width - LAUNCHER_SIZE - 4))
+    local y = math.min(-4, math.max(homeY, -height + LAUNCHER_SIZE + 4))
+    local obstacles, previous = {}, nil
+    local inCombat = InCombatLockdown and InCombatLockdown()
+    for _ = 1, 20000 do
+        local ok, frame = pcall(EnumerateFrames, previous)
+        if not ok then return end
+        if not frame or frame == previous then break end
+        previous = frame
+        local obstacle = LauncherObstacle(frame, uiScale, width, height, inCombat)
+        if obstacle then obstacles[#obstacles + 1] = obstacle end
+    end
+    local function free(candidateX, candidateY)
+        if candidateX < 4 or candidateX + LAUNCHER_SIZE > width - 4
+            or candidateY > -4 or candidateY - LAUNCHER_SIZE < -height + 4 then return false end
+        for _, obstacle in ipairs(obstacles) do
+            if RectsOverlap(candidateX, candidateY, height, obstacle) then return false end
+        end
+        return true
+    end
+    if not free(x, y) then
+        local step = LAUNCHER_SIZE + LAUNCHER_AVOID_GAP * 2
+        local found = false
+        for radius = 1, math.ceil(math.max(width, height) / step) do
+            for _, direction in ipairs(LAUNCHER_AVOID_DIRECTIONS) do
+                local candidateX = x + direction[1] * radius * step
+                local candidateY = y + direction[2] * radius * step
+                if free(candidateX, candidateY) then
+                    x, y, found = candidateX, candidateY, true
+                    break
+                end
+            end
+            if found then break end
+        end
+    end
+    local shifted = x ~= homeX or y ~= homeY
+    if shifted and (launcher._avoidX ~= x or launcher._avoidY ~= y) then
+        launcher:ClearAllPoints()
+        launcher:SetPoint("TOPLEFT", UIParent, "TOPLEFT", x, y)
+        launcher._avoidX, launcher._avoidY = x, y
+    elseif not shifted and launcher._avoidX then
+        launcher:ClearAllPoints()
+        launcher:SetPoint("TOPLEFT", UIParent, "TOPLEFT", homeX, homeY)
+        launcher._avoidX, launcher._avoidY = nil, nil
+    end
+end
+
 local function LauncherTooltip(owner)
     if not GameTooltip then return end
     GameTooltip:SetOwner(owner, "ANCHOR_RIGHT")
@@ -2835,6 +2941,7 @@ EnsureLauncher = function()
         self:StopMovingOrSizing()
         self._dragging = false
         SaveLauncherPosition()
+        self._avoidX, self._avoidY = nil, nil
         if C_Timer and C_Timer.After then
             C_Timer.After(0, function() self._suppressClick = false end)
         else
@@ -2857,6 +2964,11 @@ EnsureLauncher = function()
         self._sweepElapsed = (self._sweepElapsed or 0) + elapsed
         self._targetElapsed = (self._targetElapsed or 0) + elapsed
         self._scanElapsed = (self._scanElapsed or 0) + elapsed
+        self._avoidElapsed = (self._avoidElapsed or 0) + elapsed
+        if self._avoidElapsed >= LAUNCHER_AVOID_INTERVAL then
+            self._avoidElapsed = 0
+            UpdateLauncherPlacement()
+        end
         if self._sweepElapsed >= (1 / 30) then
             UpdateLauncherSweep(self, self._sweepElapsed)
             self._sweepElapsed = 0
@@ -3630,7 +3742,9 @@ RefreshRadar = function(rescan)
         addon.VignetteRadarQuickConfig.Refresh()
     end
     if settings.vignetteRadarLauncherVisible ~= false then
+        local wasShown = launcher and launcher:IsShown()
         EnsureLauncher():Show()
+        if not wasShown then UpdateLauncherPlacement() end
     elseif launcher then
         launcher:Hide()
     end
@@ -3723,7 +3837,12 @@ function addon.ResetVignetteRadarPositions()
     Settings().vignetteRadarCirclePosition = nil
     Settings().vignetteRadarLauncherPosition = nil
     if panel then PlacePanel(30, UIParent:GetHeight() - 520, panel:GetScale()) end
-    if launcher then launcher:ClearAllPoints(); launcher:SetPoint("TOPLEFT", UIParent, "TOPLEFT", 30, -170) end
+    if launcher then
+        launcher:ClearAllPoints()
+        launcher:SetPoint("TOPLEFT", UIParent, "TOPLEFT", 30, -170)
+        launcher._avoidX, launcher._avoidY = nil, nil
+        UpdateLauncherPlacement()
+    end
     if addon.VignetteRadarQuickConfig then addon.VignetteRadarQuickConfig.Reanchor(panel) end
 end
 
