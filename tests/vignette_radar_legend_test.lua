@@ -43,6 +43,14 @@ function methods:CreateTexture()
     objects[#objects + 1] = texture
     return texture
 end
+function methods:CreateLine()
+    local line = setmetatable({ kind = "Line", parent = self, shown = true }, { __index = methods })
+    objects[#objects + 1] = line
+    return line
+end
+function methods:SetThickness(value) self.thickness = value end
+function methods:SetStartPoint(...) self.startPoint = { ... } end
+function methods:SetEndPoint(...) self.endPoint = { ... } end
 function methods:CreateFontString()
     local label = setmetatable({ kind = "FontString", parent = self, shown = true }, { __index = methods })
     objects[#objects + 1] = label
@@ -116,8 +124,8 @@ local anchor = CreateFrame("Frame", nil, UIParent)
 anchor.right = 500
 assert(legend.Toggle(anchor) == true and legend.IsShown(), "toggle must open the attached legend")
 local panel = assert(_G.VignetteRadarLegendPanel, "legend panel must have a stable global frame name")
-assert(panel.width == 206 and panel.height == 166 and panel.clamped == true,
-    "legend must use its compact, screen-safe dimensions")
+assert(panel.width == 232 and panel.height == 348 and panel.clamped == true,
+    "legend must fit its live and map guide within the screen")
 assert(panel.mouseEnabled == true and panel.divider.height == 1,
     "legend surface must capture input and preserve a visible header gutter")
 assert(panel.point[1] == "TOPLEFT" and panel.point[3] == "TOPRIGHT" and panel.point[4] == 8,
@@ -126,6 +134,25 @@ assert(panel.title.font[1] == EllesmereUI.EXPRESSWAY and panel.title.text == "RA
     "legend must use native EllesmereUI typography")
 assert(panel.rows.rare and panel.rows.treasure and panel.rows.event and panel.rows.other,
     "legend must render one independent row for every supported filter")
+for _, kind in ipairs({ "treasure", "mob", "item", "note" }) do
+    local note = assert(panel.mapNotes[kind], "every map note type needs a legend entry")
+    assert(note.rim.texture == "Interface\\CharacterFrame\\TempPortraitAlphaMask"
+        and note.core.width == 3 and note.core.height == 3,
+        "map note symbols must match their hollow radar markers")
+    assert(note.point[4] >= 9 and note.point[4] + note.width <= panel.width - 9
+        and -note.point[5] + note.height < panel.height - 20,
+        "map note entries must stay within the legend's visible gutters")
+end
+assert(panel.mapCaption.text:find("not live detections", 1, true)
+    and panel.guides.quest.fill.width == 5 and panel.guides.area.fill.width == 11
+    and panel.guides.pin and panel.guides.route.number.text == "1"
+    and #panel.guides.trail.dots == 3 and #panel.guides.stale.lines == 4,
+    "legend must explain quest, exploration, and last-seen symbols accurately")
+for _, guide in pairs(panel.guides) do
+    assert(guide.point[4] >= 9 and guide.point[4] + guide.width <= panel.width - 9
+        and -guide.point[5] + guide.height < panel.height - 20,
+        "guide entries must stay inside the panel with a footer gutter")
+end
 assert(panel.rows.rare.label.text == "RARE / BOSS" and panel.rows.rare.label.width == 98
     and panel.rows.rare.label.point[2] == 39 and panel.rows.rare.label.maxLines == 1,
     "the rare and boss label must stay bounded before its toggle")
@@ -145,6 +172,40 @@ assert(panel.rows.event.scripts.OnMouseDown and panel.rows.event.scripts.OnMouse
     "category controls must expose native pressed feedback")
 assert(panel.rows.rare.toggle.label.text == "OFF", "the UI must reflect persisted filter state")
 
+settings.vignetteRadarPOISource = "none"
+settings.vignetteRadarQuestDots = false
+settings.vignetteRadarBreadcrumbs = false
+legend.Refresh()
+assert(panel.mapNotes.mob.alpha == .6 and panel.mapNotes.mob.label.text == "Mob off"
+    and panel.mapCaption.text:find("Map notes off", 1, true)
+    and panel.guides.quest.label.text == "Quest dot off"
+    and panel.guides.trail.label.text == "Trail off",
+    "the guide must visibly identify optional features that are switched off")
+settings.vignetteRadarPOISource = "auto"
+settings.vignetteRadarPOITypes = { treasure = true, mob = false, item = true, note = true }
+settings.vignetteRadarQuestDots = true
+settings.vignetteRadarQuestAreas = true
+settings.vignetteRadarBreadcrumbs = true
+settings.vignetteRadarShapes = false
+legend.Refresh()
+assert(panel.mapNotes.treasure.alpha == 1 and panel.mapNotes.mob.alpha == .6
+    and panel.guides.quest.alpha == 1 and panel.guides.trail.alpha == 1
+    and panel.rows.rare.swatch.texture == "Interface\\CharacterFrame\\TempPortraitAlphaMask"
+    and panel.rows.treasure.swatch.texture == panel.rows.rare.swatch.texture,
+    "guide and live symbols must track map filters, settings, and icon-free mode")
+addon.VignetteRadarStyle = { Color = function(slot)
+    if slot == "rare" then return .2, .3, .4 end
+    if slot == "quest" then return .7, .6, .5 end
+    return .8, .7, .6
+end }
+settings.vignetteRadarShapes = true
+legend.Refresh()
+assert(panel.mapNotes.mob.rim.vertexColor[1] == .2
+    and panel.guides.quest.fill.vertexColor[1] == .7
+    and panel.rows.rare.swatch.texture == "Interface\\TargetingFrame\\UI-TargetingFrame-Skull"
+    and panel.rows.treasure.swatch.atlas == "VignetteLoot",
+    "legend symbols must follow theme colors and restore icon artwork when re-enabled")
+
 panel.rows.event.scripts.OnClick(panel.rows.event)
 assert(settings.vignetteRadarHighlight == "event", "clicking a category row must spotlight it")
 assert(panel.rows.event.selection:IsShown(), "the selected category needs a visible UI treatment")
@@ -163,12 +224,12 @@ local squat = CreateFrame("Frame", nil, UIParent)
 squat:SetSize(374, 230)
 squat.left, squat.right, squat.top, squat.bottom = 213, 587, 415, 185
 assert(legend.Toggle(squat) and legend.IsShown(), "legend must open from a Squat panel anchor")
-assert(panel.point[1] == "TOP" and panel.point[3] == "BOTTOM" and panel.point[5] == -8,
-    "when Squat has no horizontal room, the legend must use the available lower gutter")
+assert(panel.point[1] == "TOPLEFT" and panel.point[3] == "TOPRIGHT" and panel.point[4] == 8
+    and squat.point and squat.point[4] + squat.width + 8 + panel.width <= 800 - 8,
+    "a tall legend must shift a centered Squat anchor just enough to fit beside it")
 squat.bottom = 121
-assert(legend.Reanchor(squat) and panel.point[1] == "BOTTOM" and panel.point[3] == "TOP"
-    and panel.point[5] == 8,
-    "an open legend must reanchor above a focused Squat panel when its lower space closes")
+assert(legend.Reanchor(squat) and panel.point[1] == "TOPLEFT" and panel.point[3] == "TOPRIGHT",
+    "an open legend must retain its side gutter after Squat layout changes")
 assert(legend.Toggle(squat) == false, "legend Squat toggle must close")
 
 -- Validate fallback behavior without native EllesmereUI helpers or fonts.
@@ -180,7 +241,9 @@ assert(loadfile(sourcePath))("VignetteRadar", fallbackAddon)
 assert(fallbackAddon.VignetteRadarLegend.Toggle(anchor), "legend must build without EllesmereUI helper functions")
 assert(fallbackAddon.VignetteRadarLegend.Testing.GetPanel().title.font[1] == STANDARD_TEXT_FONT,
     "helper-free mode must use the standard client font")
-assert(fallbackAddon.VignetteRadarLegend.Testing.GetPanel().rows.treasure.swatch.color[1] == 1,
-    "treasure keeps its color swatch when the atlas API is absent")
+assert(fallbackAddon.VignetteRadarLegend.Testing.GetPanel().rows.treasure.swatch.texture
+    == "Interface\\CharacterFrame\\TempPortraitAlphaMask"
+    and fallbackAddon.VignetteRadarLegend.Testing.GetPanel().rows.treasure.swatch.vertexColor[1] == 1,
+    "treasure keeps its circular color swatch when the atlas API is absent")
 
 io.write("vignette radar legend tests passed\n")

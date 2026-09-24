@@ -1,10 +1,11 @@
 local _, addon = ...
 if type(addon) ~= "table" then return end
 
-local PANEL_W, PANEL_H = 206, 166
+local PANEL_W, PANEL_H = 232, 348
 local ACCENT = { 0.05, 0.82, 0.62 }
 local FONT_FALLBACK = "Fonts\\FRIZQT__.TTF"
 local SKULL_TEXTURE = "Interface\\TargetingFrame\\UI-TargetingFrame-Skull"
+local CIRCLE_TEXTURE = "Interface\\CharacterFrame\\TempPortraitAlphaMask"
 
 local CATEGORY_ORDER = { "rare", "treasure", "event", "other" }
 local CATEGORIES = {
@@ -12,6 +13,12 @@ local CATEGORIES = {
     treasure = { label = "TREASURE", color = { 1.00, 0.68, 0.16 } },
     event = { label = "EVENTS", color = { 0.67, 0.42, 1.00 } },
     other = { label = "OTHER", color = { 0.66, 0.72, 0.76 } },
+}
+local MAP_NOTES = {
+    { kind = "treasure", label = "Treasure", color = "treasure" },
+    { kind = "mob", label = "Mob", color = "rare" },
+    { kind = "item", label = "Item", color = "event" },
+    { kind = "note", label = "Other note", color = "other" },
 }
 
 local fallbackSettings = {}
@@ -202,7 +209,8 @@ local function CreateCategoryRow(parent, category, index)
     row.swatch = row:CreateTexture(nil, "OVERLAY")
     row.swatch:SetSize(7, 7)
     row.swatch:SetPoint("CENTER", row.swatchGlow, "CENTER")
-    row.swatch:SetColorTexture(definition.color[1], definition.color[2], definition.color[3], 1)
+    row.swatch:SetTexture(CIRCLE_TEXTURE)
+    row.swatch:SetVertexColor(definition.color[1], definition.color[2], definition.color[3], 1)
     if category == "rare" then
         row.swatch:SetSize(13, 13)
         row.swatch:SetTexture(SKULL_TEXTURE)
@@ -258,6 +266,100 @@ local function CreateCategoryRow(parent, category, index)
     return row
 end
 
+local function GuideLabel(parent, value, x, y, width, size)
+    local label = Text(parent, size or 9, value)
+    label:SetPoint("TOPLEFT", parent, "TOPLEFT", x, -y)
+    label:SetSize(width, 16)
+    if label.SetMaxLines then label:SetMaxLines(1) end
+    return label
+end
+
+local function SectionRule(parent, y)
+    local line = parent:CreateTexture(nil, "ARTWORK")
+    line:SetPoint("TOPLEFT", parent, "TOPLEFT", 10, -y)
+    line:SetPoint("TOPRIGHT", parent, "TOPRIGHT", -10, -y)
+    line:SetHeight(1)
+    line:SetColorTexture(1, 1, 1, .08)
+    return line
+end
+
+local function GuideRow(parent, label, x, y)
+    local row = CreateFrame("Frame", nil, parent)
+    row:SetSize(103, 18)
+    row:SetPoint("TOPLEFT", parent, "TOPLEFT", x, -y)
+    row.label = GuideLabel(row, label, 20, 1, 82, 9)
+    return row
+end
+
+local function Circle(parent, size, layer)
+    local dot = parent:CreateTexture(nil, layer or "ARTWORK")
+    dot:SetSize(size, size)
+    dot:SetPoint("LEFT", parent, "LEFT", 7, 0)
+    dot:SetTexture(CIRCLE_TEXTURE)
+    return dot
+end
+
+local function CreateMapNote(parent, definition, index)
+    local x = index % 2 == 1 and 10 or 120
+    local y = index <= 2 and 172 or 194
+    local row = GuideRow(parent, definition.label, x, y)
+    row.kind, row.colorSlot = definition.kind, definition.color
+    row.rim = Circle(row, 9)
+    row.core = row:CreateTexture(nil, "OVERLAY")
+    row.core:SetSize(3, 3)
+    row.core:SetPoint("CENTER", row.rim, "CENTER")
+    row.core:SetTexture(CIRCLE_TEXTURE)
+    row.core:SetVertexColor(.02, .03, .035, .95)
+    return row
+end
+
+local function CreateOtherGuide(parent, label, x, y, symbol)
+    local row = GuideRow(parent, label, x, y)
+    row.symbol = symbol
+    if symbol == "quest" then
+        row.rim = Circle(row, 8)
+        row.rim:SetVertexColor(.04, .04, .03, .9)
+        row.fill = row:CreateTexture(nil, "OVERLAY")
+        row.fill:SetSize(5, 5)
+        row.fill:SetPoint("CENTER", row.rim, "CENTER")
+        row.fill:SetTexture(CIRCLE_TEXTURE)
+    elseif symbol == "area" then
+        row.fill = row:CreateTexture(nil, "ARTWORK")
+        row.fill:SetSize(11, 11)
+        row.fill:SetPoint("LEFT", row, "LEFT", 6, 0)
+        row.fill:SetTexture(CIRCLE_TEXTURE)
+    elseif symbol == "trail" then
+        row.dots = {}
+        for index = 1, 3 do
+            local dot = row:CreateTexture(nil, "ARTWORK")
+            dot:SetSize(4, 4)
+            dot:SetPoint("LEFT", row, "LEFT", 3 + index * 4, 0)
+            dot:SetTexture(CIRCLE_TEXTURE)
+            row.dots[index] = dot
+        end
+    elseif symbol == "stale" then
+        row.lines = {}
+        local corners = { { 12, 5 }, { 17, 0 }, { 12, -5 }, { 7, 0 } }
+        for index = 1, 4 do
+            local line = row:CreateLine(nil, "ARTWORK")
+            local first, last = corners[index], corners[index % 4 + 1]
+            line:SetThickness(1.2)
+            line:SetStartPoint("LEFT", row, first[1], first[2])
+            line:SetEndPoint("LEFT", row, last[1], last[2])
+            row.lines[index] = line
+        end
+    else
+        row.fill = Circle(row, 10)
+        if symbol == "route" then
+            row.number = Text(row, 8, "1")
+            row.number:SetSize(10, 10)
+            row.number:SetPoint("CENTER", row.fill, "CENTER")
+            row.number:SetJustifyH("CENTER")
+        end
+    end
+    return row
+end
+
 local function FrameValue(frame, method)
     if not (frame and type(frame[method]) == "function") then return nil end
     local value = frame[method](frame)
@@ -286,7 +388,7 @@ local function Attach(anchor)
         if anchor and anchorWidth and anchorWidth >= 100 and left and top and screenWidth and screenHeight
             and anchorWidth + PANEL_W + 24 <= screenWidth
             and type(anchor.ClearAllPoints) == "function" and type(anchor.SetPoint) == "function" then
-            local shiftedLeft = math.max(8, screenWidth - PANEL_W - 12 - anchorWidth)
+            local shiftedLeft = math.max(8, screenWidth - PANEL_W - 16 - anchorWidth)
             anchor:ClearAllPoints()
             anchor:SetPoint("TOPLEFT", UIParent, "TOPLEFT", shiftedLeft, top - screenHeight)
             panel:SetPoint("TOPLEFT", anchor, "TOPRIGHT", 8, 0)
@@ -345,6 +447,29 @@ local function EnsurePanel()
         panel.rows[category] = CreateCategoryRow(panel, category, index)
     end
 
+    panel.mapRule = SectionRule(panel, 148)
+    panel.mapHeading = GuideLabel(panel, "MAP NOTES  /  HOLLOW DOTS", 10, 151, PANEL_W - 20, 9)
+    panel.mapHeading:SetTextColor(.68, .75, .77, 1)
+    panel.mapNotes = {}
+    for index, definition in ipairs(MAP_NOTES) do
+        panel.mapNotes[definition.kind] = CreateMapNote(panel, definition, index)
+    end
+    panel.mapCaption = GuideLabel(panel, "Saved in one pack; not live detections", 10, 216, PANEL_W - 20, 8)
+    panel.mapCaption:SetTextColor(.5, .57, .59, 1)
+
+    panel.otherRule = SectionRule(panel, 233)
+    panel.otherHeading = GuideLabel(panel, "MORE ON THE RADAR", 10, 238, PANEL_W - 20, 9)
+    panel.otherHeading:SetTextColor(.68, .75, .77, 1)
+    panel.guides = {
+        quest = CreateOtherGuide(panel, "Quest dot", 10, 256, "quest"),
+        area = CreateOtherGuide(panel, "Quest area", 120, 256, "area"),
+        pin = CreateOtherGuide(panel, "Saved pin", 10, 278, "pin"),
+        route = CreateOtherGuide(panel, "Route stop", 120, 278, "route"),
+        trail = CreateOtherGuide(panel, "Travel trail", 10, 300, "trail"),
+        stale = CreateOtherGuide(panel, "Last seen", 120, 300, "stale"),
+    }
+    panel.footerRule = SectionRule(panel, 324)
+
     panel.status = Text(panel, 8, "NO SPOTLIGHT")
     panel.status:SetPoint("BOTTOMLEFT", 10, 7)
     panel.status:SetTextColor(0.48, 0.55, 0.56, 1)
@@ -355,7 +480,7 @@ local function EnsurePanel()
 end
 
 function API.Refresh()
-    API.ApplyDefaults()
+    local settings = API.ApplyDefaults()
     if not panel then return end
     local highlight = API.GetHighlight()
     local style = addon.VignetteRadarStyle
@@ -371,9 +496,22 @@ function API.Refresh()
         row.selection:SetColorTexture(accentRed, accentGreen, accentBlue, .09)
         local red, green, blue = API.ColorFor(category)
         row.swatchGlow:SetColorTexture(red, green, blue, .14)
-        if category == "rare" or category == "treasure" then row.swatch:SetVertexColor(red, green, blue, 1)
-        else row.swatch:SetColorTexture(red, green, blue, 1) end
-        if row.bossSwatch and style then row.bossSwatch:SetVertexColor(style.Color("boss")) end
+        local icons = settings.vignetteRadarShapes ~= false
+        if category == "rare" then
+            row.swatch:SetTexture(icons and SKULL_TEXTURE or CIRCLE_TEXTURE)
+            row.swatch:SetSize(icons and 13 or 7, icons and 13 or 7)
+            row.bossSwatch:SetTexture(icons and SKULL_TEXTURE or CIRCLE_TEXTURE)
+            row.bossSwatch:SetSize(icons and 13 or 7, icons and 13 or 7)
+            if style then row.bossSwatch:SetVertexColor(style.Color("boss")) end
+        elseif category == "treasure" then
+            if icons and row.swatch.SetAtlas then row.swatch:SetAtlas("VignetteLoot")
+            else row.swatch:SetTexture(CIRCLE_TEXTURE) end
+            row.swatch:SetSize(icons and row.swatch.SetAtlas and 13 or 7,
+                icons and row.swatch.SetAtlas and 13 or 7)
+        else
+            row.swatch:SetTexture(CIRCLE_TEXTURE)
+        end
+        row.swatch:SetVertexColor(red, green, blue, 1)
         local enabled = API.IsCategoryEnabled(category)
         local selected = highlight == category
         if enabled then
@@ -391,6 +529,40 @@ function API.Refresh()
         end
         if selected then row.selection:Show() else row.selection:Hide() end
     end
+    local function Color(slot, fallback)
+        if style then return style.Color(slot) end
+        return fallback[1], fallback[2], fallback[3]
+    end
+    local mapEnabled = settings.vignetteRadarPOISource ~= "none"
+    for _, definition in ipairs(MAP_NOTES) do
+        local row = panel.mapNotes[definition.kind]
+        row.rim:SetVertexColor(Color(definition.color, CATEGORIES[definition.color].color))
+        local enabled = mapEnabled and (type(settings.vignetteRadarPOITypes) ~= "table"
+            or settings.vignetteRadarPOITypes[definition.kind] ~= false)
+        row:SetAlpha(enabled and 1 or .6)
+        row.label:SetText(definition.label .. (enabled and "" or " off"))
+    end
+    panel.mapCaption:SetText(mapEnabled and "Saved in one pack; not live detections"
+        or "Map notes off · enable in Map Data")
+    local questRed, questGreen, questBlue = Color("quest", { 1, .74, .27 })
+    panel.guides.quest.fill:SetVertexColor(questRed, questGreen, questBlue, 1)
+    panel.guides.area.fill:SetVertexColor(questRed, questGreen, questBlue, .3)
+    panel.guides.quest:SetAlpha(settings.vignetteRadarQuestDots and 1 or .6)
+    panel.guides.quest.label:SetText(settings.vignetteRadarQuestDots and "Quest dot" or "Quest dot off")
+    panel.guides.area:SetAlpha(settings.vignetteRadarQuestAreas and 1 or .6)
+    panel.guides.area.label:SetText(settings.vignetteRadarQuestAreas and "Quest area" or "Quest area off")
+    panel.guides.pin.fill:SetVertexColor(.92, .71, .34, .9)
+    panel.guides.route.fill:SetVertexColor(.16, .7, .54, .9)
+    local rareRed, rareGreen, rareBlue = Color("rare", CATEGORIES.rare.color)
+    for _, line in ipairs(panel.guides.stale.lines) do
+        line:SetColorTexture(rareRed, rareGreen, rareBlue, 1)
+    end
+    panel.guides.stale:SetAlpha(.4)
+    for _, dot in ipairs(panel.guides.trail.dots) do
+        dot:SetVertexColor(accentRed, accentGreen, accentBlue, .85)
+    end
+    panel.guides.trail:SetAlpha(settings.vignetteRadarBreadcrumbs and 1 or .6)
+    panel.guides.trail.label:SetText(settings.vignetteRadarBreadcrumbs and "Travel trail" or "Trail off")
     if highlight then
         panel.status:SetText("SPOTLIGHT: " .. CATEGORIES[highlight].label)
         panel.all.label:SetTextColor(0.62, 0.66, 0.68, 1)

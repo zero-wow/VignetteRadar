@@ -2414,8 +2414,8 @@ local function EnsurePanel()
         self.glow:SetVertexColor(ACCENT[1], ACCENT[2], ACCENT[3], .18)
         if not GameTooltip then return end
         GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
-        GameTooltip:SetText("Radar legend and spotlight", 1, 1, 1)
-        GameTooltip:AddLine("Filter vignette types or spotlight one category while keeping the others as dim context.",
+        GameTooltip:SetText("Radar legend", 1, 1, 1)
+        GameTooltip:AddLine("See live detections, saved map notes, quests, pins, routes, and trail symbols. Filter or spotlight live types here.",
             0.65, 0.80, 0.77, true)
         GameTooltip:Show()
     end)
