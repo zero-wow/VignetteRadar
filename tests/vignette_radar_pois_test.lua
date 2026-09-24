@@ -45,4 +45,67 @@ assert(pois.Kind(nil, "MidnightTreasures") == "treasure"
     and pois.Kind({ npc = 123, loot = { 456 } }, "MidnightTreasures") == "mob"
     and pois.Kind(nil, "RareLocations") == "mob"
     and pois.Kind(nil, "GeneralMapPack") == "note")
+
+local now = 100
+GetTime = function() return now end
+Enum = { UIMapType = { Continent = 2 } }
+C_Map = { GetMapInfo = function(mapID)
+    if mapID == 125 then return { parentMapID = 124, mapType = 5 } end
+    if mapID == 124 then return { parentMapID = 2, mapType = 3 } end
+    return { parentMapID = 0, mapType = 3 }
+end }
+local otherZoneCalls = 0
+HandyNotes.plugins.OtherZone = { GetNodes2 = function(_, mapID)
+    otherZoneCalls = otherZoneCalls + 1
+    if mapID ~= 124 then return function() end, {}, nil end
+    local done = false
+    return function()
+        if done then return nil end
+        done = true
+        return 52005000, nil, nil, 1, 1
+    end, { [52005000] = { label = "Other zone" } }, nil
+end }
+local zoneSources = pois.ZoneSources(123)
+assert(#zoneSources == 1 and zoneSources[1].id == "Midnight"
+    and zoneSources[1].mapID == 123 and zoneSources[1].count == 4,
+    "current-zone sources must exclude unrelated and disabled packs")
+local chosen, dataMap = pois.ResolveSource(123, "auto")
+assert(chosen == "Midnight" and dataMap == 123)
+chosen, dataMap = pois.ResolveSource(125, "auto")
+assert(chosen == "OtherZone" and dataMap == 124,
+    "a zone pack on the parent map must be found from a nested map")
+assert(pois.ResolveSource(125, "Midnight") == nil
+    and pois.ResolveSource(125, "none") == nil,
+    "manual sources must not leak data into unrelated zones")
+local callsBeforeCache = otherZoneCalls
+assert(#pois.ZoneSources(125) == 1 and otherZoneCalls == callsBeforeCache,
+    "repeated source lookups must reuse the map snapshot")
+local previousZoneCalls = calls
+pois.ZoneSources(123)
+assert(calls == previousZoneCalls,
+    "crossing between nearby map IDs must retain both recent source snapshots")
+HandyNotes.plugins.SparseZone = { GetNodes2 = function(_, mapID)
+    if mapID ~= 123 then return function() end, {}, nil end
+    local done = false
+    return function()
+        if done then return nil end
+        done = true
+        return 50005000, nil, nil, 1, 1
+    end, {}, nil
+end }
+chosen, dataMap = pois.ResolveSource(123, "auto")
+assert(chosen == "Midnight" and dataMap == 123,
+    "Auto must prefer the pack with more current-zone notes")
+HandyNotes.plugins.DenseZone = { GetNodes2 = function(_, mapID)
+    if mapID ~= 123 then return function() end, {}, nil end
+    local index = 0
+    return function()
+        index = index + 1
+        if index > 8 then return nil end
+        return 50000000 + index * 10000, nil, nil, 1, 1
+    end, {}, nil
+end }
+chosen = pois.ResolveSource(123, "auto")
+assert(chosen == "Midnight", "Auto should not change packs mid-zone as note counts update")
+assert(#pois.ZoneSources(999) == 0, "unrelated zones must show no data packs")
 io.write("vignette radar map-note tests passed\n")

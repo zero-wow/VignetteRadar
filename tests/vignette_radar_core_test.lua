@@ -44,6 +44,11 @@ assert(defaults.vignetteRadarEnabled == true and defaults.vignetteRadarHideWhenE
     and defaults.vignetteRadarWorldMap == true and defaults.vignetteRadarLayout == "classic"
     and defaults.vignetteRadarNorthUp == false and defaults.vignetteRadarScale == 1,
     "the radar must work without either optional addon installed")
+assert(defaults.vignetteRadarPOISource == "auto",
+    "new installations should follow the current zone when a data pack is available")
+defaults.vignetteRadarPOISource = "none"
+fresh.GetSettings()
+assert(defaults.vignetteRadarPOISource == "none", "an existing Off choice must remain Off")
 local expectedRanges = { 150, 300, 450, 600, 1200, 2400, 4800 }
 assert(#fresh.VignetteRadarRanges == #expectedRanges, "all selectable ranges must be published")
 for index, range in ipairs(expectedRanges) do

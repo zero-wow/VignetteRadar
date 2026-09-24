@@ -1586,10 +1586,11 @@ assert(#panel.trailDots == 64 and panel.trailDots[1] == firstTrailDot,
 C_Map.GetPlayerMapPosition = originalPlayerPosition
 
 -- One chosen HandyNotes pack supplies hollow, typed map notes without entering
--- the live vignette pool or querying another installed pack.
+-- the live vignette pool; zone matching probes but never draws other packs.
 local otherPackCalls = 0
 HandyNotes = { plugins = {
-    TestPack = { GetNodes2 = function()
+    TestPack = { GetNodes2 = function(_, requestedMap)
+        if requestedMap ~= 902 then return function() end, {}, nil end
         local done = false
         return function()
             if done then return nil end
@@ -1597,9 +1598,15 @@ HandyNotes = { plugins = {
             return 52005000, nil, nil, 1, 1
         end, { [52005000] = { label = "A map note", group = "misc" } }, nil
     end },
-    OtherPack = { GetNodes2 = function()
+    OtherPack = { GetNodes2 = function(_, requestedMap)
         otherPackCalls = otherPackCalls + 1
-        return function() return nil end, {}, nil
+        if requestedMap ~= 903 then return function() end, {}, nil end
+        local done = false
+        return function()
+            if done then return nil end
+            done = true
+            return 51005000, nil, nil, 1, 1
+        end, { [51005000] = { label = "Other zone note", group = "misc" } }, nil
     end },
 }, db = { profile = { enabledPlugins = { TestPack = true, OtherPack = true } } } }
 quick.tabs["Map Data"].scripts.OnClick(quick.tabs["Map Data"])
@@ -1610,10 +1617,18 @@ assert(quick.pages["Map Data"]:IsShown() and testPackRow,
 assert(testPackRow.point[4] + testPackRow.width + 8 <= quick.poiTrack.point[4],
     "the map-data scrollbar must keep a visible gutter from pack buttons")
 testPackRow.scripts.OnClick(testPackRow)
-assert(settings.vignetteRadarPOISource == "TestPack" and otherPackCalls == 0,
-    "choosing a pack must not scan another pack")
+assert(settings.vignetteRadarPOISource == "TestPack" and otherPackCalls > 0,
+    "the picker may probe other packs but must save only the chosen source")
 for index = 1, 6 do
-    HandyNotes.plugins["ZPack" .. index] = { GetNodes2 = function() return function() end, {}, nil end }
+    HandyNotes.plugins["ZPack" .. index] = { GetNodes2 = function(_, requestedMap)
+        if requestedMap ~= 902 then return function() end, {}, nil end
+        local done = false
+        return function()
+            if done then return nil end
+            done = true
+            return 53005000, nil, nil, 1, 1
+        end, { [53005000] = { label = "Extra note" } }, nil
+    end }
 end
 addon.VignetteRadarQuickConfig.Refresh()
 assert(quick.poiTrack:IsShown(), "a long pack list must expose a scrollbar")
@@ -1638,6 +1653,18 @@ settings.vignetteRadarPOITypes.note = false
 addon.VignetteRadarAPI.Refresh(false)
 assert(not panel.mapNotes[1]:IsShown(), "type filters must hide only that map-note type")
 settings.vignetteRadarPOITypes.note = true
+mapID, now = 903, 1311
+addon.VignetteRadarAPI.Refresh(true)
+assert(not panel.mapNotes[1]:IsShown() and quick.poiStatus.text:find("no notes here", 1, true),
+    "a manually chosen pack must not leak into a different zone")
+settings.vignetteRadarPOISource = "auto"
+addon.VignetteRadarAPI.Refresh(true)
+assert(panel.mapNotes[1]:IsShown() and panel.mapNotes[1].note.source == "OtherPack"
+    and quick.poiMapID == 903 and quick.poiOffset == 0,
+    "Auto must switch to one matching pack and reset the source list on a zone change")
+for _, entry in ipairs(quick.poiEntries) do
+    assert(entry.id ~= "TestPack", "the picker must omit packs with no notes for this zone")
+end
 settings.vignetteRadarPOISource = "none"
 addon.VignetteRadarAPI.Refresh(true)
 assert(not panel.mapNotes[1]:IsShown(), "turning map data off must clear its dots")

@@ -208,10 +208,13 @@ end
 local function RefreshPOISources()
     if not quick or not quick.poiRows then return end
     local poi = addon.VignetteRadarPOIs
-    local sources = poi and poi.Sources() or {}
-    local entries = { { id = "none", enabled = true } }
+    local radar = addon.VignetteRadarAPI
+    local mapID = radar and radar.GetCurrentMapID and radar.GetCurrentMapID()
+    local sources = poi and poi.ZoneSources(mapID) or {}
+    local entries = { { id = "none", enabled = true }, { id = "auto", enabled = true } }
     for _, source in ipairs(sources) do entries[#entries + 1] = source end
     quick.poiEntries = entries
+    if quick.poiMapID ~= mapID then quick.poiOffset, quick.poiMapID = 0, mapID end
     local maxOffset = math.max(0, #entries - #quick.poiRows)
     quick.poiOffset = math.min(maxOffset, quick.poiOffset or 0)
     local selected = Settings().vignetteRadarPOISource
@@ -224,7 +227,7 @@ local function RefreshPOISources()
         row.sourceID = entry and entry.id
         row:SetShown(entry ~= nil)
         if entry then
-            row:SetText(entry.id == "none" and "Off"
+            row:SetText(entry.id == "none" and "Off" or entry.id == "auto" and "Auto · current zone"
                 or entry.id:gsub("(%l)(%u)", "%1 %2"):gsub("_", " "))
             row:SetEnabled(entry.enabled)
             if entry.id == selected then row:LockHighlight() else row:UnlockHighlight() end
@@ -237,14 +240,15 @@ local function RefreshPOISources()
         maxOffset > 0 and -((track - quick.poiThumb:GetHeight()) * quick.poiOffset / maxOffset) or 0)
     quick.poiTrack:SetShown(maxOffset > 0)
     if selected == "none" then
-        quick.poiStatus:SetText(#sources == 0 and "Install HandyNotes and a map-data pack."
-            or "Choose one pack. Saved notes never trigger alerts.")
+        quick.poiStatus:SetText("Map notes are off. Choose Auto or a pack above.")
+    elseif selected == "auto" then
+        local chosen = poi and poi.ResolveSource(mapID, selected)
+        quick.poiStatus:SetText(chosen and ("Auto is using " .. chosen .. " here.")
+            or "No enabled HandyNotes pack has notes here.")
     elseif not selectedEntry then
-        quick.poiStatus:SetText("Selected pack is not installed or loaded.")
-    elseif not selectedEntry.enabled then
-        quick.poiStatus:SetText("Enable this pack in HandyNotes first.")
+        quick.poiStatus:SetText("This pack has no notes here. Choose Auto.")
     else
-        quick.poiStatus:SetText("One pack at a time · hollow dots are map notes.")
+        quick.poiStatus:SetText("One pack here · hollow dots are saved notes.")
     end
 end
 
@@ -590,8 +594,11 @@ local function Build()
         row:HookScript("OnEnter", function(self)
             if not (GameTooltip and self.sourceID) then return end
             GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
-            GameTooltip:SetText(self.sourceID == "none" and "Hide map notes" or self.sourceID, 1, 1, 1)
-            GameTooltip:AddLine("Only one map-data pack is shown at a time.", .65, .78, .75, true)
+            GameTooltip:SetText(self.sourceID == "none" and "Hide map notes"
+                or self.sourceID == "auto" and "Auto: current zone" or self.sourceID, 1, 1, 1)
+            GameTooltip:AddLine(self.sourceID == "auto"
+                and "Picks one enabled pack with notes for this map as you travel."
+                or "Only this one map-data pack is shown at a time.", .65, .78, .75, true)
             GameTooltip:Show()
         end)
         row:HookScript("OnLeave", function() if GameTooltip then GameTooltip:Hide() end end)

@@ -2837,7 +2837,9 @@ ScanVignettes = function(mapID)
     elseif mapNotesMapID ~= mapID or mapNotesSource ~= source
         or not mapNotesUpdatedAt or now - mapNotesUpdatedAt >= 5 then
         local pois = addon.VignetteRadarPOIs
-        activeMapNotes = pois and pois.Collect(mapID, source, MapToWorld, MapVector) or {}
+        local selected, dataMapID
+        if pois then selected, dataMapID = pois.ResolveSource(mapID, source) end
+        activeMapNotes = selected and pois.Collect(dataMapID, selected, MapToWorld, MapVector) or {}
         mapNotesMapID, mapNotesSource, mapNotesUpdatedAt = mapID, source, now
     end
     if #activeMapNotes > 1 then
@@ -2961,6 +2963,7 @@ end
 addon.RefreshVignetteRadar = function(rescan) RefreshRadar(rescan ~= false) end
 addon.VignetteRadarAPI = {
     GetTargets = function() return activeTargets end,
+    GetCurrentMapID = CurrentMapID,
     GetPlayerSnapshot = function() return PlayerSnapshot(CurrentMapID()) end,
     GetSelectableTargets = SelectableTargets,
     GetPanel = function() return panel end,
