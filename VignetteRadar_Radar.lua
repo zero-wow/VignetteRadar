@@ -45,7 +45,7 @@ local atan2 = math.atan2 or function(y, x) return math.atan(y, x) end
 local Unpack = unpack or table.unpack
 
 local panel, launcher
-local events
+local observeKills = false
 local trailPopup, HideTrailPopup, ToggleTrailPopup, RefreshTrailPopup
 local preview = false
 local manualPanelState
@@ -3596,11 +3596,7 @@ end
 
 RefreshRadar = function(rescan)
     local settings = Settings()
-    if events and events._killListening ~= settings.vignetteRadarHideCleared then
-        events._killListening = settings.vignetteRadarHideCleared
-        if events._killListening then events:RegisterEvent("COMBAT_LOG_EVENT_UNFILTERED")
-        else events:UnregisterEvent("COMBAT_LOG_EVENT_UNFILTERED") end
-    end
+    observeKills = settings.vignetteRadarHideCleared == true
     local exploration = addon.VignetteRadarExploration
     local mapID = CurrentMapID()
     local trail, trailMap
@@ -3906,17 +3902,19 @@ local function RelevantKill(identity, guid)
     return false
 end
 
-events = CreateFrame("Frame")
+local events = CreateFrame("Frame")
 for _, event in ipairs({
     "PLAYER_LOGIN", "PLAYER_ENTERING_WORLD", "ZONE_CHANGED_NEW_AREA",
     "VIGNETTES_UPDATED", "VIGNETTE_MINIMAP_UPDATED",
     "QUEST_LOG_UPDATE", "QUEST_POI_UPDATE", "QUEST_WATCH_LIST_CHANGED", "SUPER_TRACKING_CHANGED",
     "PLAYER_REGEN_DISABLED", "PLAYER_REGEN_ENABLED", "ZONE_CHANGED", "ZONE_CHANGED_INDOORS",
+    "COMBAT_LOG_EVENT_UNFILTERED",
 }) do
     events:RegisterEvent(event)
 end
 events:SetScript("OnEvent", function(_, event)
     if event == "COMBAT_LOG_EVENT_UNFILTERED" then
+        if not observeKills then return end
         local recent = addon.VignetteRadarRecent
         if recent and recent.RecordCombatLog(RelevantKill) then
             RefreshRadar(true)
