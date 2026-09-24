@@ -2,7 +2,7 @@
 
 A compact radar for the rare, treasure, event, and other vignettes that World of Warcraft already exposes on the minimap and world map. An optional HandyNotes layer can also show saved locations from one chosen map-data pack. Saved notes are clearly marked and never count as live detections.
 
-The small draggable launcher covers 150 yards. Click it to show or tuck away the full radar. The full radar has a category legend and a picker for focusing one current detection. Right-click the launcher for a layout preview. When another visible clickable UI element covers its saved spot, the launcher temporarily steps aside and returns when the spot clears; dragging still changes its saved position.
+The small draggable launcher covers 150 yards. Click it to show or tuck away the full radar. The full radar has a category legend and a picker for focusing one current detection. Right-click the launcher for a layout preview.
 
 Click the small colored dot in the radar header to open **Radar Settings** beside the panel. Its ten compact tabs include **Map Data** alongside the radar, layout, Explore, alert, marker, guide, theme, behavior, and quest settings. The full AddOns settings panel has an Explore tab and a **Map data** shortcut. Click a checkbox label as well as its box to toggle it; the settings apply immediately. The Guides tab adjusts ring visibility, chevron and facing-line opacity, chevron distance from the player dot, facing-line length, and an optional animated sweep on the full radar. The Themes tab offers 32 palettes in a two-row scroll area with a slim scrollbar, plus a color picker for each radar element and marker type. Turn off **Use icons** there to display category-colored dots instead. Custom colors are saved; choosing a preset clears the custom colors.
 
@@ -76,6 +76,8 @@ Preview samples support focus without changing favorites, ignores, or navigation
 
 ## Development validation
 
-Current development build: `0.1.0-dev.42` (base version `0.1.0`).
+Current development build: `0.1.0-dev.44` (base version `0.1.0`).
+
+Repeating launcher, radar, and idle updates have a session-only CPU guard. A stalled update, or three consecutive slow updates, pauses that repeating work and prints a chat warning. `/reload` retries it.
 
 Run each `tests/*_test.lua` with Lua from the addon root and check Lua files with `luac -p`. The tests cover migration, radar projection, filters, target actions, alert/last-seen state, navigation fallbacks, quiet modes, mouse-wheel/button zoom, world-map visibility guards, and UI layout bounds using mocked game APIs. Layout checks exercise repeated style changes, automatic Squat details, focused and unfocused states, edge and corner resizing, pop-outs, resized rings and markers, and an 800×600 canvas. Orientation checks cover quarter turns, fixed markers/cardinals, the player direction line, both radars, preview, unknown facing, and out-of-range focus. These checks do not replace in-game validation of rendering, navigation, or API availability.

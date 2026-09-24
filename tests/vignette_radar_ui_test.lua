@@ -89,13 +89,6 @@ function methods:GetEffectiveScale()
         and self.parent:GetEffectiveScale() or 1
     return parentScale * self:GetScale()
 end
-function methods:GetEffectiveAlpha()
-    return self:GetAlpha() * (self.parent and self.parent:GetEffectiveAlpha() or 1)
-end
-function methods:GetParent() return self.parent end
-function methods:IsVisible() return self:IsShown() and (not self.parent or self.parent:IsVisible()) end
-function methods:IsMouseEnabled() return self.mouse == true end
-function methods:IsProtected() return false end
 function methods:SetThickness(value) self.thickness = value end
 function methods:SetStartPoint(...)
     assert(select("#", ...) == 4, "line endpoints take anchor, frame, x, y")
@@ -164,13 +157,6 @@ end
 UIParent = CreateFrame("Frame", "UIParent")
 UIParent:SetSize(1600, 900)
 UIParent:Show()
-local collisionFrames = {}
-function EnumerateFrames(previous)
-    if not previous then return collisionFrames[1] end
-    for index, frame in ipairs(collisionFrames) do
-        if frame == previous then return collisionFrames[index + 1] end
-    end
-end
 UISpecialFrames = {}
 STANDARD_TEXT_FONT = "default.ttf"
 SlashCmdList = {}
@@ -318,35 +304,6 @@ launcher.scripts.OnUpdate(launcher, 0.05)
 assert(launcher.bezel.alpha >= 0.93 and launcher.bezel.alpha <= 0.95
     and launcher.shadow == nil and launcher.halo == nil and launcher.alert == nil,
     "detection feedback must stay on the centered bezel without offset circular shadow or alert layers")
-local blocker = CreateFrame("Button", nil, UIParent)
-blocker:SetSize(50, 50)
-blocker.left, blocker.top = 26, UIParent:GetHeight() - 166
-blocker:EnableMouse(true)
-blocker:Show()
-collisionFrames[1] = blocker
-launcher.scripts.OnUpdate(launcher, 1)
-assert(launcher.point[4] > 30 and launcher.point[5] == -170
-    and settings.vignetteRadarLauncherPosition == nil,
-    "a visible overlapping button must shift the launcher without changing its saved home")
-local secondBlocker = CreateFrame("Button", nil, UIParent)
-secondBlocker:SetSize(50, 50)
-secondBlocker.left, secondBlocker.top = launcher.point[4], blocker.top
-secondBlocker:EnableMouse(true)
-secondBlocker:Show()
-collisionFrames[2] = secondBlocker
-launcher.scripts.OnUpdate(launcher, 1)
-assert(launcher.point[5] < -170 and settings.vignetteRadarLauncherPosition == nil,
-    "the launcher must search beyond the first blocked alternative")
-secondBlocker:Hide()
-launcher.scripts.OnUpdate(launcher, 1)
-assert(launcher.point[4] > 30 and launcher.point[5] == -170,
-    "the launcher must move back toward home as space clears")
-blocker:Hide()
-launcher.scripts.OnUpdate(launcher, 1)
-assert(launcher.point[4] == 30 and launcher.point[5] == -170,
-    "the launcher must return to its saved home when the overlapping button hides")
-collisionFrames[1] = nil
-collisionFrames[2] = nil
 
 panel.legend.scripts.OnClick(panel.legend)
 local legendPanel = assert(_G.VignetteRadarLegendPanel, "radar header must open its attached legend")
@@ -2122,5 +2079,15 @@ SlashCmdList.VIGNETTERADAR("recenter")
 assert(panel:IsShown() and settings.vignetteRadarEnabled,
     "recenter command must recover a hidden radar panel")
 assertFaceVisible("recenter command must keep the scaled radar face visible")
+
+local profileClock, performanceWarning = 0, nil
+debugprofilestop = function() profileClock = profileClock + 300; return profileClock end
+DEFAULT_CHAT_FRAME = { AddMessage = function(_, message) performanceWarning = message end }
+local launcherUpdate = assert(launcher.scripts.OnUpdate)
+launcherUpdate(launcher, .2)
+assert(launcher.scripts.OnUpdate == nil and performanceWarning
+    and performanceWarning:find("paused automatic launcher updates", 1, true),
+    "an excessive update must suspend the repeating work and alert the user")
+debugprofilestop = nil
 
 io.write("vignette radar UI tests passed\n")
