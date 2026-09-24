@@ -3,6 +3,7 @@ if type(addon) ~= "table" then return end
 
 BINDING_HEADER_VIGNETTERADAR = "Vignette Radar"
 BINDING_NAME_VIGNETTERADAR_RAISE_LAUNCHER = "Hold to raise launcher"
+BINDING_NAME_VIGNETTERADAR_PEEK_RADAR = "Hold to peek at full radar"
 
 addon.VignetteRadarRanges = { 10, 25, 50, 100, 150, 300, 450, 600, 1200, 2400, 4800 }
 addon.VignetteRadarLayouts = { "classic", "squat", "compact" }
@@ -43,8 +44,7 @@ addon.VignetteRadarTrailStyleByID = TRAIL_STYLE_KEYS
 local TRAIL_SETTING_VALUES = {
     vignetteRadarTrailSpacing = { .5, .65, .75, 1, 1.25, 1.5, 2 },
     vignetteRadarTrailSpeed = { 0, .25, .5, .75, 1, 1.25, 1.5, 2, 3, 4 },
-    vignetteRadarTrailSize = { .5, .75, 1, 1.25, 1.5, 2 },
-    vignetteRadarTrailTailFade = { 0, .25, .5, .75, 1 },
+    vignetteRadarTrailSize = { .1, .25, .5, .75, 1, 1.25, 1.5, 2 },
 }
 addon.VignetteRadarTrailSettingValues = TRAIL_SETTING_VALUES
 local function TrailSetting(db, key, default)
@@ -109,6 +109,11 @@ function addon.GetSettings()
     if type(db.vignetteRadarWorldMap) ~= "boolean" then db.vignetteRadarWorldMap = true end
     if type(db.vignetteRadarQuestDots) ~= "boolean" then db.vignetteRadarQuestDots = false end
     if type(db.vignetteRadarQuestAreas) ~= "boolean" then db.vignetteRadarQuestAreas = false end
+    if type(db.vignetteRadarFollowTrackedQuest) ~= "boolean" then db.vignetteRadarFollowTrackedQuest = false end
+    if type(db.vignetteRadarEdgeCues) ~= "boolean" then db.vignetteRadarEdgeCues = true end
+    if type(db.vignetteRadarEmptyHelp) ~= "boolean" then db.vignetteRadarEmptyHelp = true end
+    if type(db.vignetteRadarPeekEnabled) ~= "boolean" then db.vignetteRadarPeekEnabled = true end
+    if type(db.vignetteRadarHoverTools) ~= "boolean" then db.vignetteRadarHoverTools = true end
     if type(db.vignetteRadarPOISource) ~= "string" then db.vignetteRadarPOISource = "auto" end
     if type(db.vignetteRadarPOIIcons) ~= "boolean" then db.vignetteRadarPOIIcons = false end
     if type(db.vignetteRadarHideCleared) ~= "boolean" then db.vignetteRadarHideCleared = false end
@@ -162,8 +167,18 @@ function addon.GetSettings()
     if not TRAIL_STYLE_KEYS[db.vignetteRadarTrailStyle] then db.vignetteRadarTrailStyle = "dashes" end
     TrailSetting(db, "vignetteRadarTrailSpacing", 1)
     TrailSetting(db, "vignetteRadarTrailSpeed", 1)
-    TrailSetting(db, "vignetteRadarTrailSize", 1)
-    TrailSetting(db, "vignetteRadarTrailTailFade", .5)
+    if type(db.vignetteRadarTrailSize) ~= "number" or db.vignetteRadarTrailSize ~= db.vignetteRadarTrailSize then
+        db.vignetteRadarTrailSize = 1
+    end
+    db.vignetteRadarTrailSize = math.max(.1, math.min(2, db.vignetteRadarTrailSize))
+    if type(db.vignetteRadarTrailTailFade) ~= "number" or db.vignetteRadarTrailTailFade ~= db.vignetteRadarTrailTailFade then
+        db.vignetteRadarTrailTailFade = .5
+    end
+    db.vignetteRadarTrailTailFade = math.max(0, math.min(1, db.vignetteRadarTrailTailFade))
+    if type(db.vignetteRadarTrailFadeSpan) ~= "number" or db.vignetteRadarTrailFadeSpan ~= db.vignetteRadarTrailFadeSpan then
+        db.vignetteRadarTrailFadeSpan = 1
+    end
+    db.vignetteRadarTrailFadeSpan = math.max(0, math.min(1, db.vignetteRadarTrailFadeSpan))
     if type(db.vignetteRadarTrailLifetime) ~= "number"
         or db.vignetteRadarTrailLifetime ~= math.floor(db.vignetteRadarTrailLifetime)
         or db.vignetteRadarTrailLifetime < 1 or db.vignetteRadarTrailLifetime > 300 then

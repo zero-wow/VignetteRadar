@@ -11,6 +11,8 @@ local focusedQuestID
 local focusedQuestMisses = 0
 local MAX_PINS, MAX_ROUTE, MAX_JOURNAL, MAX_TRAIL = 60, 8, 100, 150
 local MAX_CUSTOM_PRESETS = 8
+local MAX_ROUTE_HISTORY = 20
+local routeBack, routeHistory = {}, {}
 
 local function Settings() return addon.GetSettings() end
 local function Number(value)
@@ -62,6 +64,10 @@ function API.FocusQuest(questID)
     Refresh()
 end
 function API.GetFocusedQuest() return focusedQuestID end
+function API.SetQuestFocus(questID)
+    focusedQuestID = Number(questID)
+    focusedQuestMisses = 0
+end
 function API.ValidateQuestFocus(quests, changedMap)
     if changedMap then focusedQuestID, focusedQuestMisses = nil, 0; return end
     if not focusedQuestID then return end
@@ -132,6 +138,20 @@ function API.UpdateTrail(player, mapID, now)
 end
 function API.GetTrail() return trail, trailMap end
 
+local function CopyList(list)
+    local copy = {}
+    for index, value in ipairs(list) do copy[index] = value end
+    return copy
+end
+local function RememberRouteEdit()
+    local db = Settings()
+    routeHistory[#routeHistory+1] = {
+        route=CopyList(db.vignetteRadarRoute),
+        pins=CopyList(db.vignetteRadarPins),
+        back=CopyList(routeBack),
+    }
+    if #routeHistory > MAX_ROUTE_HISTORY then table.remove(routeHistory, 1) end
+end
 function API.AddPin(player, name)
     if not player then return false, "Position unavailable" end
     local x, y = Number(player.worldX), Number(player.worldY)
@@ -143,6 +163,7 @@ function API.AddPin(player, name)
     local pin = { id=Time() .. "-" .. tostring(math.random(100000)), name=pinName,
         mapID=mapID, mapX=mapX, mapY=mapY, worldX=x, worldY=y,
         instanceID=Number(player.instanceID), at=Time() }
+    RememberRouteEdit()
     pins[#pins+1] = pin
     if #pins > MAX_PINS then table.remove(pins, 1) end
     Refresh()
@@ -159,12 +180,23 @@ function API.GetPins(mapID)
 end
 function API.RemovePin(id)
     local pins = Settings().vignetteRadarPins
+    local route = Settings().vignetteRadarRoute
+    local found = false
+    for _, pin in ipairs(pins) do
+        if type(pin) == "table" and pin.id == id then found = true; break end
+    end
+    if not found then return end
+    RememberRouteEdit()
     for index=#pins,1,-1 do
         if type(pins[index]) == "table" and pins[index].id == id then table.remove(pins,index) end
     end
-    local route = Settings().vignetteRadarRoute
     for index=#route,1,-1 do
         if type(route[index]) == "table" and route[index].pinID == id then table.remove(route,index) end
+    end
+    for index=#routeBack,1,-1 do
+        if type(routeBack[index]) == "table" and routeBack[index].pinID == id then
+            table.remove(routeBack,index)
+        end
     end
     Refresh()
 end
@@ -182,6 +214,7 @@ function API.AddRouteStop(item)
     if #route >= MAX_ROUTE then return false, "Route is full (8 stops)" end
     local entry = RouteEntry(item)
     if not entry then return false, "This stop has no position" end
+    RememberRouteEdit()
     route[#route+1] = entry
     Refresh()
     return true
@@ -196,12 +229,39 @@ function API.GetRoute(mapID)
     return result
 end
 function API.PopRouteStop()
-    table.remove(Settings().vignetteRadarRoute, 1)
+    local route = Settings().vignetteRadarRoute
+    if #route == 0 then return false end
+    RememberRouteEdit()
+    routeBack[#routeBack+1] = table.remove(route, 1)
+    if #routeBack > MAX_ROUTE_HISTORY then table.remove(routeBack, 1) end
     Refresh()
+    return true
+end
+function API.BackRouteStop()
+    local route = Settings().vignetteRadarRoute
+    if #routeBack == 0 or #route >= MAX_ROUTE then return false end
+    RememberRouteEdit()
+    table.insert(route, 1, table.remove(routeBack))
+    Refresh()
+    return true
+end
+function API.UndoRouteEdit()
+    local previous = table.remove(routeHistory)
+    if not previous then return false end
+    local db = Settings()
+    db.vignetteRadarRoute = previous.route
+    db.vignetteRadarPins = previous.pins
+    routeBack = previous.back
+    Refresh()
+    return true
 end
 function API.ClearRoute()
+    if #Settings().vignetteRadarRoute == 0 and #routeBack == 0 then return false end
+    RememberRouteEdit()
     Settings().vignetteRadarRoute = {}
+    routeBack = {}
     Refresh()
+    return true
 end
 
 function API.Watch(target)
@@ -480,8 +540,10 @@ local function BuildPanel()
         local ok, result = API.AddPin(player, panel.pinName:GetText())
         Tell(ok and ("Pinned " .. result.name) or result)
     end)
-    Button(tools, "Next route stop", 5, -280, 145, function() API.PopRouteStop() end)
-    Button(tools, "Clear route", 158, -280, 141, function() API.ClearRoute() end)
+    Button(tools, "Back", 5, -280, 69, function() API.BackRouteStop() end)
+    Button(tools, "Next", 81, -280, 69, function() API.PopRouteStop() end)
+    Button(tools, "Undo", 157, -280, 69, function() API.UndoRouteEdit() end)
+    Button(tools, "Clear", 233, -280, 69, function() API.ClearRoute() end)
     panel.routeStatus = Label(tools, "", 5, -319, 295, 9)
     Label(tools, "Ctrl-Alt-click a detection to watch it.", 5, -333, 295, 9)
 
@@ -546,7 +608,7 @@ function API.RefreshPanel()
     end
     panel.approachValue:SetText(db.vignetteRadarApproachDistance .. " yd")
     panel.routeStatus:SetText(#db.vignetteRadarRoute .. "/" .. MAX_ROUTE
-        .. " stops  •  Ctrl-click a detection to add it")
+        .. " stops  •  " .. #routeBack .. " behind  •  Ctrl-click to add")
     local keys = { smart="vignetteRadarSmartZoom", untangle="vignetteRadarUntangle",
         trail="vignetteRadarBreadcrumbs", approach="vignetteRadarApproachAlerts",
         journal="vignetteRadarJournalEnabled" }

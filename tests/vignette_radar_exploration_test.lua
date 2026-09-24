@@ -63,16 +63,43 @@ assert(#E.UpdateTrail(player, 11, current) == 2,
     "short fades must sample movement often enough to produce a visible trail")
 db.vignetteRadarTrailLifetime = 180
 
+assert(not E.BackRouteStop() and not E.UndoRouteEdit(),
+    "an untouched route has nothing to revisit or undo")
+assert(E.AddPin(player, "Temporary pin"))
+assert(E.UndoRouteEdit() and #E.GetPins(10) == 0,
+    "undo should restore a pin list after an accidental addition")
 assert(E.AddPin(player, "Cave mouth"))
 local pin = E.GetPins(10)[1]
 assert(pin and pin.name == "Cave mouth" and pin.mapX == .2)
 assert(E.AddRouteStop(pin))
 assert(E.AddRouteStop(target))
 assert(#E.GetRoute(10) == 2)
-E.PopRouteStop()
-assert(#E.GetRoute(10) == 1)
-E.ClearRoute()
-assert(#E.GetRoute(10) == 0)
+assert(E.UndoRouteEdit() and #E.GetRoute(10) == 1,
+    "undo should remove an accidentally added stop")
+assert(E.AddRouteStop(target))
+assert(E.PopRouteStop() and #E.GetRoute(10) == 1
+    and E.GetRoute(10)[1].name == "Rare One", "next should advance the route")
+assert(E.BackRouteStop() and #E.GetRoute(10) == 2
+    and E.GetRoute(10)[1].name == "Cave mouth", "back should restore the previous stop")
+assert(E.UndoRouteEdit() and #E.GetRoute(10) == 1
+    and E.GetRoute(10)[1].name == "Rare One", "undo should reverse back")
+assert(E.UndoRouteEdit() and #E.GetRoute(10) == 2
+    and E.GetRoute(10)[1].name == "Cave mouth", "undo should reverse next")
+E.RemovePin(pin.id)
+assert(#E.GetPins(10) == 0 and #E.GetRoute(10) == 1,
+    "deleting a pin should remove its route stop")
+assert(E.UndoRouteEdit() and #E.GetPins(10) == 1 and #E.GetRoute(10) == 2,
+    "undo should restore an accidentally deleted pin and route stop")
+assert(E.ClearRoute() and #E.GetRoute(10) == 0)
+assert(E.UndoRouteEdit() and #E.GetRoute(10) == 2,
+    "undo should restore a cleared route")
+assert(E.PopRouteStop())
+for _=1,7 do assert(E.AddRouteStop(target)) end
+assert(#E.GetRoute(10) == 8 and not E.BackRouteStop(),
+    "back must not exceed the route's eight-stop cap")
+assert(E.UndoRouteEdit() and #E.GetRoute(10) == 7,
+    "failed back must not consume undo history")
+assert(E.ClearRoute() and #E.GetRoute(10) == 0)
 E.RemovePin(pin.id)
 assert(#E.GetPins(10) == 0)
 

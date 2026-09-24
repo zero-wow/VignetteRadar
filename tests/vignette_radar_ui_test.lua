@@ -69,6 +69,8 @@ function methods:HookScript(name, callback)
         callback(...)
     end)
 end
+function methods:GetScript(name) return self.scripts and self.scripts[name] end
+function methods:IsMouseOver() return self.hovered == true end
 function methods:SetChecked(value) self.checked = value end
 function methods:GetChecked() return self.checked end
 function methods:LockHighlight() self.highlightLocked = true end
@@ -237,7 +239,7 @@ for _, object in ipairs(objects) do
         lowerRange = object
     end
 end
-assert(#toggles == 5 and lowerRange, "standalone options must expose visibility, data scope, clearing, and range controls")
+assert(#toggles == 6 and lowerRange, "standalone options must expose visibility, data scope, clearing, empty-state help, and range controls")
 for _, expected in ipairs({ 300, 150, 100, 50, 25, 10 }) do
     lowerRange.scripts.OnClick(lowerRange)
     assert(settings.vignetteRadarRange == expected, "range controls must include close zoom steps")
@@ -1061,6 +1063,14 @@ assert(questDot:IsShown() and questDot.quest.questID == 12345 and questDot.point
 assert(panel.questBlob and not panel.questBlob:IsShown(), "exact blobs must wait for north-up mode")
 assert(panel.squarePlot and panel.field.background.texture == "Interface\\AddOns\\VignetteRadar\\Media\\radar-rounded-square.tga",
     "enabling quest areas must select a stable square surface even before blobs are available")
+settings.vignetteRadarFollowTrackedQuest = true
+C_SuperTrack.GetSuperTrackedQuestID = function() return 12345 end
+addon.VignetteRadarAPI.Refresh(true)
+assert(addon.VignetteRadarExploration.GetFocusedQuest() == 12345,
+    "tracked-quest following must focus an available quest using the existing quest scan")
+settings.vignetteRadarFollowTrackedQuest = false
+addon.VignetteRadarExploration.SetQuestFocus(nil)
+C_SuperTrack.GetSuperTrackedQuestID = nil
 GetPlayerFacing = function() return math.pi / 2 end
 addon.VignetteRadarAPI.Refresh(false)
 assert(questDot.point[5] < 0, "quest dots should turn with the facing-up radar")
@@ -1071,6 +1081,42 @@ assert(panel.questClip.clipsChildren and panel.questBlob:IsShown() and panel.que
     and panel.questBlob.drawnQuests[1] == 12345 and panel.questBlob.fillAlpha < 128
     and panel.questBlob.level < questDot.level,
     "native quest shapes must be translucent, clipped, and behind markers")
+for _, layoutName in ipairs({ "classic", "compact", "squat" }) do
+    addon.SetVignetteRadarLayout(layoutName)
+    addon.SetVignetteRadarCircleOnly(true)
+    panel.field.hovered = true
+    panel.field.scripts.OnEnter(panel.field)
+    assert(#panel.hoverTools == 11 and panel.hoverTools[1]:IsShown()
+        and not panel.settingsDot:IsShown(),
+        "square radar-only view must reveal its corner controls on hover")
+    local side, center = panel.field:GetWidth(), panel.field:GetWidth() / 2
+    for _, tool in ipairs(panel.hoverTools) do
+        local point, x, y = tool.point[1], tool.point[4], tool.point[5]
+        local left = point:find("RIGHT") and side + x - 16 or x
+        local top = point:find("BOTTOM") and side - y - 16 or -y
+        local nearestX = math.max(left, math.min(center, left + 16))
+        local nearestY = math.max(top, math.min(center, top + 16))
+        local distance = math.sqrt((nearestX-center)^2 + (nearestY-center)^2)
+        assert(left >= 9 and top >= 9 and left + 16 <= side - 9
+            and top + 16 <= side - 9 and distance > panel.plotRadius + 2,
+            "hover controls must stay inside the square border and outside the plotting ring")
+    end
+    panel.field.hovered = false
+    panel.field.scripts.OnLeave(panel.field)
+    assert(not panel.hoverTools[1]:IsShown(), "corner controls must hide after mouse leave")
+end
+settings.vignetteRadarPeekEnabled = true
+VignetteRadar_PeekRadar("down")
+assert(panel.title:IsShown() and settings.vignetteRadarCircleOnly,
+    "hold-to-peek must expose full controls without changing the saved view")
+VignetteRadar_PeekRadar("up")
+assert(not panel.title:IsShown() and settings.vignetteRadarCircleOnly,
+    "releasing peek must restore the saved radar-only view")
+settings.vignetteRadarPeekEnabled = false
+VignetteRadar_PeekRadar("down")
+assert(not panel.title:IsShown(), "disabled hold-to-peek must leave the view alone")
+settings.vignetteRadarPeekEnabled = true
+addon.SetVignetteRadarCircleOnly(false)
 local originalBlob = panel.questBlob
 for _, name in ipairs({ "classic", "compact", "squat" }) do
     addon.SetVignetteRadarLayout(name)
@@ -1331,7 +1377,9 @@ for _, object in ipairs(objects) do
 end
 for _, key in ipairs({ "vignetteRadarEnabled", "vignetteRadarHideWhenEmpty", "vignetteRadarLauncherVisible",
     "vignetteRadarWorldMap", "vignetteRadarRange", "vignetteRadarLayout", "vignetteRadarScale",
-    "vignetteRadarNorthUp", "vignetteRadarCircleOnly",
+    "vignetteRadarNorthUp", "vignetteRadarCircleOnly", "vignetteRadarHoverTools",
+    "vignetteRadarPeekEnabled", "vignetteRadarEmptyHelp", "vignetteRadarEdgeCues",
+    "vignetteRadarFollowTrackedQuest",
     "vignetteRadarAlerts", "vignetteRadarAlertSound", "vignetteRadarAlertCategories",
     "vignetteRadarAlertCooldown", "vignetteRadarCategories", "vignetteRadarHighlight",
     "vignetteRadarMarkerSize", "vignetteRadarShapes", "vignetteRadarShowHealth",
@@ -1558,6 +1606,9 @@ for _, circleOnly in ipairs({ false, true }) do
     assert(panel:IsShown() and panel.summary.text == "POSITION UNAVAILABLE"
         and next(panel.blipByKey) == nil,
         "stay visible must keep an empty radar open through a missing map without old markers")
+    assert(panel.emptyReason and panel.emptyReason:find("position", 1, true)
+        and panel.emptyHelp:IsShown() == (not circleOnly),
+        "empty-state help must explain missing position in the full frame")
     mapID = 901
     addon.VignetteRadarAPI.Refresh(true)
     assert(panel:IsShown() and #addon.VignetteRadarAPI.GetTargets() == 0
@@ -1591,6 +1642,19 @@ mapID, guids = 902, { "treasure" }
 addon.VignetteRadarAPI.Refresh(true)
 assert(panel:IsShown() and panel.blipByKey.treasure and panel.blipByKey.treasure.target.stale ~= true,
     "live detections returning after a map transition must render normally")
+local savedRange = settings.vignetteRadarRange
+livePositions.treasure = { x = .52, y = .5 }
+settings.vignetteRadarRange = 10
+settings.vignetteRadarEdgeCues = true
+addon.VignetteRadarAPI.Refresh(true)
+assert(panel.edgeCues and panel.edgeCues[1] and panel.edgeCues[1]:IsShown()
+    and panel.edgeCues[1].entry.distance > 10,
+    "a known off-range treasure must have a bounded edge cue without another scan")
+settings.vignetteRadarEdgeCues = false
+addon.VignetteRadarAPI.Refresh(false)
+assert(not panel.edgeCues[1]:IsShown(), "the edge cue option must hide existing cues")
+settings.vignetteRadarEdgeCues = true
+settings.vignetteRadarRange = savedRange
 livePositions.treasure = savedTreasurePosition
 C_QuestLog = savedQuestLog
 
@@ -1714,14 +1778,15 @@ assert(settings.vignetteRadarTrailStyle == "dots" and panel.trailDots[1]
     and #panel.trailDots <= 64,
     "the optional dot style must reuse a capped texture pool")
 panel.trailToggle.scripts.OnClick(panel.trailToggle, "RightButton")
-assert(#trailPopup.controls == 5 and trailPopup.controls[1].value.text == "100%"
+assert(#trailPopup.controls == 6 and trailPopup.controls[1].value.text == "100%"
     and trailPopup.controls[2].value.text == "1×"
     and trailPopup.controls[3].value.text == "100%"
     and trailPopup.controls[4].value.text == "180"
     and trailPopup.controls[4].value.kind == "EditBox"
     and trailPopup.controls[5].value.text == "50%"
+    and trailPopup.controls[6].value.text == "100%"
     and not trailPopup.scrollButtons and trailPopup.scrollGrip,
-    "spacing, flow, size, fade time, and tail fade must be visible in the picker")
+    "spacing, flow, size, fade time, fade amount, and faded part must be visible in the picker")
 for _, control in ipairs(trailPopup.controls) do
     for _, button in ipairs({ control.minus, control.plus }) do
         assert(button.point[4] >= 8 and button.point[4] + button.width <= trailPopup.width - 8
@@ -1735,7 +1800,7 @@ local oldGap = previewDots.marks[2].point[4] - previewDots.marks[1].point[4]
 local oldFade = previewDots.marks[1].vertexColor[4]
 local oldTailAlpha = previewDots.marks[1].vertexColor[4]
 trailPopup.controls[5].plus.scripts.OnClick(trailPopup.controls[5].plus)
-assert(settings.vignetteRadarTrailTailFade == .75
+assert(settings.vignetteRadarTrailTailFade == .51
     and previewDots.marks[1].vertexColor[4] < oldTailAlpha,
     "tail fade must dim the old end of every animated preview")
 trailPopup.controls[5].minus.scripts.OnClick(trailPopup.controls[5].minus)
@@ -1761,10 +1826,37 @@ end
 local initialMarkWidth = previewDots.marks[1].width
 trailPopup.controls[3].plus.scripts.OnClick(trailPopup.controls[3].plus)
 addon.VignetteRadarAPI.Refresh(false)
-assert(settings.vignetteRadarTrailSize == 1.25 and previewDots.marks[1].width > initialMarkWidth
-    and panel.trailDots[1].width == 6.25,
+assert(settings.vignetteRadarTrailSize == 1.05 and previewDots.marks[1].width > initialMarkWidth
+    and panel.trailDots[1].width == 5.25,
     "Size must enlarge both preview and live trail marks")
 trailPopup.controls[3].minus.scripts.OnClick(trailPopup.controls[3].minus)
+local sizeField = trailPopup.controls[3].value
+sizeField.scripts.OnEditFocusGained(sizeField)
+sizeField:SetText("10%")
+sizeField.scripts.OnEnterPressed(sizeField)
+assert(settings.vignetteRadarTrailSize == .1 and sizeField.text == "10%"
+    and not trailPopup.controls[3].minus.enabled,
+    "trail marks must accept a precise 10% minimum size")
+sizeField.scripts.OnEditFocusGained(sizeField)
+sizeField:SetText("100")
+sizeField.scripts.OnEnterPressed(sizeField)
+local amountField = trailPopup.controls[5].value
+amountField.scripts.OnEditFocusGained(amountField)
+amountField:SetText("37%")
+amountField.scripts.OnEnterPressed(amountField)
+assert(settings.vignetteRadarTrailTailFade == .37 and amountField.text == "37%",
+    "fade amount must accept arbitrary whole percentages")
+local spanField = trailPopup.controls[6].value
+spanField.scripts.OnEditFocusGained(spanField)
+spanField:SetText("0")
+spanField.scripts.OnEnterPressed(spanField)
+local noFadeAlpha = previewDots.marks[1].vertexColor[4]
+spanField.scripts.OnEditFocusGained(spanField)
+spanField:SetText("100")
+spanField.scripts.OnEnterPressed(spanField)
+assert(settings.vignetteRadarTrailFadeSpan == 1 and spanField.text == "100%"
+    and previewDots.marks[1].vertexColor[4] < noFadeAlpha,
+    "fade span must range from no fading to the whole trail")
 local fadeField = trailPopup.controls[4].value
 fadeField.scripts.OnEditFocusGained(fadeField)
 fadeField:SetText("300")
@@ -2080,6 +2172,11 @@ SlashCmdList.VIGNETTERADAR("recenter")
 assert(panel:IsShown() and settings.vignetteRadarEnabled,
     "recenter command must recover a hidden radar panel")
 assertFaceVisible("recenter command must keep the scaled radar face visible")
+assert(launcher:IsShown() and launcher.strata == "TOOLTIP" and launcher._rescueRaised,
+    "recenter must visibly rescue the launcher above overlapping UI")
+launcher.scripts.OnDragStop(launcher)
+assert(launcher.strata == "MEDIUM" and not launcher._rescueRaised,
+    "dragging the rescued launcher must restore its normal layer")
 
 VignetteRadar_RaiseLauncher("down")
 assert(launcher.strata == "TOOLTIP" and launcher.level == 1000

@@ -57,7 +57,9 @@ assert(defaults.vignetteRadarPOIIcons == false, "invalid pack-icon settings must
 assert(defaults.vignetteRadarTrailStyle == "dashes",
     "new and migrated installations should use trail marks distinct from quest dots")
 assert(defaults.vignetteRadarTrailSpacing == 1 and defaults.vignetteRadarTrailSpeed == 1
-    and defaults.vignetteRadarTrailLifetime == 180,
+    and defaults.vignetteRadarTrailLifetime == 180
+    and defaults.vignetteRadarTrailSize == 1 and defaults.vignetteRadarTrailTailFade == .5
+    and defaults.vignetteRadarTrailFadeSpan == 1,
     "new installations should have readable animated marks and a three-minute fade")
 for key, values in pairs(fresh.VignetteRadarTrailSettingValues) do
     for _, value in ipairs(values) do
@@ -92,6 +94,13 @@ fresh.GetSettings()
 assert(defaults.vignetteRadarTrailStyle == "dashes" and defaults.vignetteRadarTrailSpacing == 1
     and defaults.vignetteRadarTrailSpeed == 1 and defaults.vignetteRadarTrailLifetime == 180,
     "invalid trail settings must recover safely")
+defaults.vignetteRadarTrailSize = .1
+defaults.vignetteRadarTrailTailFade = .37
+defaults.vignetteRadarTrailFadeSpan = .63
+fresh.GetSettings()
+assert(defaults.vignetteRadarTrailSize == .1 and defaults.vignetteRadarTrailTailFade == .37
+    and defaults.vignetteRadarTrailFadeSpan == .63,
+    "precise trail size and fade percentages must survive settings validation")
 defaults.vignetteRadarPOISource = "none"
 fresh.GetSettings()
 assert(defaults.vignetteRadarPOISource == "none", "an existing Off choice must remain Off")
@@ -134,6 +143,10 @@ for _, layout in ipairs({ "classic", "squat", "compact" }) do
 end
 fresh.GetSettings()
 assert(defaults.vignetteRadarWorldMap == false, "world-map choice must persist when disabled")
+assert(defaults.vignetteRadarEdgeCues and defaults.vignetteRadarEmptyHelp
+    and defaults.vignetteRadarPeekEnabled and defaults.vignetteRadarHoverTools
+    and defaults.vignetteRadarFollowTrackedQuest == false,
+    "new map, hover, and peek features need explicit saved defaults")
 assert(defaults.vignetteRadarAlerts == true and defaults.vignetteRadarAlertSound == false
     and defaults.vignetteRadarAlertCategories.rare == true
     and defaults.vignetteRadarAlertCategories.treasure == true

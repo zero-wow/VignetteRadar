@@ -23,13 +23,10 @@ local TRAIL_STYLE_BY_ID = addon.VignetteRadarTrailStyleByID
 local TRAIL_SETTING_VALUES = addon.VignetteRadarTrailSettingValues or {
     vignetteRadarTrailSpacing = { .5, .65, .75, 1, 1.25, 1.5, 2 },
     vignetteRadarTrailSpeed = { 0, .25, .5, .75, 1, 1.25, 1.5, 2, 3, 4 },
-    vignetteRadarTrailSize = { .5, .75, 1, 1.25, 1.5, 2 },
-    vignetteRadarTrailTailFade = { 0, .25, .5, .75, 1 },
+    vignetteRadarTrailSize = { .1, .25, .5, .75, 1, 1.25, 1.5, 2 },
 }
 local TRAIL_SPACINGS = TRAIL_SETTING_VALUES.vignetteRadarTrailSpacing
 local TRAIL_SPEEDS = TRAIL_SETTING_VALUES.vignetteRadarTrailSpeed
-local TRAIL_SIZES = TRAIL_SETTING_VALUES.vignetteRadarTrailSize
-local TRAIL_TAIL_FADES = TRAIL_SETTING_VALUES.vignetteRadarTrailTailFade
 local TRAIL_LIFETIMES = { 1, 300 }
 local ACCENT = { 0.05, 0.82, 0.62 }
 local RED = { 1, 0.18, 0.14 }
@@ -47,6 +44,7 @@ local Unpack = unpack or table.unpack
 
 local panel, launcher
 local launcherPeekActive = false
+local radarPeekActive, radarPeekPreviousManual, radarPeekPreviousPosition
 local EndLauncherPeek
 local trailPopup, HideTrailPopup, ToggleTrailPopup, RefreshTrailPopup
 local preview = false
@@ -58,6 +56,7 @@ local mapNotesMapID, mapNotesSource, mapNotesUpdatedAt
 local questMapBasis
 local activeMapID
 local activeWorldMapMode
+local followedQuestID, followedQuestMapID
 local pulseUntil = 0
 local approachPulseKey, approachPulseUntil
 local displayedRange
@@ -76,6 +75,10 @@ local PREVIEW_TARGETS = {
 
 local function Settings()
     return addon.GetSettings()
+end
+
+local function CircleOnly()
+    return Settings().vignetteRadarCircleOnly == true and not radarPeekActive
 end
 
 local function DrawTrailGlyph(definition, primary, extras, frame, x, y, ux, uy, r, g, b, alpha, index, sizeScale)
@@ -101,6 +104,12 @@ local function DrawTrailGlyph(definition, primary, extras, frame, x, y, ux, uy, 
         line:SetEndPoint("CENTER", frame, x + ux*x2 - uy*y2, y + uy*x2 + ux*y2)
         line:Show()
     end
+end
+
+local function TrailFadeMultiplier(progress, amount, span)
+    if amount <= 0 or span <= 0 then return 1 end
+    local faded = math.max(0, math.min(1, (progress - (1 - span)) / span))
+    return 1 - amount * faded
 end
 
 local function ViewFacing(facing)
@@ -1308,6 +1317,7 @@ local function RenderExploration(player, range)
         local spacing = definition.spacing * (Settings().vignetteRadarTrailSpacing or 1)
         local sizeScale = Settings().vignetteRadarTrailSize or 1
         local tailFade = Settings().vignetteRadarTrailTailFade or 0
+        local fadeSpan = Settings().vignetteRadarTrailFadeSpan or 1
         local limit = definition.segments and #definition.segments > 2 and 48 or 64
         local edge = panel.plotRadius - 7
         local now = Now()
@@ -1331,7 +1341,7 @@ local function RenderExploration(player, range)
                     trailDotCount = trailDotCount + 1
                     local visibleProgress = math.max(progress + offset / length / #trail,
                         (trailDotCount - 1) / math.max(1, limit - 1))
-                    local markAlpha = alpha * (1 - tailFade * math.min(1, visibleProgress))
+                    local markAlpha = alpha * TrailFadeMultiplier(visibleProgress, tailFade, fadeSpan)
                     if definition.dot or definition.square then
                         local dot = panel.trailDots[trailDotCount]
                         if not dot then
@@ -1456,7 +1466,7 @@ local function PlacePanel(left, top, scale)
     if not (SafeNumber(width) and SafeNumber(height) and width > 0 and height > 0) then return end
     scale = PanelScale(scale)
     panel:SetScale(scale)
-    if Settings().vignetteRadarCircleOnly == true then
+    if CircleOnly() then
         local layoutName = panel.layout or Settings().vignetteRadarLayout
         local layout = LAYOUTS[layoutName] or LAYOUTS.classic
         local fieldLeft = layoutName == "squat" and 10 or (layout.width - layout.field) / 2
@@ -1616,11 +1626,11 @@ local function ApplyPanelLayout(focused)
         if picker and picker.Reanchor then picker.Reanchor(panel) end
     end
     local quick = addon.VignetteRadarQuickConfig
-    if quick and quick.Reanchor then quick.Reanchor(panel) end
+    if quick and quick.Reanchor then quick.Reanchor(CircleOnly() and panel.field or panel) end
 end
 
 local function UpdateFocusReadout(target, player, selected)
-    ApplyPanelLayout(selected and Settings().vignetteRadarCircleOnly ~= true)
+    ApplyPanelLayout(selected and not CircleOnly())
     local squat = panel.layout == "squat"
     panel.focusReadout:SetShown(target ~= nil)
     panel.focusDivider:SetShown(selected or squat)
@@ -1684,7 +1694,7 @@ local function UpdateFocusReadout(target, player, selected)
 end
 
 local function UpdatePanelChrome()
-    local circleOnly = Settings().vignetteRadarCircleOnly == true
+    local circleOnly = CircleOnly()
     local style = addon.VignetteRadarStyle
     local br, bg, bb = .02, .025, .03
     if style then br, bg, bb = style.Color("background") end
@@ -1696,6 +1706,15 @@ local function UpdatePanelChrome()
         panel.zoomOut, panel.zoomIn, panel.zoomLabel, panel.combatToggle, panel.trailToggle, panel.compass,
         panel.target, panel.legend, panel.close }) do
         control:SetShown(not circleOnly)
+    end
+    if panel.emptyHelp then panel.emptyHelp:SetShown(not circleOnly and panel.emptyReason ~= nil) end
+    if panel.hoverTools then
+        local showTools = circleOnly and panel.squarePlot
+            and Settings().vignetteRadarHoverTools ~= false and panel._hoverToolsShown == true
+        if panel._hoverToolsVisible ~= showTools then
+            panel._hoverToolsVisible = showTools
+            for _, tool in ipairs(panel.hoverTools) do tool:SetShown(showTools) end
+        end
     end
     if circleOnly then
         panel.focusReadout:Hide()
@@ -1911,7 +1930,7 @@ RefreshTrailPopup = function()
         local value = Settings()[control.key]
         if not control.value._editing then control.value:SetText(control.format(value)) end
         control.value:SetTextColor(ar, ag, ab, 1)
-        if control.key == "vignetteRadarTrailLifetime" then
+        if control.key == "vignetteRadarTrailLifetime" or control.min then
             control.value:SetBackdropColor(ar, ag, ab, .055)
             control.value:SetBackdropBorderColor(ar, ag, ab, .3)
         end
@@ -1920,6 +1939,11 @@ RefreshTrailPopup = function()
             if control.key == "vignetteRadarTrailLifetime" then
                 nextValue = value + button.direction
                 if nextValue < 1 or nextValue > 300 then nextValue = nil end
+            elseif control.min then
+                local nextPercent = math.floor(value * 100 + .5) + button.direction * control.step
+                if nextPercent >= control.min and nextPercent <= control.max then
+                    nextValue = nextPercent / 100
+                end
             else
                 for slot, candidate in ipairs(control.values) do
                     if candidate == value then nextValue = control.values[slot + button.direction]; break end
@@ -2124,19 +2148,22 @@ local function EnsureTrailPopup()
             format=function(value) return math.floor(value * 100 + .5) .. "%" end },
         { key="vignetteRadarTrailSpeed", label="Flow", values=TRAIL_SPEEDS,
             format=function(value) return value == 0 and "Still" or value .. "×" end },
-        { key="vignetteRadarTrailSize", label="Size", values=TRAIL_SIZES,
+        { key="vignetteRadarTrailSize", label="Size", min=10, max=200, step=5,
             format=function(value) return math.floor(value * 100 + .5) .. "%" end },
         { key="vignetteRadarTrailLifetime", label="Fade (seconds)",
             format=function(value) return tostring(value) end },
-        { key="vignetteRadarTrailTailFade", label="Tail fade", values=TRAIL_TAIL_FADES,
+        { key="vignetteRadarTrailTailFade", label="Fade amount", min=0, max=100, step=1,
+            format=function(value) return math.floor(value * 100 + .5) .. "%" end },
+        { key="vignetteRadarTrailFadeSpan", label="Faded part", min=0, max=100, step=1,
             format=function(value) return math.floor(value * 100 + .5) .. "%" end },
     }
     for index, definition in ipairs(controlDefinitions) do
-        local y = -186 - (index - 1) * 32
-        local control = { key=definition.key, values=definition.values, format=definition.format }
+        local y = -184 - (index - 1) * 27
+        local control = { key=definition.key, values=definition.values, format=definition.format,
+            min=definition.min, max=definition.max, step=definition.step }
         control.label = Text(trailPopup, 10, definition.label)
         control.label:SetPoint("TOPLEFT", trailPopup, "TOPLEFT", 12, y - 3)
-        if control.key == "vignetteRadarTrailLifetime" then
+        if control.key == "vignetteRadarTrailLifetime" or control.min then
             control.value = CreateFrame("EditBox", nil, trailPopup, "BackdropTemplate")
             Surface(control.value)
             local font = EllesmereUI and (EllesmereUI.EXPRESSWAY or EllesmereUI._font)
@@ -2146,20 +2173,24 @@ local function EnsureTrailPopup()
             control.value:SetMaxLetters(3)
             control.value:SetTextInsets(2, 2, 0, 0)
             control.value:SetScript("OnEditFocusGained", function(self) self._editing = true end)
-            local function CommitFade(self)
+            local function CommitValue(self)
                 self._editing = false
                 local raw = self:GetText() or ""
-                local seconds = raw:match("^%s*(%d+)%s*$")
-                if seconds then addon.SetVignetteRadarTrailOption(control.key, tonumber(seconds)) end
+                local number = raw:match("^%s*(%d+)%%?%s*$")
+                if number then
+                    local value = tonumber(number)
+                    if control.min then value = value / 100 end
+                    addon.SetVignetteRadarTrailOption(control.key, value)
+                end
                 RefreshTrailPopup()
             end
             control.value:SetScript("OnEnterPressed", function(self)
-                CommitFade(self)
+                CommitValue(self)
                 self:ClearFocus()
             end)
-            control.value:SetScript("OnEditFocusLost", CommitFade)
+            control.value:SetScript("OnEditFocusLost", CommitValue)
             control.value:SetScript("OnEscapePressed", function(self)
-                self:SetText(tostring(Settings()[control.key]))
+                self:SetText(control.format(Settings()[control.key]))
                 self._editing = false
                 self:ClearFocus()
             end)
@@ -2195,6 +2226,11 @@ local function EnsureTrailPopup()
                 local current = Settings()[control.key]
                 if control.key == "vignetteRadarTrailLifetime" then
                     addon.SetVignetteRadarTrailOption(control.key, current + direction)
+                elseif control.min then
+                    local currentPercent = math.floor(current * 100 + .5)
+                    local nextPercent = math.max(control.min, math.min(control.max,
+                        currentPercent + direction * control.step))
+                    addon.SetVignetteRadarTrailOption(control.key, nextPercent / 100)
                 else
                     for slot, value in ipairs(control.values) do
                         if value == current then
@@ -2229,6 +2265,7 @@ local function EnsureTrailPopup()
         local spacing = settings.vignetteRadarTrailSpacing or 1
         local sizeScale = settings.vignetteRadarTrailSize or 1
         local tailFade = settings.vignetteRadarTrailTailFade or 0
+        local fadeSpan = settings.vignetteRadarTrailFadeSpan or 1
         local lifetime = settings.vignetteRadarTrailLifetime or 180
         local phase = self._phase or 0
         for rowIndex = self.scrollIndex + 1, self.scrollIndex + 5 do
@@ -2243,7 +2280,7 @@ local function EnsureTrailPopup()
                     -- visible effect without waiting for real trail history.
                     local age = (77 - x) * 180 / 56
                     local alpha = (.12 + .78 * math.max(0, 1 - age / lifetime))
-                        * (1 - tailFade * math.max(0, math.min(1, (77 - x) / 56)))
+                        * TrailFadeMultiplier(math.max(0, math.min(1, (77 - x) / 56)), tailFade, fadeSpan)
                     DrawTrailGlyph(row.definition, mark, row.extraByMark[index], row, x, 0, 1, 0,
                         r, g, b, alpha, index - cycle, sizeScale)
                 else
@@ -2299,6 +2336,122 @@ function addon.ToggleVignetteRadarTrailPicker(anchor)
     return ToggleTrailPopup(anchor, true)
 end
 
+local function EmptyExplanation(player, shown, quests, notes, areas)
+    if not Settings().vignetteRadarEmptyHelp or shown > 0 or quests > 0 or notes > 0 or areas then return nil end
+    if not player then return "Your position is not available from the current map yet." end
+    if #activeTargets > 0 then
+        local visible = 0
+        for _, target in ipairs(activeTargets) do if TargetVisible(target) then visible = visible + 1 end end
+        if visible == 0 then return "Current detections are hidden by your category, focus, or ignore settings." end
+        return "Known detections are beyond this range. Zoom out or check the edge cues."
+    end
+    if #activeQuests > 0 and not Settings().vignetteRadarQuestDots
+        and not Settings().vignetteRadarQuestAreas then
+        return "Quest locations are available, but quest dots and areas are turned off."
+    end
+    if #activeMapNotes > 0 then return "This map pack has locations, but none are inside this range." end
+    if Settings().vignetteRadarPOISource == "none" then
+        return "No live detections here. Map-data packs are turned off."
+    end
+    return "No live detections or quest locations are available for this spot."
+end
+
+local function HideEdgeCues()
+    if not panel or not panel.edgeCues then return end
+    for _, cue in ipairs(panel.edgeCues) do cue:Hide() end
+end
+
+local function RenderEdgeCues(player, range, targets)
+    if not (Settings().vignetteRadarEdgeCues and player) then HideEdgeCues(); return 0 end
+    local nearest = {}
+    local reach = math.max(300, range * 2)
+    local function Consider(item, kind, worldX, worldY, name, stale)
+        if not (SafeNumber(worldX) and SafeNumber(worldY)) then return end
+        local dx, dy = worldX - player.worldX, worldY - player.worldY
+        local distance = math.sqrt(dx * dx + dy * dy)
+        if distance <= range or distance > reach then return end
+        local candidate = { item=item, kind=kind, dx=dx, dy=dy, distance=distance,
+            name=name, stale=stale }
+        local slot = #nearest + 1
+        for index, entry in ipairs(nearest) do
+            if distance < entry.distance then slot = index; break end
+        end
+        table.insert(nearest, slot, candidate)
+        if #nearest > 6 then table.remove(nearest) end
+    end
+    for _, target in ipairs(targets) do
+        if TargetVisible(target) and target.key ~= FocusedTargetKey()
+            and not (player.instanceID and target.instanceID and player.instanceID ~= target.instanceID) then
+            Consider(target, "vignette", target.worldX, target.worldY, target.name, target.stale)
+        end
+    end
+    if Settings().vignetteRadarQuestDots or Settings().vignetteRadarQuestAreas then
+        for _, quest in ipairs(activeQuests) do
+            if not (player.instanceID and quest.instanceID and player.instanceID ~= quest.instanceID) then
+                Consider(quest, "quest", quest.worldX, quest.worldY, quest.name, false)
+            end
+        end
+    end
+    panel.edgeCues = panel.edgeCues or {}
+    for index, entry in ipairs(nearest) do
+        local cue = panel.edgeCues[index]
+        if not cue then
+            cue = CreateFrame("Button", nil, panel.field)
+            cue:SetSize(13, 13)
+            cue:SetFrameLevel(panel.field:GetFrameLevel() + 5)
+            cue.rim = cue:CreateTexture(nil, "ARTWORK")
+            cue.rim:SetTexture(CIRCLE_TEXTURE)
+            cue.rim:SetSize(10, 10)
+            cue.rim:SetPoint("CENTER")
+            cue.core = cue:CreateTexture(nil, "OVERLAY")
+            cue.core:SetTexture(CIRCLE_TEXTURE)
+            cue.core:SetSize(5, 5)
+            cue.core:SetPoint("CENTER")
+            cue.core:SetVertexColor(.02, .02, .02, 1)
+            cue:SetScript("OnEnter", function(self)
+                if not (GameTooltip and self.entry) then return end
+                GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+                GameTooltip:SetText(self.entry.name or "Nearby location", 1, 1, 1)
+                GameTooltip:AddLine(math.floor(self.entry.distance + .5) .. " yd away; outside radar range.", .7, .8, .78)
+                if self.entry.kind == "quest" then
+                    AddQuestTooltipObjectives(self.entry.item.questID)
+                else
+                    GameTooltip:AddLine(self.entry.stale and "Last seen; not a live detection."
+                        or "Known vignette from Blizzard's map data.", .65, .75, .75)
+                end
+                GameTooltip:Show()
+            end)
+            cue:SetScript("OnLeave", function() if GameTooltip then GameTooltip:Hide() end end)
+            cue:SetScript("OnClick", function(self)
+                if not self.entry then return end
+                if self.entry.kind == "quest" then
+                    local exploration = addon.VignetteRadarExploration
+                    if exploration then exploration.FocusQuest(self.entry.item.questID) end
+                else addon.HandleVignetteClick(self.entry.item, "LeftButton") end
+            end)
+            panel.edgeCues[index] = cue
+        end
+        local x, y = Project(entry.dx, entry.dy, entry.distance,
+            ViewFacing(player.facing), panel.plotRadius - 3, entry.distance)
+        local r, g, b
+        if entry.kind == "quest" then
+            if addon.VignetteRadarStyle then r, g, b = addon.VignetteRadarStyle.Color("quest")
+            else r, g, b = 1, .75, .3 end
+        else r, g, b = TargetColor(entry.item) end
+        cue.rim:SetVertexColor(r, g, b, .9)
+        cue.entry = entry
+        cue:SetAlpha((entry.stale and .5 or .84) *
+            (entry.kind == "vignette" and CategoryOpacity(entry.item.category) or 1))
+        if x and y then
+            cue:ClearAllPoints()
+            cue:SetPoint("CENTER", panel.field, "CENTER", x, y)
+            cue:Show()
+        else cue:Hide() end
+    end
+    for index = #nearest + 1, #panel.edgeCues do panel.edgeCues[index]:Hide() end
+    return #nearest
+end
+
 Render = function()
     if not panel or not panel:IsShown() then return end
     ApplyAppearance()
@@ -2352,6 +2505,9 @@ Render = function()
     UpdatePanelChrome()
 
     if preview then
+        HideEdgeCues()
+        panel.emptyReason = nil
+        if panel.emptyHelp then panel.emptyHelp:Hide() end
         RenderExploration(nil, range)
         HideQuestDots()
         HideMapNotes()
@@ -2374,6 +2530,9 @@ Render = function()
     end
 
     if not player then
+        HideEdgeCues()
+        panel.emptyReason = EmptyExplanation(nil, 0, 0, 0, false)
+        if panel.emptyHelp then panel.emptyHelp:SetShown(not CircleOnly() and panel.emptyReason ~= nil) end
         RenderExploration(nil, range)
         HideQuestDots()
         HideMapNotes()
@@ -2399,6 +2558,7 @@ Render = function()
     local questAreasShown = RenderQuestAreas(player, mapID, range)
     local questsInRange = RenderQuestDots(player, range)
     local notesInRange = RenderMapNotes(player, range)
+    local edgeCueCount = RenderEdgeCues(player, range, targets)
     RenderExploration(player, range)
     local shown, staleShown, totalInRange = 0, 0, 0
     local groups = {}
@@ -2479,6 +2639,12 @@ Render = function()
                 or notesInRange .. " MAP NOTES"))
             or (shown == 1 and "1 IN RANGE" or shown .. " IN RANGE"))
     end
+    panel.emptyReason = EmptyExplanation(player, shown, questsInRange, notesInRange, questAreasShown)
+    panel.edgeCueCount = edgeCueCount
+    if panel.emptyHelp then panel.emptyHelp:SetShown(not CircleOnly() and panel.emptyReason ~= nil) end
+    if panel.layout == "squat" and shown == 0 and panel.emptyReason then
+        panel.layoutHint:SetText(panel.emptyReason)
+    end
     EndBlips()
 end
 
@@ -2486,16 +2652,16 @@ local function SavePosition()
     if not panel then return end
     local left, top = PanelPosition()
     if SafeNumber(left) and SafeNumber(top) and UIParent and UIParent.GetHeight then
-        local key = Settings().vignetteRadarCircleOnly and "vignetteRadarCirclePosition"
+        local key = CircleOnly() and "vignetteRadarCirclePosition"
             or "vignetteRadarPosition"
-        if Settings().vignetteRadarCircleOnly then
+        if CircleOnly() then
             PlacePanel(left, top, panel:GetScale())
             left, top = PanelPosition()
         end
         Settings()[key] = { x = left, y = top - UIParent:GetHeight() }
     end
     local quick = addon.VignetteRadarQuickConfig
-    if quick and quick.Reanchor then quick.Reanchor(panel) end
+    if quick and quick.Reanchor then quick.Reanchor(CircleOnly() and panel.field or panel) end
 end
 
 local function AddResizeGrips()
@@ -2595,10 +2761,31 @@ local function AddResizeGrips()
     end
 end
 
+local function PlaceLauncher(left, top)
+    if not (launcher and UIParent and UIParent.GetWidth and UIParent.GetHeight) then return end
+    local width, height = UIParent:GetWidth(), UIParent:GetHeight()
+    local scale = launcher:GetScale()
+    if not (SafeNumber(width) and SafeNumber(height) and SafeNumber(scale) and scale > 0
+        and width > 0 and height > 0) then return end
+    left = SafeNumber(left) and left or 30
+    top = SafeNumber(top) and top or height - 170
+    left = math.max(4, math.min(left, width - LAUNCHER_SIZE * scale - 4))
+    top = math.max(LAUNCHER_SIZE * scale + 4, math.min(top, height - 4))
+    launcher:ClearAllPoints()
+    launcher:SetPoint("TOPLEFT", UIParent, "TOPLEFT", left / scale, (top - height) / scale)
+end
+
 local function SaveLauncherPosition()
     if not launcher then return end
-    local left, top = launcher:GetLeft(), launcher:GetTop()
-    if SafeNumber(left) and SafeNumber(top) and UIParent and UIParent.GetHeight then
+    local scale = launcher:GetScale()
+    local rawLeft, rawTop = launcher:GetLeft(), launcher:GetTop()
+    if SafeNumber(scale) and SafeNumber(rawLeft) and SafeNumber(rawTop)
+        and UIParent and UIParent.GetHeight then
+        local left, top = rawLeft * scale, rawTop * scale
+        PlaceLauncher(left, top)
+        rawLeft, rawTop = launcher:GetLeft(), launcher:GetTop()
+        if not (SafeNumber(rawLeft) and SafeNumber(rawTop)) then return end
+        left, top = rawLeft * scale, rawTop * scale
         Settings().vignetteRadarLauncherPosition = { x = left, y = top - UIParent:GetHeight() }
     end
 end
@@ -2613,6 +2800,10 @@ local function LauncherTooltip(owner)
     GameTooltip:AddLine("Silver skull: rare enemy. Larger red skull: world boss.", 0.78, 0.88, 1, true)
     GameTooltip:AddLine("Left-click to show or tuck away the radar.", 0.65, 0.80, 0.77, true)
     GameTooltip:AddLine("Right-click to preview its live layout. Drag to move this launcher.", 0.65, 0.80, 0.77, true)
+    if (owner.detected or 0) == 0 then
+        local reason = EmptyExplanation(PlayerSnapshot(CurrentMapID()), 0, 0, 0, false)
+        if reason then GameTooltip:AddLine(reason, .7, .83, .79, true) end
+    end
     GameTooltip:Show()
 end
 
@@ -2775,9 +2966,9 @@ EnsureLauncher = function()
     launcher:RegisterForClicks("LeftButtonUp", "RightButtonUp")
     launcher:RegisterForDrag("LeftButton")
     local position = Settings().vignetteRadarLauncherPosition
-    launcher:SetPoint("TOPLEFT", UIParent, "TOPLEFT",
-        type(position) == "table" and tonumber(position.x) or 30,
-        type(position) == "table" and tonumber(position.y) or -170)
+    local savedY = type(position) == "table" and SafeNumber(tonumber(position.y))
+    PlaceLauncher(type(position) == "table" and tonumber(position.x) or 30,
+        UIParent:GetHeight() + (savedY or -170))
 
     launcher.face = launcher:CreateTexture(nil, "BORDER")
     launcher.face:SetSize(29, 29)
@@ -2868,6 +3059,10 @@ EnsureLauncher = function()
         self:StopMovingOrSizing()
         self._dragging = false
         SaveLauncherPosition()
+        if self._rescueRaised then
+            self:SetFrameStrata("MEDIUM")
+            self._rescueRaised = nil
+        end
         if self._peekReleased and EndLauncherPeek then EndLauncherPeek() end
         if C_Timer and C_Timer.After then
             C_Timer.After(0, function() self._suppressClick = false end)
@@ -2942,12 +3137,12 @@ local function EnsurePanel()
     panel = CreateFrame("Frame", "VignetteRadarPanel", UIParent, "BackdropTemplate")
     panel:SetSize(PANEL_W, PANEL_H)
     panel:SetFrameStrata("MEDIUM")
-    panel:SetClampedToScreen(Settings().vignetteRadarCircleOnly ~= true)
+    panel:SetClampedToScreen(not CircleOnly())
     panel:SetMovable(true)
     panel:EnableMouseWheel(true)
     panel:SetScript("OnMouseWheel", OnZoomWheel)
     Surface(panel)
-    local position = Settings().vignetteRadarCircleOnly
+    local position = CircleOnly()
         and (Settings().vignetteRadarCirclePosition or Settings().vignetteRadarPosition)
         or Settings().vignetteRadarPosition
     panel:SetPoint("TOPLEFT", UIParent, "TOPLEFT",
@@ -2961,6 +3156,20 @@ local function EnsurePanel()
     panel.summary:SetPoint("TOPLEFT", 12, -21)
     panel.summary:SetJustifyH("LEFT")
     panel.summary:SetWidth(100)
+    panel.emptyHelp = CreateFrame("Button", nil, panel)
+    panel.emptyHelp:SetAllPoints(panel.summary)
+    panel.emptyHelp:SetFrameLevel(panel:GetFrameLevel() + 2)
+    panel.emptyHelp:SetScript("OnEnter", function(self)
+        if not (GameTooltip and panel.emptyReason) then return end
+        GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+        GameTooltip:SetText("Why is the radar empty?", 1, 1, 1)
+        GameTooltip:AddLine(panel.emptyReason, .7, .83, .79, true)
+        GameTooltip:AddLine("Your range, filters, and selected map-data pack are in Quick settings.",
+            .58, .68, .68, true)
+        GameTooltip:Show()
+    end)
+    panel.emptyHelp:SetScript("OnLeave", function() if GameTooltip then GameTooltip:Hide() end end)
+    panel.emptyHelp:Hide()
 
     panel.layoutHint = Text(panel, 10, "Nothing detected here yet.")
     panel.layoutHint:SetPoint("TOPLEFT", 214, -76)
@@ -3009,7 +3218,7 @@ local function EnsurePanel()
         local legend, picker = LegendAPI(), TargetPickerAPI()
         if legend and legend.Hide then legend.Hide() end
         if picker and picker.Hide then picker.Hide() end
-        quick.Toggle(panel)
+        quick.Toggle(CircleOnly() and panel.field or panel)
     end)
     panel.settingsDot:SetScript("OnEnter", function(self)
         self.rim:SetVertexColor(ACCENT[1], ACCENT[2], ACCENT[3], 0.55)
@@ -3185,7 +3394,7 @@ local function EnsurePanel()
     panel.field:EnableMouse(true)
     panel.field:RegisterForDrag("LeftButton")
     panel.field:SetScript("OnDragStart", function()
-        if Settings().vignetteRadarCircleOnly == true then
+        if CircleOnly() then
             panel.field._dragged = true
             panel:StartMoving()
         end
@@ -3224,7 +3433,7 @@ local function EnsurePanel()
         self._hovered = true
         UpdatePanelChrome()
         if not GameTooltip then return end
-        local circleOnly = Settings().vignetteRadarCircleOnly == true
+        local circleOnly = CircleOnly()
         GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
         GameTooltip:SetText(circleOnly and "Show full radar frame" or "Show only the radar", 1, 1, 1)
         GameTooltip:AddLine("Click to switch views. Your choice is saved.", .7, .8, .8, true)
@@ -3474,7 +3683,7 @@ local function EnsurePanel()
     panel.trailToggle:SetScript("OnClick", function(_, mouseButton)
         if mouseButton == "RightButton" then
             if GameTooltip then GameTooltip:Hide() end
-            ToggleTrailPopup(panel.trailToggle)
+            ToggleTrailPopup(panel._trailPopupAnchor or panel.trailToggle)
         else
             HideTrailPopup()
             addon.SetVignetteRadarTrailEnabled(Settings().vignetteRadarBreadcrumbs ~= true)
@@ -3538,6 +3747,117 @@ local function EnsurePanel()
         if GameTooltip then GameTooltip:Hide() end
     end)
     UpdateCombatToggle()
+
+    -- The square face leaves four useful corner wedges beyond the plotting ring.
+    -- Keep every primary action there while the pointer is over the face.
+    panel.hoverTools = {}
+    local function HoverTool(id, title, reference, point, x, y)
+        local tool = CreateFrame("Button", nil, panel.field)
+        tool:SetSize(16, 16)
+        tool:SetFrameLevel(panel.field:GetFrameLevel() + 8)
+        tool:SetPoint(point, panel.field, point, x, y)
+        tool:RegisterForClicks("LeftButtonUp", "RightButtonUp")
+        tool.glow = tool:CreateTexture(nil, "BACKGROUND")
+        tool.glow:SetTexture(CIRCLE_TEXTURE)
+        tool.glow:SetSize(18, 18)
+        tool.glow:SetPoint("CENTER")
+        tool.glow:SetVertexColor(ACCENT[1], ACCENT[2], ACCENT[3], .10)
+        local function Stroke(x1, y1, x2, y2, thickness)
+            local line = tool:CreateLine(nil, "OVERLAY")
+            line:SetThickness(thickness or 1.5)
+            line:SetColorTexture(ACCENT[1], ACCENT[2], ACCENT[3], .88)
+            line:SetStartPoint("CENTER", tool, x1, y1)
+            line:SetEndPoint("CENTER", tool, x2, y2)
+        end
+        local function Dot(x, y, size, r, g, b)
+            local dot = tool:CreateTexture(nil, "OVERLAY")
+            dot:SetTexture(CIRCLE_TEXTURE)
+            dot:SetSize(size, size)
+            dot:SetPoint("CENTER", tool, "CENTER", x, y)
+            dot:SetVertexColor(r or ACCENT[1], g or ACCENT[2], b or ACCENT[3], .95)
+        end
+        if id == "config" then Dot(0, 0, 6)
+        elseif id == "target" then Stroke(-4, 0, 4, 0); Stroke(0, -4, 0, 4); Dot(0, 0, 3)
+        elseif id == "legend" then
+            Dot(-3, 4, 3, .79, .87, 1); Dot(-3, 0, 3, 1, .68, .2); Dot(-3, -4, 3, .68, .42, 1)
+            Stroke(1, 4, 5, 4, 1); Stroke(1, 0, 5, 0, 1); Stroke(1, -4, 5, -4, 1)
+        elseif id == "minus" then Stroke(-4, 0, 4, 0, 2)
+        elseif id == "plus" then Stroke(-4, 0, 4, 0, 2); Stroke(0, -4, 0, 4, 2)
+        elseif id == "north" or id == "help" then
+            local label = Text(tool, 11, id == "north" and "N" or "?", true)
+            label:SetAllPoints(); label:SetJustifyH("CENTER")
+        elseif id == "trail" then
+            Stroke(-5, 0, -2, 0, 2); Stroke(1, 0, 4, 0, 2)
+        elseif id == "eye" then
+            Stroke(-5, 0, 0, 3); Stroke(0, 3, 5, 0)
+            Stroke(-5, 0, 0, -3); Stroke(0, -3, 5, 0); Dot(0, 0, 3)
+        elseif id == "close" then Stroke(-4, -4, 4, 4); Stroke(-4, 4, 4, -4)
+        elseif id == "frame" then Stroke(-3, -4, 2, 0); Stroke(2, 0, -3, 4)
+        end
+        tool:SetScript("OnEnter", function(self)
+            panel._hoverToolsShown = true
+            self.glow:SetVertexColor(ACCENT[1], ACCENT[2], ACCENT[3], .25)
+            if GameTooltip then
+                GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+                GameTooltip:SetText(title, 1, 1, 1)
+                GameTooltip:Show()
+            end
+        end)
+        tool:SetScript("OnLeave", function(self)
+            self.glow:SetVertexColor(ACCENT[1], ACCENT[2], ACCENT[3], .10)
+            if GameTooltip then GameTooltip:Hide() end
+            if C_Timer and C_Timer.After then C_Timer.After(0, function()
+                if panel.field.IsMouseOver and not panel.field:IsMouseOver() then
+                    panel._hoverToolsShown = false
+                    UpdatePanelChrome()
+                end
+            end) end
+        end)
+        tool:SetScript("OnClick", function(self, button)
+            if id == "help" then
+                if GameTooltip then
+                    GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+                    GameTooltip:SetText("Radar status", 1, 1, 1)
+                    GameTooltip:AddLine(panel.emptyReason or
+                        "The radar is showing the positions currently available from Blizzard and your selected map pack.",
+                        .7, .83, .79, true)
+                    GameTooltip:Show()
+                end
+                return
+            end
+            local click = reference and reference:GetScript("OnClick")
+            if click then
+                if id == "trail" then panel._trailPopupAnchor = self end
+                click(reference, button)
+                panel._trailPopupAnchor = nil
+            end
+        end)
+        tool:Hide()
+        panel.hoverTools[#panel.hoverTools + 1] = tool
+    end
+    HoverTool("config", "Quick settings", panel.settingsDot, "TOPLEFT", 10, -10)
+    HoverTool("target", "Choose a target", panel.target, "TOPLEFT", 30, -10)
+    HoverTool("legend", "Legend and filters", panel.legend, "TOPLEFT", 10, -30)
+    HoverTool("minus", "Zoom out", panel.zoomOut, "TOPRIGHT", -10, -10)
+    HoverTool("plus", "Zoom in", panel.zoomIn, "TOPRIGHT", -30, -10)
+    HoverTool("north", "North up / facing up", panel.compass, "TOPRIGHT", -10, -30)
+    HoverTool("trail", "Trail: left toggle, right style", panel.trailToggle, "BOTTOMLEFT", 10, 10)
+    HoverTool("eye", "Stay fully visible", panel.combatToggle, "BOTTOMLEFT", 30, 10)
+    HoverTool("help", "Radar status", nil, "BOTTOMLEFT", 10, 30)
+    HoverTool("close", "Tuck away radar", panel.close, "BOTTOMRIGHT", -10, 10)
+    HoverTool("frame", "Show full frame", panel.frameToggle, "BOTTOMRIGHT", -30, 10)
+    panel.field:SetScript("OnEnter", function()
+        panel._hoverToolsShown = true
+        UpdatePanelChrome()
+    end)
+    panel.field:SetScript("OnLeave", function()
+        if C_Timer and C_Timer.After then C_Timer.After(0, function()
+            if panel.field.IsMouseOver and not panel.field:IsMouseOver() then
+                panel._hoverToolsShown = false
+                UpdatePanelChrome()
+            end
+        end) end
+    end)
 
     AddResizeGrips()
 
@@ -3603,6 +3923,39 @@ local function EnsurePanel()
     return panel
 end
 
+function VignetteRadar_PeekRadar(keystate)
+    if keystate == "up" then
+        if not radarPeekActive then return end
+        radarPeekActive = false
+        manualPanelState = radarPeekPreviousManual
+        radarPeekPreviousManual = nil
+        if panel then
+            panel:SetClampedToScreen(not CircleOnly())
+            if CircleOnly() then ApplyPanelLayout(false) end
+            if CircleOnly() and radarPeekPreviousPosition then
+                PlacePanel(radarPeekPreviousPosition[1], radarPeekPreviousPosition[2], panel:GetScale())
+            end
+        end
+        radarPeekPreviousPosition = nil
+        RefreshRadar(false)
+        return
+    end
+    if keystate ~= "down" or radarPeekActive or Settings().vignetteRadarPeekEnabled ~= true
+        or Settings().vignetteRadarEnabled ~= true then return end
+    local frame = EnsurePanel()
+    local left, top = PanelPosition()
+    radarPeekPreviousPosition = left and top and { left, top } or nil
+    radarPeekPreviousManual = manualPanelState
+    radarPeekActive = true
+    manualPanelState = true
+    frame:SetClampedToScreen(true)
+    local position = Settings().vignetteRadarPosition
+    local x = type(position) == "table" and SafeNumber(tonumber(position.x))
+    local y = type(position) == "table" and SafeNumber(tonumber(position.y))
+    PlacePanel(x or left or 30, y and UIParent:GetHeight() + y or top or 300, frame:GetScale())
+    RefreshRadar(false)
+end
+
 ScanVignettes = function(mapID)
     local changedMap = activeMapID ~= mapID
     if changedMap then questMapBasis = nil end
@@ -3636,7 +3989,24 @@ ScanVignettes = function(mapID)
         end
     end
     if addon.VignetteRadarExploration then
-        addon.VignetteRadarExploration.ValidateQuestFocus(activeQuests, changedMap)
+        local exploration = addon.VignetteRadarExploration
+        exploration.ValidateQuestFocus(activeQuests, changedMap)
+        if Settings().vignetteRadarFollowTrackedQuest and C_SuperTrack
+            and type(C_SuperTrack.GetSuperTrackedQuestID) == "function" then
+            local trackedID = SafeNumber(Call(C_SuperTrack.GetSuperTrackedQuestID))
+            local available = false
+            for _, quest in ipairs(activeQuests) do
+                if quest.questID == trackedID then available = true; break end
+            end
+            if available and (trackedID ~= followedQuestID or mapID ~= followedQuestMapID) then
+                exploration.SetQuestFocus(trackedID)
+                followedQuestID, followedQuestMapID = trackedID, mapID
+            elseif not available then
+                followedQuestID, followedQuestMapID = nil, nil
+            end
+        else
+            followedQuestID, followedQuestMapID = nil, nil
+        end
     end
     if Features() then
         local worldMapMode = Settings().vignetteRadarWorldMap ~= false
@@ -3793,8 +4163,19 @@ function addon.ResetVignetteRadarPositions()
     Settings().vignetteRadarCirclePosition = nil
     Settings().vignetteRadarLauncherPosition = nil
     if panel then PlacePanel(30, UIParent:GetHeight() - 520, panel:GetScale()) end
-    if launcher then launcher:ClearAllPoints(); launcher:SetPoint("TOPLEFT", UIParent, "TOPLEFT", 30, -170) end
+    Settings().vignetteRadarLauncherVisible = true
+    local button = EnsureLauncher()
+    PlaceLauncher(UIParent:GetWidth() / 2 - LAUNCHER_SIZE / 2,
+        UIParent:GetHeight() / 2 + LAUNCHER_SIZE / 2)
+    button:SetFrameStrata("TOOLTIP")
+    button._rescueRaised = true
+    button:Show()
+    SaveLauncherPosition()
     if addon.VignetteRadarQuickConfig then addon.VignetteRadarQuickConfig.Reanchor(panel) end
+    if addon.RefreshVignetteRadarOptions then addon.RefreshVignetteRadarOptions() end
+    if addon.VignetteRadarQuickConfig and addon.VignetteRadarQuickConfig.Refresh then
+        addon.VignetteRadarQuickConfig.Refresh()
+    end
 end
 
 function addon.SetVignetteRadarRange(range)
@@ -3868,13 +4249,17 @@ end
 function addon.SetVignetteRadarTrailOption(key, value)
     local allowed = key == "vignetteRadarTrailSpacing" and TRAIL_SPACINGS
         or key == "vignetteRadarTrailSpeed" and TRAIL_SPEEDS
-        or key == "vignetteRadarTrailSize" and TRAIL_SIZES
-        or key == "vignetteRadarTrailTailFade" and TRAIL_TAIL_FADES
         or key == "vignetteRadarTrailLifetime" and TRAIL_LIFETIMES
-    if not allowed then return false end
+    local percentRange = key == "vignetteRadarTrailSize" and { .1, 2 }
+        or (key == "vignetteRadarTrailTailFade" or key == "vignetteRadarTrailFadeSpan") and { 0, 1 }
+    if not allowed and not percentRange then return false end
     local valid = key == "vignetteRadarTrailLifetime" and type(value) == "number"
         and value == math.floor(value) and value >= allowed[1] and value <= allowed[2]
-    if not valid and key ~= "vignetteRadarTrailLifetime" then
+    if percentRange then
+        valid = type(value) == "number" and value == value
+            and value >= percentRange[1] and value <= percentRange[2]
+            and math.abs(value * 100 - math.floor(value * 100 + .5)) < .00001
+    elseif not valid and key ~= "vignetteRadarTrailLifetime" then
         for _, candidate in ipairs(allowed) do
             if candidate == value then valid = true; break end
         end

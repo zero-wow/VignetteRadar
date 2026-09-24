@@ -1,7 +1,7 @@
 local _, addon = ...
 if type(addon) ~= "table" then return end
 
-local PANEL_W, PANEL_H = 232, 348
+local PANEL_W, PANEL_H = 232, 370
 local ACCENT = { 0.05, 0.82, 0.62 }
 local FONT_FALLBACK = "Fonts\\FRIZQT__.TTF"
 local SKULL_TEXTURE = "Interface\\TargetingFrame\\UI-TargetingFrame-Skull"
@@ -365,6 +365,12 @@ local function CreateOtherGuide(parent, label, x, y, symbol)
             line:SetEndPoint("LEFT", row, last[1], last[2])
             row.lines[index] = line
         end
+    elseif symbol == "edge" then
+        row.fill = Circle(row, 7)
+        row.tip = row:CreateLine(nil, "OVERLAY")
+        row.tip:SetThickness(1.3)
+        row.tip:SetStartPoint("LEFT", row, 14, 0)
+        row.tip:SetEndPoint("LEFT", row, 20, 0)
     else
         row.fill = Circle(row, 10)
         if symbol == "route" then
@@ -492,8 +498,9 @@ local function EnsurePanel()
         route = CreateOtherGuide(panel, "Route stop", 120, 278, "route"),
         trail = CreateOtherGuide(panel, "Travel trail", 10, 300, "trail"),
         stale = CreateOtherGuide(panel, "Last seen", 120, 300, "stale"),
+        edge = CreateOtherGuide(panel, "Off-range cue", 10, 322, "edge"),
     }
-    panel.footerRule = SectionRule(panel, 324)
+    panel.footerRule = SectionRule(panel, 346)
 
     panel.status = Text(panel, 8, "NO SPOTLIGHT")
     panel.status:SetPoint("BOTTOMLEFT", 10, 7)
@@ -579,6 +586,10 @@ function API.Refresh()
     panel.guides.area.label:SetText(settings.vignetteRadarQuestAreas and "Quest area" or "Quest area off")
     panel.guides.pin.fill:SetVertexColor(.92, .71, .34, .9)
     panel.guides.route.fill:SetVertexColor(.16, .7, .54, .9)
+    panel.guides.edge.fill:SetVertexColor(questRed, questGreen, questBlue, .9)
+    panel.guides.edge.tip:SetColorTexture(questRed, questGreen, questBlue, .7)
+    panel.guides.edge:SetAlpha(settings.vignetteRadarEdgeCues and 1 or .6)
+    panel.guides.edge.label:SetText(settings.vignetteRadarEdgeCues and "Off-range cue" or "Edge cues off")
     local rareRed, rareGreen, rareBlue = Color("rare", CATEGORIES.rare.color)
     for _, line in ipairs(panel.guides.stale.lines) do
         line:SetColorTexture(rareRed, rareGreen, rareBlue, .4)
