@@ -95,12 +95,14 @@ local db = {
     vignetteRadarIgnored = { hidden = true },
 }
 local refreshes, layoutRefreshes, previews, resets, clears = 0, 0, 0, 0, 0
+local trailPickerAnchor
 local addon = {
     VignetteRadarRanges = { 150, 300, 450, 600, 1200, 2400, 4800 },
     GetSettings = function() return db end,
     SetVignetteRadarEnabled = function(value) db.vignetteRadarEnabled = value end,
     SetVignetteRadarCircleOnly = function(value) db.vignetteRadarCircleOnly = value end,
     SetVignetteRadarKeepVisibleCombat = function(value) db.vignetteRadarKeepVisibleCombat = value end,
+    ToggleVignetteRadarTrailPicker = function(anchor) trailPickerAnchor = anchor end,
     ToggleVignetteRadarPreview = function() previews = previews + 1 end,
     ResetVignetteRadarPositions = function() resets = resets + 1 end,
     RefreshVignetteRadar = function(rescan)
@@ -210,15 +212,15 @@ assert(byKey["vignetteRadarAlertCategories.rare"].label.text == "Rares and bosse
 assert(byKey.vignetteRadarQuestDots.label.text == "Show quest location dots"
     and byKey.vignetteRadarQuestAreas.label.text == "Shade Blizzard quest areas",
     "quest dots and areas need separate plain-language switches")
-local trailChoices = {}
+local trailPickerButton
 for _, object in ipairs(objects) do
     if object.parent == panel.pages.Explore and object.kind == "Button"
-        and (object.text == "Dashes" or object.text == "Ticks" or object.text == "Dots") then
-        trailChoices[object.text] = object
-    end
+        and object.text == "Styles & flow" then trailPickerButton = object end
 end
-assert(trailChoices.Dashes and trailChoices.Ticks and trailChoices.Dots,
-    "the full Explore page must expose every trail style")
+assert(trailPickerButton and trailPickerButton.text == "Styles & flow",
+    "the full Explore page must open the complete trail picker")
+trailPickerButton.scripts.OnClick(trailPickerButton)
+assert(trailPickerAnchor == trailPickerButton, "the picker must anchor to its settings button")
 assert(byKey.vignetteRadarNorthUp.glyph.label
     and #byKey.vignetteRadarKeepVisibleCombat.glyph.lines == 4
     and choices["-"].backdrop == nil and #choices["-"].strokes == 1

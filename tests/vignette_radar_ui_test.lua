@@ -549,7 +549,7 @@ assert(panel.zoomOut.backdrop == nil and panel.zoomIn.backdrop == nil
     and #panel.zoomOut.strokes == 1 and #panel.zoomIn.strokes == 2
     and panel.zoomOut.glow and panel.zoomIn.glow,
     "zoom controls must use borderless minus and plus icons with the radar's circular glow")
-assert(panel.trailToggle.backdrop == nil and #panel.trailToggle.strokes == 3
+assert(panel.trailToggle.backdrop == nil and #panel.trailToggle.strokes == 12
     and panel.trailToggle.glow and panel.trailToggle.clickButtons[2] == "RightButtonUp",
     "the trail shortcut must match the toolbar and accept a style-changing right click")
 assert(not panel.zoomIn._enabled and panel.zoomIn.strokes[1].color[4] < .4,
@@ -1290,10 +1290,8 @@ local function quickControl(page, key, value)
 end
 quick.tabs.Explore.scripts.OnClick(quick.tabs.Explore)
 assert(quick.pages.Explore:IsShown() and quickControl("Explore", "vignetteRadarBreadcrumbs")
-    and quickControl("Explore", "vignetteRadarTrailStyle", "dashes")
-    and quickControl("Explore", "vignetteRadarTrailStyle", "ticks")
-    and quickControl("Explore", "vignetteRadarTrailStyle", "dots"),
-    "the compact Explore tab must expose the trail and all three styles")
+    and quickControl("Explore", "vignetteRadarTrailStyle").text == "Styles & flow",
+    "the compact Explore tab must expose the trail and its complete picker")
 assert(quick.rangeMinus.backdrop == nil and #quick.rangeMinus.strokes == 1
     and quick.rangePlus.backdrop == nil and #quick.rangePlus.strokes == 2
     and quickControl("Layout", "vignetteRadarNorthUp").glyph.label
@@ -1595,23 +1593,23 @@ local dashX = firstTrailMark.endPoint[3] - firstTrailMark.startPoint[3]
 local dashY = firstTrailMark.endPoint[4] - firstTrailMark.startPoint[4]
 panel.trailToggle.scripts.OnClick(panel.trailToggle, "RightButton")
 local trailPopup = assert(_G.VignetteRadarTrailStylePopup)
-assert(trailPopup:IsShown() and trailPopup.width == 218 and trailPopup.height == 122
+assert(trailPopup:IsShown() and trailPopup.width == 244 and trailPopup.height == 292
     and trailPopup.clamped and settings.vignetteRadarTrailStyle == "dashes"
     and trailPopup.point[1] == "BOTTOMLEFT" and trailPopup.point[2] == panel
     and trailPopup.point[3] == "BOTTOMRIGHT" and trailPopup.point[4] == 8
-    and #trailPopup.rows == 3 and UISpecialFrames[#UISpecialFrames] == trailPopup.name,
-    "right-click must open a compact, screen-clamped style picker without changing the trail")
+    and #trailPopup.rows == 10 and UISpecialFrames[#UISpecialFrames] == trailPopup.name,
+    "right-click must open a compact, screen-clamped ten-style picker without changing the trail")
 local previewRed, previewGreen, previewBlue = addon.VignetteRadarStyle.Color("accent")
 assert(trailPopup.title.textColor[1] == previewRed and trailPopup.title.textColor[2] == previewGreen
     and trailPopup.title.textColor[3] == previewBlue
     and trailPopup.rows[1].backdropBorderColor[4] > trailPopup.rows[2].backdropBorderColor[4],
     "the picker must match the active theme and identify the current style")
 for _, row in ipairs(trailPopup.rows) do
-    assert(row.width == 202 and row.height == 24 and row.point[4] >= 8
-        and row.point[4] + row.width <= trailPopup.width - 8
-        and -row.point[5] + row.height <= trailPopup.height - 8
+    assert(row.width == 202 and row.height == 24 and row.parent == trailPopup.content
+        and row.point[4] >= 0 and row.point[4] + row.width <= trailPopup.scroll.width
+        and -row.point[5] + row.height <= trailPopup.content.height
         and #row.marks == 4,
-        "every choice needs a bounded animated example beside its label")
+        "every scrollable choice needs a bounded animated example beside its label")
 end
 local previewStart = trailPopup.rows[1].marks[1].startPoint[3]
 trailPopup.scripts.OnUpdate(trailPopup, .06)
@@ -1629,7 +1627,7 @@ assert(settings.vignetteRadarTrailStyle == "ticks" and settings.vignetteRadarBre
     and panel.trailToggle._selected and panel.trailMarks[1] == firstTrailMark
     and panel.trailMarks[1].thickness == 2
     and math.abs(dashX * tickX + dashY * tickY) < .001
-    and quickControl("Explore", "vignetteRadarTrailStyle", "ticks").highlightLocked,
+    and trailPopup.rows[2].style == "ticks",
     "right-click must switch to crosswise ticks without reallocating the line pool")
 panel.trailToggle.scripts.OnClick(panel.trailToggle, "RightButton")
 assert(trailPopup:IsShown() and trailPopup.rows[2].backdropBorderColor[4] >
@@ -1643,6 +1641,65 @@ assert(settings.vignetteRadarTrailStyle == "dots" and panel.trailDots[1]
     and panel.trailDots[1]:IsShown() and not panel.trailMarks[1]:IsShown()
     and #panel.trailDots <= 64,
     "the optional dot style must reuse a capped texture pool")
+panel.trailToggle.scripts.OnClick(panel.trailToggle, "RightButton")
+assert(#trailPopup.controls == 3 and trailPopup.controls[1].value.text == "100%"
+    and trailPopup.controls[2].value.text == "1×"
+    and trailPopup.controls[3].value.text == "3 min",
+    "spacing, flow speed, and fade time must be visible in the picker")
+for _, control in ipairs(trailPopup.controls) do
+    for _, button in ipairs({ control.minus, control.plus }) do
+        assert(button.point[4] >= 8 and button.point[4] + button.width <= trailPopup.width - 8
+            and -button.point[5] + button.height <= trailPopup.height - 8,
+            "trail stepper buttons must stay inside the popup gutter")
+    end
+end
+trailPopup.controls[1].plus.scripts.OnClick(trailPopup.controls[1].plus)
+trailPopup.controls[2].minus.scripts.OnClick(trailPopup.controls[2].minus)
+trailPopup.controls[3].plus.scripts.OnClick(trailPopup.controls[3].plus)
+assert(settings.vignetteRadarTrailSpacing == 1.25 and settings.vignetteRadarTrailSpeed == .5
+    and settings.vignetteRadarTrailLifetime == 300
+    and trailPopup.controls[1].value.text == "125%"
+    and trailPopup.controls[2].value.text == "0.5×"
+    and trailPopup.controls[3].value.text == "5 min"
+    and not addon.SetVignetteRadarTrailOption("vignetteRadarTrailSpeed", 99),
+    "picker steppers must persist valid choices and reject invalid values")
+for index = 1, 5 do trailPopup.scroll.scripts.OnMouseWheel(trailPopup.scroll, -1) end
+assert(trailPopup.scrollIndex == 5 and trailPopup.scroll.verticalScroll == 135
+    and trailPopup.scrollThumb.point[5] == -50,
+    "the ten style rows must scroll five at a time with a visible scrollbar")
+local diamondPreview = trailPopup.rows[8].marks[1].startPoint[3]
+trailPopup.scripts.OnUpdate(trailPopup, .06)
+assert(trailPopup.rows[8].marks[1].startPoint[3] ~= diamondPreview,
+    "scrolled styles must animate their examples (shown=" .. tostring(trailPopup:IsShown())
+        .. ", before=" .. tostring(diamondPreview) .. ", after="
+        .. tostring(trailPopup.rows[8].marks[1].startPoint[3]) .. ")")
+trailPopup.rows[8].scripts.OnClick(trailPopup.rows[8])
+assert(settings.vignetteRadarTrailStyle == "diamonds" and panel.trailExtraMarks[1]:IsShown()
+    and #panel.trailMarks <= 64 and panel.trailToggle.trailExtras[1][1]:IsShown(),
+    "multi-line glyphs must share the capped trail mark pool")
+addon.VignetteRadarLegend.Refresh()
+assert(legendPanel.guides.trail.label.text == "Trail: Diamonds"
+    and legendPanel.guides.trail.extraMarks[1][1]:IsShown(),
+    "the legend must name and depict the newly selected trail style")
+for _, styleID in ipairs({ "long", "slashes", "chevrons", "crosses", "beads", "pulses" }) do
+    assert(addon.SetVignetteRadarTrailStyle(styleID) and settings.vignetteRadarTrailStyle == styleID,
+        "every new style must render and persist")
+end
+assert(not addon.SetVignetteRadarTrailStyle("invalid"), "unknown trail styles must be rejected")
+addon.SetVignetteRadarTrailStyle("dashes")
+addon.SetVignetteRadarTrailOption("vignetteRadarTrailSpeed", 0)
+local stillStart = firstTrailMark.startPoint[3]
+now = now + .5
+addon.VignetteRadarAPI.Refresh(false)
+assert(firstTrailMark.startPoint[3] == stillStart,
+    "Still flow must hold trail marks in place while the player is stationary")
+addon.SetVignetteRadarTrailOption("vignetteRadarTrailSpeed", 1)
+local flowingStart = firstTrailMark.startPoint[3]
+now = now + .5
+addon.VignetteRadarAPI.Refresh(false)
+assert(firstTrailMark.startPoint[3] ~= flowingStart,
+    "flow speed must animate the actual radar trail")
+addon.SetVignetteRadarTrailStyle("dots")
 panel.trailToggle.scripts.OnClick(panel.trailToggle, "LeftButton")
 assert(not settings.vignetteRadarBreadcrumbs and not panel.trailToggle._selected
     and not panel.trailDots[1]:IsShown()
@@ -1656,6 +1713,16 @@ trailPopup.rows[1].scripts.OnClick(trailPopup.rows[1])
 assert(settings.vignetteRadarBreadcrumbs and settings.vignetteRadarTrailStyle == "dashes"
     and panel.trailMarks[1] == firstTrailMark,
     "choosing a preview while off must select and show that trail style")
+addon.VignetteRadarQuickConfig.OpenPage("Explore", panel.settingsDot)
+local quickTrailPicker = quickControl("Explore", "vignetteRadarTrailStyle")
+quickTrailPicker.scripts.OnClick(quickTrailPicker)
+assert(quick:IsShown() and trailPopup:IsShown() and trailPopup.point[2] == quickTrailPicker,
+    "the compact settings button must open the picker beside itself without hiding settings")
+trailPopup.controls[1].minus.scripts.OnClick(trailPopup.controls[1].minus)
+assert(quick:IsShown() and trailPopup:IsShown() and settings.vignetteRadarTrailSpacing == 1,
+    "adjusting trail settings must leave both the settings panel and picker open")
+trailPopup.close.scripts.OnClick(trailPopup.close)
+addon.VignetteRadarQuickConfig.Hide()
 local oldWidth, oldHeight = UIParent.width, UIParent.height
 local oldPanelLeft, oldPanelRight = panel.left, panel.right
 local oldButtonLeft, oldButtonRight, oldButtonTop = panel.trailToggle.left,

@@ -20,6 +20,11 @@ local MAP_NOTES = {
     { kind = "item", label = "Item", color = "event" },
     { kind = "note", label = "Other note", color = "other" },
 }
+local TRAIL_STYLES = addon.VignetteRadarTrailStyleByID or {
+    dashes = { label="Dashes", segments={{-3.5,0,3.5,0,2.5}} },
+    ticks = { label="Ticks", segments={{0,-3.5,0,3.5,2}} },
+    dots = { label="Dots", dot=5 },
+}
 
 local fallbackSettings = {}
 local panel
@@ -331,6 +336,7 @@ local function CreateOtherGuide(parent, label, x, y, symbol)
     elseif symbol == "trail" then
         row.dots = {}
         row.marks = {}
+        row.extraMarks = {}
         for index = 1, 3 do
             local dot = row:CreateTexture(nil, "ARTWORK")
             dot:SetSize(4, 4)
@@ -341,6 +347,12 @@ local function CreateOtherGuide(parent, label, x, y, symbol)
             mark:SetThickness(1.7)
             mark:Hide()
             row.marks[index] = mark
+            row.extraMarks[index] = {}
+            for part = 1, 3 do
+                local extra = row:CreateLine(nil, "ARTWORK")
+                extra:Hide()
+                row.extraMarks[index][part] = extra
+            end
         end
     elseif symbol == "stale" then
         row.lines = {}
@@ -563,22 +575,35 @@ function API.Refresh()
         line:SetColorTexture(rareRed, rareGreen, rareBlue, .4)
     end
     local trailStyle = settings.vignetteRadarTrailStyle or "dashes"
+    local trailDefinition = TRAIL_STYLES[trailStyle] or TRAIL_STYLES.dashes
     for index, dot in ipairs(panel.guides.trail.dots) do
         dot:SetVertexColor(accentRed, accentGreen, accentBlue, .85)
-        dot:SetShown(trailStyle == "dots")
+        local dotSize = trailDefinition.alternating and index % 2 == 0 and 2.5 or 4
+        dot:SetSize(dotSize, dotSize)
+        dot:SetShown(trailDefinition.dot ~= nil)
         local mark = panel.guides.trail.marks[index]
         local x = 2 + index * 5
-        local horizontal = trailStyle ~= "ticks"
-        mark:SetStartPoint("LEFT", panel.guides.trail, x - (horizontal and 1.7 or 0),
-            horizontal and 0 or -2.5)
-        mark:SetEndPoint("LEFT", panel.guides.trail, x + (horizontal and 1.7 or 0),
-            horizontal and 0 or 2.5)
-        mark:SetColorTexture(accentRed, accentGreen, accentBlue, .85)
-        mark:SetShown(trailStyle ~= "dots")
+        for part = 1, 4 do
+            local line = part == 1 and mark or panel.guides.trail.extraMarks[index][part - 1]
+            local segment = trailDefinition.segments and trailDefinition.segments[part]
+            if segment then
+                local scale = trailDefinition.alternating and index % 2 == 0 and .22 or .45
+                line:SetThickness(segment[5] * .8)
+                line:SetStartPoint("LEFT", panel.guides.trail,
+                    x + segment[1] * scale, segment[2] * scale)
+                line:SetEndPoint("LEFT", panel.guides.trail,
+                    x + segment[3] * scale, segment[4] * scale)
+                line:SetColorTexture(accentRed, accentGreen, accentBlue, .85)
+                line:Show()
+            else
+                line:Hide()
+            end
+        end
     end
     panel.guides.trail:SetAlpha(settings.vignetteRadarBreadcrumbs and 1 or .6)
-    local trailName = trailStyle == "ticks" and "Ticks" or trailStyle == "dots" and "Dots" or "Dashes"
-    panel.guides.trail.label:SetText(settings.vignetteRadarBreadcrumbs and ("Trail: " .. trailName) or "Trail off")
+    local trailName = trailStyle == "long" and "Long" or trailDefinition.label
+    panel.guides.trail.label:SetText(settings.vignetteRadarBreadcrumbs
+        and ("Trail: " .. trailName) or "Trail off")
     if highlight then
         panel.status:SetText("SPOTLIGHT: " .. CATEGORIES[highlight].label)
         panel.all.label:SetTextColor(0.62, 0.66, 0.68, 1)

@@ -48,12 +48,28 @@ assert(defaults.vignetteRadarPOISource == "auto",
     "new installations should follow the current zone when a data pack is available")
 assert(defaults.vignetteRadarTrailStyle == "dashes",
     "new and migrated installations should use trail marks distinct from quest dots")
+assert(defaults.vignetteRadarTrailSpacing == 1 and defaults.vignetteRadarTrailSpeed == 1
+    and defaults.vignetteRadarTrailLifetime == 180,
+    "new installations should have readable animated marks and a three-minute fade")
 defaults.vignetteRadarTrailStyle = "ticks"
 fresh.GetSettings()
 assert(defaults.vignetteRadarTrailStyle == "ticks", "the chosen trail style must persist")
-defaults.vignetteRadarTrailStyle = "unsupported"
+defaults.vignetteRadarTrailStyle = "diamonds"
+defaults.vignetteRadarTrailSpacing = 1.5
+defaults.vignetteRadarTrailSpeed = 0
+defaults.vignetteRadarTrailLifetime = 300
 fresh.GetSettings()
-assert(defaults.vignetteRadarTrailStyle == "dashes", "invalid trail styles must recover safely")
+assert(defaults.vignetteRadarTrailStyle == "diamonds" and defaults.vignetteRadarTrailSpacing == 1.5
+    and defaults.vignetteRadarTrailSpeed == 0 and defaults.vignetteRadarTrailLifetime == 300,
+    "new trail styles and flow controls must persist")
+defaults.vignetteRadarTrailStyle = "unsupported"
+defaults.vignetteRadarTrailSpacing = -1
+defaults.vignetteRadarTrailSpeed = 99
+defaults.vignetteRadarTrailLifetime = 999
+fresh.GetSettings()
+assert(defaults.vignetteRadarTrailStyle == "dashes" and defaults.vignetteRadarTrailSpacing == 1
+    and defaults.vignetteRadarTrailSpeed == 1 and defaults.vignetteRadarTrailLifetime == 180,
+    "invalid trail settings must recover safely")
 defaults.vignetteRadarPOISource = "none"
 fresh.GetSettings()
 assert(defaults.vignetteRadarPOISource == "none", "an existing Off choice must remain Off")

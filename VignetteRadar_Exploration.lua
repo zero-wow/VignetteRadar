@@ -9,7 +9,7 @@ local approachInside, approachMap = {}, nil
 local manualUntil, autoRange = 0, nil
 local focusedQuestID
 local focusedQuestMisses = 0
-local MAX_PINS, MAX_ROUTE, MAX_JOURNAL, MAX_TRAIL = 60, 8, 100, 48
+local MAX_PINS, MAX_ROUTE, MAX_JOURNAL, MAX_TRAIL = 60, 8, 100, 150
 local MAX_CUSTOM_PRESETS = 8
 
 local function Settings() return addon.GetSettings() end
@@ -92,7 +92,8 @@ function API.UpdateTrail(player, mapID, now)
     if trailMap ~= mapID then trail, trailMap, lastTrailAt = {}, mapID, 0 end
     if Settings().vignetteRadarBreadcrumbs ~= true or not player then return trail end
     now = Number(now) or Now()
-    while #trail > 0 and now - trail[1].at > 180 do table.remove(trail, 1) end
+    local lifetime = Settings().vignetteRadarTrailLifetime or 180
+    while #trail > 0 and now - trail[1].at > lifetime do table.remove(trail, 1) end
     local x, y = Number(player.worldX), Number(player.worldY)
     if not x or not y then return trail end
     local last = trail[#trail]

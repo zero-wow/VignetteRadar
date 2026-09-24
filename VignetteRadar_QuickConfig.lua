@@ -626,9 +626,10 @@ local function Build()
     Check(explore, "vignetteRadarSmartZoom", "Smart zoom while moving", 14, -3)
     Check(explore, "vignetteRadarUntangle", "Spread overlapping markers", 14, -31)
     Check(explore, "vignetteRadarBreadcrumbs", "Travel trail", 14, -59, nil, 91)
-    Choice(explore, "vignetteRadarTrailStyle", "dashes", "Dash", 142, -61, 42)
-    Choice(explore, "vignetteRadarTrailStyle", "ticks", "Tick", 187, -61, 42)
-    Choice(explore, "vignetteRadarTrailStyle", "dots", "Dots", 232, -61, 42)
+    local trailPickerButton = Button(explore, "Styles & flow", 142, -61, 132, function(self)
+        addon.ToggleVignetteRadarTrailPicker(self)
+    end)
+    trailPickerButton.optionKey = "vignetteRadarTrailStyle"
     Check(explore, "vignetteRadarApproachAlerts", "Alert near watched targets", 14, -87)
     Check(explore, "vignetteRadarJournalEnabled", "Save sighting history", 14, -115)
     Stepper(explore, "vignetteRadarApproachDistance", "Approach distance", -148,

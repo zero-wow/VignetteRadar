@@ -39,6 +39,15 @@ current = 8
 player.worldX = 220
 assert(#E.UpdateTrail(player, 10, current) == 2)
 assert(#E.UpdateTrail(player, 11, current) == 1, "new map must discard earlier trail points")
+db.vignetteRadarTrailLifetime = 300
+current, player.worldX = 200, 230
+assert(#E.UpdateTrail(player, 11, current) == 2,
+    "five-minute fade must retain a point older than the original three-minute limit")
+db.vignetteRadarTrailLifetime = 60
+current = 201
+assert(#E.UpdateTrail(player, 11, current) == 1,
+    "one-minute fade must prune expired trail points")
+db.vignetteRadarTrailLifetime = 180
 
 assert(E.AddPin(player, "Cave mouth"))
 local pin = E.GetPins(10)[1]
