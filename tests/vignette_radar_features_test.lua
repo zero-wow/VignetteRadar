@@ -71,8 +71,15 @@ assert(#alerts == 0, "leaving combat must not replay discoveries")
 IsInInstance = function() return true end
 assert(F.IsQuiet(), "instances should be quiet by default")
 db.vignetteRadarKeepVisibleCombat = true
-assert(F.IsVisuallyQuiet(), "instance fading must remain separate from combat visibility")
+assert(not F.IsVisuallyQuiet() and F.IsQuiet(),
+    "stay fully visible must suppress instance fading without unmuting alerts")
+InCombatLockdown = function() return true end
+assert(not F.IsVisuallyQuiet() and F.IsQuiet(),
+    "stay fully visible must suppress both combat and instance fading")
 db.vignetteRadarKeepVisibleCombat = false
+assert(F.IsVisuallyQuiet(), "turning stay fully visible off must restore fading in combat and instances")
+InCombatLockdown = function() return false end
+assert(F.IsVisuallyQuiet(), "instance fading must remain when out of combat and stay fully visible is off")
 IsInInstance = function() return false end
 
 local e = target("e", 105, "Echo")

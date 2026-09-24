@@ -497,7 +497,7 @@ local function Build()
     Choice(behavior, "vignetteRadarLastSeenSeconds", 10, "10 sec", 104, -57, 80)
     Choice(behavior, "vignetteRadarLastSeenSeconds", 15, "15 sec", 194, -57, 80)
     Check(behavior, "vignetteRadarQuietCombat", "Mute combat alerts", 14, -91)
-    Check(behavior, "vignetteRadarKeepVisibleCombat", "Stay visible in combat", 14, -124)
+    Check(behavior, "vignetteRadarKeepVisibleCombat", "Stay fully visible", 14, -124)
     Check(behavior, "vignetteRadarQuietInstances", "Fade + mute in instances", 14, -157)
     Button(behavior, "Clear ignored vignettes", 14, -200, 260, function()
         if addon.VignetteRadarFeatures and addon.VignetteRadarFeatures.ClearIgnored then

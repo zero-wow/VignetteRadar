@@ -131,8 +131,10 @@ end
 
 function API.IsVisuallyQuiet()
     local settings = Settings()
-    return (settings.vignetteRadarKeepVisibleCombat ~= true and InCombat())
-        or (settings.vignetteRadarQuietInstances ~= false and InInstance())
+    -- Retain the saved key for compatibility. The eye now overrides every
+    -- automatic visual fade; IsQuiet still controls alert muting separately.
+    if settings.vignetteRadarKeepVisibleCombat == true then return false end
+    return InCombat() or (settings.vignetteRadarQuietInstances ~= false and InInstance())
 end
 
 function API.IsWorldBoss(info)

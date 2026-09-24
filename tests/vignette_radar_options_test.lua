@@ -254,13 +254,13 @@ assert(layoutHelp["Current portrait radar with details below."]
 local behaviorFooter
 for _, object in ipairs(objects) do
     if object.parent == panel.pages.Behavior and object.kind == "FontString"
-        and object.text and object.text:find("alert muting are separate", 1, true) then
+        and object.text and object.text:find("overrides fading", 1, true) then
         behaviorFooter = object
     end
 end
-assert(behaviorFooter and behaviorFooter.text:find("Clear ignores", 1, true)
+assert(behaviorFooter and behaviorFooter.text:find("alerts can stay muted", 1, true)
     and 24 + #behaviorFooter.text * 7 <= 496,
-    "behavior help should explain quiet alerts and fit beside the clear-ignores action")
+    "behavior help should explain the visibility override and muted alerts within the footer bounds")
 assert(byKey["vignetteRadarAlertCategories.treasure"].checked == true,
     "saved numeric checked values should render as checked")
 

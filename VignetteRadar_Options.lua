@@ -245,7 +245,7 @@ local function BuildPanel()
     AddChoice(behavior, "vignetteRadarLastSeenSeconds", 10, "10 sec", 98, -178, 62)
     AddChoice(behavior, "vignetteRadarLastSeenSeconds", 15, "15 sec", 172, -178, 62)
     AddCheckbox(behavior, "vignetteRadarQuietCombat", "Mute alerts in combat", 18, -214, nil, 185)
-    AddCheckbox(behavior, "vignetteRadarKeepVisibleCombat", "Stay visible in combat", 18, -249, nil, 185, true)
+    AddCheckbox(behavior, "vignetteRadarKeepVisibleCombat", "Stay fully visible", 18, -249, nil, 185, true)
     AddCheckbox(behavior, "vignetteRadarQuietInstances", "Fade + mute in instances", 18, -284, nil, 185)
 
     AddLabel(behavior, "Marker size", 264, -122)
@@ -261,7 +261,7 @@ local function BuildPanel()
             Changed()
         end
     end)
-    AddFooter(behavior, "Combat visibility and alert muting are separate. Clear ignores.")
+    AddFooter(behavior, "Stay fully visible overrides fading; alerts can stay muted.")
 
     local quests = AddPage("Quests", 5)
     AddLabel(quests, "QUEST LOCATIONS", 24, -119)

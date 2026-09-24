@@ -2309,10 +2309,10 @@ local function EnsurePanel()
         if not GameTooltip then return end
         local enabled = Settings().vignetteRadarKeepVisibleCombat == true
         GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
-        GameTooltip:SetText(enabled and "Stay visible in combat: ON" or "Stay visible in combat: OFF", 1, 1, 1)
-        GameTooltip:AddLine(enabled and "Click to restore combat fading."
-            or "Click to keep the radar and launcher fully visible in combat.", .7, .8, .8, true)
-        GameTooltip:AddLine("Instance fading is a separate setting.", .55, .7, .68, true)
+        GameTooltip:SetText(enabled and "Stay fully visible: ON" or "Stay fully visible: OFF", 1, 1, 1)
+        GameTooltip:AddLine(enabled and "Click to allow automatic fading again."
+            or "Click to prevent fading in combat and instances.", .7, .8, .8, true)
+        GameTooltip:AddLine("Alert muting stays separate.", .55, .7, .68, true)
         GameTooltip:Show()
     end)
     panel.combatToggle:SetScript("OnLeave", function(self)

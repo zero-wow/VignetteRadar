@@ -396,9 +396,28 @@ assert(panel:GetAlpha() == 1 and launcher:GetAlpha() == 1 and #sounds == 0,
     "leaving combat must restore opacity without replaying suppressed detections")
 instance = true
 addon.VignetteRadarAPI.Refresh(true)
-assert(panel:GetAlpha() == 0.35, "instance quiet mode must fade the radar")
+assert(panel:GetAlpha() == 0.35 and launcher:GetAlpha() == 0.35,
+    "instance quiet mode must fade both surfaces")
+panel.combatToggle.scripts.OnClick(panel.combatToggle)
+assert(settings.vignetteRadarKeepVisibleCombat == true and panel:GetAlpha() == 1
+    and launcher:GetAlpha() == 1 and addon.VignetteRadarFeatures.IsQuiet() and #sounds == 0,
+    "stay fully visible must restore both surfaces inside an instance without unmuting alerts")
+combat = true
+addon.VignetteRadarAPI.Refresh(true)
+assert(panel:GetAlpha() == 1 and launcher:GetAlpha() == 1,
+    "stay fully visible must keep both surfaces opaque when combat starts inside an instance")
+combat = false
+addon.VignetteRadarAPI.Refresh(true)
+assert(panel:GetAlpha() == 1 and launcher:GetAlpha() == 1,
+    "leaving combat inside an instance must preserve stay fully visible")
+panel.combatToggle.scripts.OnClick(panel.combatToggle)
+assert(settings.vignetteRadarKeepVisibleCombat == false and panel:GetAlpha() == 0.35
+    and launcher:GetAlpha() == 0.35,
+    "turning stay fully visible off must restore instance fading on both surfaces")
 instance = false
 addon.VignetteRadarAPI.Refresh(true)
+assert(panel:GetAlpha() == 1 and launcher:GetAlpha() == 1,
+    "leaving the instance must restore normal opacity")
 local treasureBlip = panel.blipByKey.treasure
 treasureBlip.scripts.OnClick(treasureBlip, "RightButton")
 assert(not panel.blipByKey.treasure and next(settings.vignetteRadarIgnored) == nil,
