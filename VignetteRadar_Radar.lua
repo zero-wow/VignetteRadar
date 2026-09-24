@@ -1039,10 +1039,10 @@ local function UpdateQuestAreaTooltip()
     local owner = GameTooltip.GetOwner and GameTooltip:GetOwner()
     if owner and owner ~= blob and GameTooltip.IsShown and GameTooltip:IsShown() then return end
     local cursorX, cursorY = Call(GetCursorPosition)
-    local scale = UIParent and UIParent.GetEffectiveScale and SafeNumber(UIParent:GetEffectiveScale()) or 1
+    local field = panel.field
+    local scale = field.GetEffectiveScale and SafeNumber(field:GetEffectiveScale()) or 1
     if not (SafeNumber(cursorX) and SafeNumber(cursorY) and scale and scale > 0) then return end
     cursorX, cursorY = cursorX / scale, cursorY / scale
-    local field = panel.field
     local fieldLeft, fieldTop = SafeNumber(field:GetLeft()), SafeNumber(field:GetTop())
     local blobLeft, blobTop = SafeNumber(blob:GetLeft()), SafeNumber(blob:GetTop())
     local width, height = SafeNumber(blob:GetWidth()), SafeNumber(blob:GetHeight())
@@ -1404,6 +1404,16 @@ local function PanelScale(value)
     return math.max(0.8, math.min(value, maximum))
 end
 
+-- GetLeft/GetTop use the panel's own scale, while UIParent dimensions and
+-- saved anchors use UIParent coordinates.
+local function PanelPosition()
+    if not panel then return nil, nil end
+    local scale = panel:GetScale()
+    local left, top = SafeNumber(panel:GetLeft()), SafeNumber(panel:GetTop())
+    if not (SafeNumber(scale) and left and top) then return nil, nil end
+    return left * scale, top * scale
+end
+
 local function PlacePanel(left, top, scale)
     if not (UIParent and UIParent.GetWidth and UIParent.GetHeight) then return end
     local width, height = UIParent:GetWidth(), UIParent:GetHeight()
@@ -1428,7 +1438,7 @@ local function PlacePanel(left, top, scale)
         top = math.max(panel:GetHeight() * scale + 4, math.min(top, height - 4))
     end
     panel:ClearAllPoints()
-    panel:SetPoint("TOPLEFT", UIParent, "TOPLEFT", left, top - height)
+    panel:SetPoint("TOPLEFT", UIParent, "TOPLEFT", left / scale, (top - height) / scale)
 end
 
 local function ApplyPanelLayout(focused)
@@ -1438,7 +1448,7 @@ local function ApplyPanelLayout(focused)
     if panel.layout == name and panel.layoutFocused == focused and panel.squarePlot == square then return end
     local changed = panel.layout ~= name
     local layout = LAYOUTS[name]
-    local left, top = SafeNumber(panel:GetLeft()), SafeNumber(panel:GetTop())
+    local left, top = PanelPosition()
     panel.layout, panel.layoutFocused, panel.squarePlot = name, focused, square
     panel.fieldRadius = layout.field / 2 - 9
     panel.plotRadius = panel.fieldRadius - 15
@@ -1895,8 +1905,13 @@ local function PositionTrailPopup(anchor)
     if not (trailPopup and anchor) then return end
     trailPopup:ClearAllPoints()
     local screenWidth = UIParent and UIParent:GetWidth()
+    local parentScale = UIParent:GetEffectiveScale()
+    local function Edge(region, method)
+        local value = SafeNumber(region[method](region))
+        return value and value * region:GetEffectiveScale() / parentScale
+    end
     if not panel or anchor ~= panel.trailToggle then
-        local left, right = anchor:GetLeft(), anchor:GetRight()
+        local left, right = Edge(anchor, "GetLeft"), Edge(anchor, "GetRight")
         if screenWidth and right and screenWidth - right >= trailPopup:GetWidth() + 16 then
             trailPopup:SetPoint("TOPLEFT", anchor, "TOPRIGHT", 8, 0)
         elseif left and left >= trailPopup:GetWidth() + 16 then
@@ -1906,14 +1921,14 @@ local function PositionTrailPopup(anchor)
         end
         return
     end
-    local panelLeft, panelRight = panel:GetLeft(), panel:GetRight()
+    local panelLeft, panelRight = Edge(panel, "GetLeft"), Edge(panel, "GetRight")
     if screenWidth and panelRight and screenWidth - panelRight >= trailPopup:GetWidth() + 16 then
         trailPopup:SetPoint("BOTTOMLEFT", panel, "BOTTOMRIGHT", 8, 0)
     elseif panelLeft and panelLeft >= trailPopup:GetWidth() + 16 then
         trailPopup:SetPoint("BOTTOMRIGHT", panel, "BOTTOMLEFT", -8, 0)
     else
-        local buttonLeft, buttonRight = anchor:GetLeft(), anchor:GetRight()
-        local screenHeight, buttonTop = UIParent and UIParent:GetHeight(), anchor:GetTop()
+        local buttonLeft, buttonRight = Edge(anchor, "GetLeft"), Edge(anchor, "GetRight")
+        local screenHeight, buttonTop = UIParent:GetHeight(), Edge(anchor, "GetTop")
         local above = screenHeight and buttonTop and screenHeight - buttonTop >= trailPopup:GetHeight() + 16
         local alignRight = screenWidth and buttonLeft and buttonLeft + trailPopup:GetWidth() > screenWidth - 8
             and buttonRight ~= nil
@@ -2433,13 +2448,13 @@ end
 
 local function SavePosition()
     if not panel then return end
-    local left, top = panel:GetLeft(), panel:GetTop()
+    local left, top = PanelPosition()
     if SafeNumber(left) and SafeNumber(top) and UIParent and UIParent.GetHeight then
         local key = Settings().vignetteRadarCircleOnly and "vignetteRadarCirclePosition"
             or "vignetteRadarPosition"
         if Settings().vignetteRadarCircleOnly then
             PlacePanel(left, top, panel:GetScale())
-            left, top = panel:GetLeft(), panel:GetTop()
+            left, top = PanelPosition()
         end
         Settings()[key] = { x = left, y = top - UIParent:GetHeight() }
     end
@@ -2492,7 +2507,7 @@ local function AddResizeGrips()
             local x, y = GetCursorPosition()
             local factor = UIParent.GetEffectiveScale and UIParent:GetEffectiveScale() or 1
             if not (SafeNumber(x) and SafeNumber(y) and SafeNumber(factor) and factor > 0) then return end
-            local left, top = SafeNumber(panel:GetLeft()), SafeNumber(panel:GetTop())
+            local left, top = PanelPosition()
             if not (left and top) then return end
             self.resize = { x = x / factor, y = y / factor, left = left, top = top,
                 scale = panel:GetScale(), width = panel:GetWidth(), height = panel:GetHeight(), factor = factor }
@@ -3507,6 +3522,11 @@ local function EnsurePanel()
         if picker and type(picker.Hide) == "function" then pcall(picker.Hide) end
     end)
     ApplyPanelLayout(false)
+    -- A newly constructed hidden frame can have no geometry yet. Always
+    -- restore and clamp the saved anchor explicitly before its first Show().
+    local savedX = type(position) == "table" and SafeNumber(tonumber(position.x)) or 30
+    local savedY = type(position) == "table" and SafeNumber(tonumber(position.y)) or -520
+    PlacePanel(savedX, UIParent:GetHeight() + savedY, Settings().vignetteRadarScale or 1)
     RenderCardinals(0)
     UpdateTargetButton()
     return panel
@@ -3737,7 +3757,9 @@ function addon.SetVignetteRadarScale(scale)
         Settings().vignetteRadarScale = math.max(.8, math.min(1.8, scale))
         return true
     end
-    PlacePanel(panel:GetLeft(), panel:GetTop(), scale)
+    local left, top = PanelPosition()
+    if not (left and top) then return false end
+    PlacePanel(left, top, scale)
     Settings().vignetteRadarScale = panel:GetScale()
     SavePosition()
     return true
@@ -3819,8 +3841,9 @@ function addon.SetVignetteRadarCircleOnly(enabled)
         local position = enabled and settings.vignetteRadarCirclePosition or settings.vignetteRadarPosition
         local x = type(position) == "table" and SafeNumber(tonumber(position.x))
         local y = type(position) == "table" and SafeNumber(tonumber(position.y))
-        local left = x or panel:GetLeft()
-        local top = y and UIParent:GetHeight() + y or panel:GetTop()
+        local currentLeft, currentTop = PanelPosition()
+        local left = x or currentLeft
+        local top = y and UIParent:GetHeight() + y or currentTop
         if left and top then PlacePanel(left, top, panel:GetScale()); SavePosition() end
     end
     if enabled then
@@ -3871,6 +3894,13 @@ SlashCmdList.VIGNETTERADAR = function(message)
         return
     elseif message == "preview" then
         addon.ToggleVignetteRadarPreview()
+        return
+    elseif message == "recenter" then
+        addon.ResetVignetteRadarPositions()
+        Settings().vignetteRadarEnabled = true
+        preview = false
+        manualPanelState = true
+        RefreshRadar(true)
         return
     elseif message == "off" then
         addon.SetVignetteRadarEnabled(false)

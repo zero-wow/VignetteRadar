@@ -671,6 +671,11 @@ local function PositionAt(anchorFrame)
     end
     local screenWidth, screenHeight = UIParent:GetWidth(), UIParent:GetHeight()
     local left, right, top, bottom = source:GetLeft(), source:GetRight(), source:GetTop(), source:GetBottom()
+    local sourceScale = source:GetEffectiveScale() / UIParent:GetEffectiveScale()
+    if left then left = left * sourceScale end
+    if right then right = right * sourceScale end
+    if top then top = top * sourceScale end
+    if bottom then bottom = bottom * sourceScale end
     local rightSpace = right and screenWidth - right - 12 or 0
     local leftSpace = left and left - 12 or 0
     if rightSpace >= WIDTH + 8 then

@@ -249,8 +249,14 @@ local function Attach(anchor)
     panel:ClearAllPoints()
     local screenWidth = FrameValue(UIParent, "GetWidth")
     local screenHeight = FrameValue(UIParent, "GetHeight")
+    local anchorScale = (FrameValue(anchor, "GetEffectiveScale") or 1)
+        / (FrameValue(UIParent, "GetEffectiveScale") or 1)
     local left, right = FrameValue(anchor, "GetLeft"), FrameValue(anchor, "GetRight")
     local top, bottom = FrameValue(anchor, "GetTop"), FrameValue(anchor, "GetBottom")
+    if left then left = left * anchorScale end
+    if right then right = right * anchorScale end
+    if top then top = top * anchorScale end
+    if bottom then bottom = bottom * anchorScale end
     if anchor and screenWidth and right and screenWidth - right >= PANEL_W + 12 then
         panel:SetPoint("TOPLEFT", anchor, "TOPRIGHT", 8, 0)
     elseif anchor and left and left >= PANEL_W + 12 then
@@ -260,7 +266,8 @@ local function Attach(anchor)
     elseif anchor and top and screenHeight and screenHeight - top >= PANEL_H + 12 then
         panel:SetPoint("BOTTOM", anchor, "TOP", 0, 8)
     else
-        local anchorWidth = left and right and right - left or FrameValue(anchor, "GetWidth")
+        local anchorWidth = left and right and right - left
+            or ((FrameValue(anchor, "GetWidth") or 0) * anchorScale)
         -- A centered Squat panel can leave no side or vertical space. Move the
         -- whole panel only when it is the anchor, keeping the saved position intact.
         if anchor and anchorWidth and anchorWidth >= 100 and left and top and screenWidth and screenHeight
@@ -268,7 +275,8 @@ local function Attach(anchor)
             and type(anchor.ClearAllPoints) == "function" and type(anchor.SetPoint) == "function" then
             local shiftedLeft = math.max(8, screenWidth - PANEL_W - 12 - anchorWidth)
             anchor:ClearAllPoints()
-            anchor:SetPoint("TOPLEFT", UIParent, "TOPLEFT", shiftedLeft, top - screenHeight)
+            anchor:SetPoint("TOPLEFT", UIParent, "TOPLEFT",
+                shiftedLeft / anchorScale, (top - screenHeight) / anchorScale)
             panel:SetPoint("TOPLEFT", anchor, "TOPRIGHT", 8, 0)
         elseif anchor then
             panel:SetPoint("TOPLEFT", anchor, "TOPRIGHT", 8, 0)

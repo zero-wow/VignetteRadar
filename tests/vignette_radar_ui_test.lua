@@ -12,7 +12,10 @@ function methods:SetWidth(width) self.width = width end
 function methods:SetHeight(height) self.height = height end
 function methods:GetWidth() return self.width or 0 end
 function methods:GetHeight() return self.height or 0 end
-function methods:GetRight() return self.right or ((self:GetLeft() or 0) + self:GetWidth() * self:GetScale()) end
+function methods:GetRight()
+    if self.right then return self.right end
+    return (self:GetLeft() or 0) + self:GetWidth()
+end
 function methods:SetPoint(...) self.point = { ... }; self.points = self.points or {}; self.points[#self.points + 1] = self.point end
 function methods:ClearAllPoints() self.point, self.points = nil, {} end
 function methods:SetAllPoints(...) self.allPoints = { ... } end
@@ -81,7 +84,11 @@ function methods:GetAlpha() return self.alpha == nil and 1 or self.alpha end
 function methods:SetIgnoreParentAlpha(value) self.ignoreParentAlpha = value end
 function methods:SetScale(value) self.scale = value end
 function methods:GetScale() return self.scale or 1 end
-function methods:GetEffectiveScale() return 1 end
+function methods:GetEffectiveScale()
+    local parentScale = self.parent and self.parent.GetEffectiveScale
+        and self.parent:GetEffectiveScale() or 1
+    return parentScale * self:GetScale()
+end
 function methods:SetThickness(value) self.thickness = value end
 function methods:SetStartPoint(...)
     assert(select("#", ...) == 4, "line endpoints take anchor, frame, x, y")
@@ -118,10 +125,12 @@ function methods:GetLeft()
 end
 function methods:GetTop()
     if self.top then return self.top end
-    if self.name == "VignetteRadarPanel" and self.point then return UIParent:GetHeight() + self.point[5] end
+    if self.name == "VignetteRadarPanel" and self.point then
+        return UIParent:GetHeight() / self:GetScale() + self.point[5]
+    end
     return 380
 end
-function methods:GetBottom() return self.bottom or (self:GetTop() - self:GetHeight() * self:GetScale()) end
+function methods:GetBottom() return self.bottom or (self:GetTop() - self:GetHeight()) end
 function methods:CreateTexture(_, layer)
     local texture = setmetatable({ kind = "Texture", parent = self, layer = layer }, { __index = methods })
     objects[#objects + 1] = texture
@@ -955,12 +964,15 @@ for _, name in ipairs({ "squat", "compact", "classic" }) do
         cursorX, cursorY = cursorX + horizontal * 24, cursorY + vertical * 24
         grip.scripts.OnUpdate(grip)
         assert(panel:GetScale() > 1 and panel:GetScale() < 1.3, "outward edge dragging must grow the full panel")
-        if horizontal < 0 then near(panel:GetLeft() + panel.width * panel:GetScale(), right,
+        if horizontal < 0 then near((panel:GetLeft() + panel.width) * panel:GetScale(), right,
             name .. " " .. key .. " resize must hold the right edge") end
-        if horizontal > 0 then near(panel:GetLeft(), left, "right resize must hold the left edge") end
-        if vertical > 0 then near(panel:GetBottom(), bottom, "top resize must hold the bottom edge") end
-        if vertical < 0 then near(panel:GetTop(), top, "bottom resize must hold the top edge") end
-        local x, panelTop = panel:GetLeft(), panel:GetTop()
+        if horizontal > 0 then near(panel:GetLeft() * panel:GetScale(), left,
+            "right resize must hold the left edge") end
+        if vertical > 0 then near(panel:GetBottom() * panel:GetScale(), bottom,
+            "top resize must hold the bottom edge") end
+        if vertical < 0 then near(panel:GetTop() * panel:GetScale(), top,
+            "bottom resize must hold the top edge") end
+        local x, panelTop = panel:GetLeft() * panel:GetScale(), panel:GetTop() * panel:GetScale()
         assert(x >= 4 and x + panel.width * panel:GetScale() <= 796
             and panelTop <= 596 and panelTop - panel.height * panel:GetScale() >= 4,
             "resizing must keep all layout states inside an 800x600 screen")
@@ -976,7 +988,7 @@ cursorX, cursorY = 400, 300
 rightGrip.scripts.OnDragStart(rightGrip)
 cursorX = cursorX + 1000
 rightGrip.scripts.OnUpdate(rightGrip)
-assert(panel:GetScale() <= 1.8 and panel:GetLeft() + panel.width * panel:GetScale() <= 796,
+assert(panel:GetScale() <= 1.8 and (panel:GetLeft() + panel.width) * panel:GetScale() <= 796,
     "oversized drags must stop before the panel clips off screen")
 rightGrip.scripts.OnDragStop(rightGrip)
 local savedScale = settings.vignetteRadarScale
@@ -1001,7 +1013,7 @@ assert(panel:GetScale() <= (800 - 274) / panel.width,
 rightGrip.scripts.OnDragStop(rightGrip)
 panel.target.scripts.OnClick(panel.target, "LeftButton")
 assert(targetPanel:IsShown() and targetPanel.point[1] == "TOPLEFT"
-    and panel:GetLeft() + panel.width * panel:GetScale() + 8 + targetPanel.width <= 796,
+    and (panel:GetLeft() + panel.width) * panel:GetScale() + 8 + targetPanel.width <= 796,
     "the target picker must remain beside a scaled Squat panel with an outer screen gutter")
 addon.VignetteRadarTargetPicker.Hide()
 panel:SetScale(1)
@@ -2028,5 +2040,30 @@ end
 settings.vignetteRadarPOISource = "none"
 addon.VignetteRadarAPI.Refresh(true)
 assert(not panel.mapNotes[1]:IsShown(), "turning map data off must clear its dots")
+
+-- WoW reports a scaled frame's edges in that frame's own coordinate system.
+-- A saved circle-only position and Reset must keep the visible face on screen.
+UIParent:SetSize(3413.3335, 960)
+addon.SetVignetteRadarLayout("compact")
+addon.SetVignetteRadarCircleOnly(false)
+assert(addon.SetVignetteRadarScale(1.6433441638947))
+settings.vignetteRadarCirclePosition = { x = 1532.168579101563, y = -700 }
+addon.SetVignetteRadarCircleOnly(true)
+local function assertFaceVisible(message)
+    local scale = panel:GetScale()
+    local fieldLeft = panel:GetLeft() * scale + (panel.width - panel.field.width) * scale / 2
+    local fieldBottom = panel:GetBottom() * scale + panel.field.point[3] * scale
+    assert(fieldLeft >= 3.99 and fieldLeft + panel.field.width * scale <= UIParent:GetWidth() - 3.99
+        and fieldBottom >= 3.99 and fieldBottom + panel.field.height * scale <= UIParent:GetHeight() - 3.99,
+        ("%s (left %.2f, bottom %.2f, field %.2fx%.2f, scale %.2f)"):format(
+            message, fieldLeft, fieldBottom, panel.field.width, panel.field.height, scale))
+end
+assertFaceVisible("saved scaled circle-only position must keep the radar face visible")
+addon.ResetVignetteRadarPositions()
+assertFaceVisible("Reset must bring a scaled radar face fully onto the screen")
+SlashCmdList.VIGNETTERADAR("recenter")
+assert(panel:IsShown() and settings.vignetteRadarEnabled,
+    "recenter command must recover a hidden radar panel")
+assertFaceVisible("recenter command must keep the scaled radar face visible")
 
 io.write("vignette radar UI tests passed\n")

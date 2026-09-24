@@ -51,6 +51,7 @@ Copy the `VignetteRadar` folder to `_retail_/Interface/AddOns/`, then reload the
 
 - `/vr` toggles the full radar.
 - `/vr on`, `/vr off`, and `/vr preview` control visibility.
+- `/vr recenter` brings a hidden or off-screen radar back into view and resets its saved positions.
 - `/vr config` opens the addon settings.
 - `/vr explore` opens Explore tools; `/vr pin <name>` saves a pin at your current position.
 - `/vr layout` cycles styles; `/vr layout classic`, `/vr layout squat`, and `/vr layout compact` select one directly.
@@ -75,6 +76,6 @@ Preview samples support focus without changing favorites, ignores, or navigation
 
 ## Development validation
 
-Current development build: `0.1.0-dev.39` (base version `0.1.0`).
+Current development build: `0.1.0-dev.40` (base version `0.1.0`).
 
 Run each `tests/*_test.lua` with Lua from the addon root and check Lua files with `luac -p`. The tests cover migration, radar projection, filters, target actions, alert/last-seen state, navigation fallbacks, quiet modes, mouse-wheel/button zoom, world-map visibility guards, and UI layout bounds using mocked game APIs. Layout checks exercise repeated style changes, automatic Squat details, focused and unfocused states, edge and corner resizing, pop-outs, resized rings and markers, and an 800×600 canvas. Orientation checks cover quarter turns, fixed markers/cardinals, the player direction line, both radars, preview, unknown facing, and out-of-range focus. These checks do not replace in-game validation of rendering, navigation, or API availability.
