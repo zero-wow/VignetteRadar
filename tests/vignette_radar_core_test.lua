@@ -70,6 +70,12 @@ fresh.GetSettings()
 assert(defaults.vignetteRadarTrailStyle == "diamonds" and defaults.vignetteRadarTrailSpacing == 1.5
     and defaults.vignetteRadarTrailSpeed == 0 and defaults.vignetteRadarTrailLifetime == 300,
     "new trail styles and flow controls must persist")
+defaults.vignetteRadarTrailStyle = "hollow-squares"
+defaults.vignetteRadarTrailLifetime = 1
+fresh.GetSettings()
+assert(defaults.vignetteRadarTrailStyle == "hollow-squares"
+    and defaults.vignetteRadarTrailLifetime == 1,
+    "square styles and a one-second fade must remain saved")
 defaults.vignetteRadarTrailStyle = "unsupported"
 defaults.vignetteRadarTrailSpacing = -1
 defaults.vignetteRadarTrailSpeed = 99

@@ -20,10 +20,11 @@ local MAX_MAP_NOTES = 48
 local TRAIL_STYLES = addon.VignetteRadarTrailStyles
 local TRAIL_STYLE_BY_ID = addon.VignetteRadarTrailStyleByID
 local TRAIL_SPACINGS, TRAIL_SPEEDS, TRAIL_LIFETIMES =
-    { .75, 1, 1.25, 1.5, 2 }, { 0, .5, 1, 2 }, { 60, 180, 300 }
+    { .75, 1, 1.25, 1.5, 2 }, { 0, .5, 1, 2 }, { 1, 300 }
 local ACCENT = { 0.05, 0.82, 0.62 }
 local RED = { 1, 0.18, 0.14 }
 local CIRCLE_TEXTURE = "Interface\\CharacterFrame\\TempPortraitAlphaMask"
+local SQUARE_TEXTURE = "Interface\\Buttons\\WHITE8X8"
 local ROUNDED_SQUARE_TEXTURE = "Interface\\AddOns\\VignetteRadar\\Media\\radar-rounded-square.tga"
 local ROUNDED_BORDER_TEXTURE = "Interface\\AddOns\\VignetteRadar\\Media\\radar-rounded-border.tga"
 local QUEST_CLIP_INSET = 4
@@ -66,8 +67,9 @@ local function Settings()
 end
 
 local function DrawTrailGlyph(definition, primary, extras, frame, x, y, ux, uy, r, g, b, alpha, index)
-    if definition.dot then
-        local size = definition.alternating and (index % 2 == 0 and 3 or 6) or definition.dot
+    if definition.dot or definition.square then
+        local size = definition.alternating and (index % 2 == 0 and 3 or 6)
+            or definition.dot or definition.square
         primary:SetSize(size, size)
         primary:SetVertexColor(r, g, b, alpha)
         primary:ClearAllPoints()
@@ -1246,12 +1248,16 @@ local function RenderExploration(player, range)
                 local radiusSquared = x*x + y*y
                 if radiusSquared >= 49 and radiusSquared <= edge*edge then
                     trailDotCount = trailDotCount + 1
-                    if definition.dot then
+                    if definition.dot or definition.square then
                         local dot = panel.trailDots[trailDotCount]
                         if not dot then
                             dot = panel.trailLayer:CreateTexture(nil, "BACKGROUND")
-                            dot:SetTexture(CIRCLE_TEXTURE)
                             panel.trailDots[trailDotCount] = dot
+                        end
+                        local texture = definition.square and SQUARE_TEXTURE or CIRCLE_TEXTURE
+                        if dot._trailTexture ~= texture then
+                            dot:SetTexture(texture)
+                            dot._trailTexture = texture
                         end
                         DrawTrailGlyph(definition, dot, nil, panel.field, x, y,
                             dx / length, dy / length, r, g, b, alpha, trailDotCount)
@@ -1739,7 +1745,7 @@ local function UpdateTrailToggle()
                     glyphLine:SetEndPoint("CENTER", button,
                         x + segment[3] * scale, segment[4] * scale)
                     glyphLine:Show()
-                elseif part == 1 and definition.dot then
+                elseif part == 1 and (definition.dot or definition.square) then
                     local size = definition.alternating and index % 2 == 0 and 2 or 3.2
                     glyphLine:SetThickness(size)
                     glyphLine:SetStartPoint("CENTER", button, x - .1, 0)
@@ -1774,11 +1780,9 @@ RefreshTrailPopup = function()
     trailPopup.title:SetTextColor(ar, ag, ab, 1)
     trailPopup.rule:SetColorTexture(ar, ag, ab, .18)
     trailPopup.close.label:SetTextColor(ar, ag, ab, trailPopup.close._hovered and 1 or .7)
+    trailPopup.close.glow:SetVertexColor(ar, ag, ab, trailPopup.close._hovered and .18 or 0)
     trailPopup.scrollTrack:SetColorTexture(ar, ag, ab, .13)
     trailPopup.scrollThumb:SetColorTexture(ar, ag, ab, .8)
-    for _, button in ipairs(trailPopup.scrollButtons) do
-        button.label:SetTextColor(ar, ag, ab, .8)
-    end
     for _, row in ipairs(trailPopup.rows) do
         local selected = row.style == Settings().vignetteRadarTrailStyle
         row:SetBackdropColor(ar, ag, ab, selected and .13 or row._hovered and .07 or .025)
@@ -1788,7 +1792,7 @@ RefreshTrailPopup = function()
             selected and ab or .88, 1)
         row.track:SetColorTexture(ar, ag, ab, .12)
         for _, mark in ipairs(row.marks) do
-            if row.definition.dot then mark:SetVertexColor(ar, ag, ab, .9)
+            if row.definition.dot or row.definition.square then mark:SetVertexColor(ar, ag, ab, .9)
             else mark:SetColorTexture(ar, ag, ab, .9) end
         end
         for _, mark in ipairs(row.extraMarks) do mark:SetColorTexture(ar, ag, ab, .9) end
@@ -1796,14 +1800,32 @@ RefreshTrailPopup = function()
     for _, control in ipairs(trailPopup.controls) do
         control.label:SetTextColor(.72, .82, .81, 1)
         local value = Settings()[control.key]
-        control.value:SetText(control.format(value))
+        if not control.value._editing then control.value:SetText(control.format(value)) end
         control.value:SetTextColor(ar, ag, ab, 1)
+        if control.key == "vignetteRadarTrailLifetime" then
+            control.value:SetBackdropColor(ar, ag, ab, .055)
+            control.value:SetBackdropBorderColor(ar, ag, ab, .3)
+        end
         for _, button in ipairs({ control.minus, control.plus }) do
-            button:SetBackdropColor(ar, ag, ab, button._hovered and .15 or .055)
-            button:SetBackdropBorderColor(ar, ag, ab, button._hovered and .5 or .2)
-            button.label:SetTextColor(ar, ag, ab, 1)
+            local nextValue
+            if control.key == "vignetteRadarTrailLifetime" then
+                nextValue = value + button.direction
+                if nextValue < 1 or nextValue > 300 then nextValue = nil end
+            else
+                for slot, candidate in ipairs(control.values) do
+                    if candidate == value then nextValue = control.values[slot + button.direction]; break end
+                end
+            end
+            button:SetEnabled(nextValue ~= nil)
+            local opacity = not nextValue and .3 or button._hovered and 1 or .78
+            button.glow:SetVertexColor(ar, ag, ab, nextValue and button._hovered and .2 or 0)
+            for _, stroke in ipairs(button.strokes) do
+                stroke:SetColorTexture(button._hovered and ar or .69,
+                    button._hovered and ag or .77, button._hovered and ab or .78, opacity)
+            end
         end
     end
+    trailPopup:DrawPreviews()
 end
 
 local function PositionTrailPopup(anchor)
@@ -1863,6 +1885,10 @@ local function EnsureTrailPopup()
     trailPopup.close.label = Text(trailPopup.close, 15, "×")
     trailPopup.close.label:SetAllPoints()
     trailPopup.close.label:SetJustifyH("CENTER")
+    trailPopup.close.glow = trailPopup.close:CreateTexture(nil, "BACKGROUND")
+    trailPopup.close.glow:SetSize(18, 18)
+    trailPopup.close.glow:SetPoint("CENTER")
+    trailPopup.close.glow:SetTexture(CIRCLE_TEXTURE)
     trailPopup.close:SetScript("OnClick", HideTrailPopup)
     trailPopup.close:SetScript("OnEnter", function(self)
         self._hovered = true
@@ -1884,7 +1910,7 @@ local function EnsureTrailPopup()
     trailPopup.scrollTrack:SetSize(3, 99)
     trailPopup.scrollTrack:SetPoint("TOPLEFT", trailPopup, "TOPLEFT", 228, -52)
     trailPopup.scrollThumb = trailPopup:CreateTexture(nil, "OVERLAY")
-    trailPopup.scrollThumb:SetSize(3, 49)
+    trailPopup.scrollThumb:SetSize(3, math.max(24, math.floor(99 * 5 / #TRAIL_STYLES + .5)))
     trailPopup.rows = {}
     for index, definition in ipairs(TRAIL_STYLES) do
         local row = CreateFrame("Button", nil, trailPopup.content, "BackdropTemplate")
@@ -1903,12 +1929,13 @@ local function EnsureTrailPopup()
         row.track:SetSize(79, 1)
         row.track:SetPoint("RIGHT", -9, 0)
         row.marks, row.extraMarks, row.extraByMark = {}, {}, {}
-        for markIndex = 1, 4 do
+        -- The shortest style at 75% spacing needs nine marks in this lane.
+        for markIndex = 1, 9 do
             local mark
-            if definition.dot then
+            if definition.dot or definition.square then
                 mark = row:CreateTexture(nil, "OVERLAY")
                 mark:SetSize(4, 4)
-                mark:SetTexture(CIRCLE_TEXTURE)
+                mark:SetTexture(definition.square and SQUARE_TEXTURE or CIRCLE_TEXTURE)
             else
                 mark = row:CreateLine(nil, "OVERLAY")
                 row.extraByMark[markIndex] = {}
@@ -1939,27 +1966,39 @@ local function EnsureTrailPopup()
         trailPopup.scrollIndex = math.max(0, math.min(maxIndex, trailPopup.scrollIndex + direction))
         trailPopup.scroll:SetVerticalScroll(trailPopup.scrollIndex * 27)
         trailPopup.scrollThumb:ClearAllPoints()
+        local travel = trailPopup.scrollTrack:GetHeight() - trailPopup.scrollThumb:GetHeight()
         trailPopup.scrollThumb:SetPoint("TOPLEFT", trailPopup.scrollTrack, "TOPLEFT", 0,
-            -trailPopup.scrollIndex * 10)
+            maxIndex > 0 and -travel * trailPopup.scrollIndex / maxIndex or 0)
         trailPopup:DrawPreviews()
     end
     trailPopup.ScrollStyles = ScrollStyles
     trailPopup.scroll:SetScript("OnMouseWheel", function(_, delta)
         ScrollStyles(delta > 0 and -1 or 1)
     end)
-    trailPopup.scrollButtons = {}
-    for _, control in ipairs({
-        { glyph="▲", y=-34, direction=-1 }, { glyph="▼", y=-153, direction=1 },
-    }) do
-        local button = CreateFrame("Button", nil, trailPopup)
-        button:SetSize(16, 16)
-        button:SetPoint("TOPLEFT", trailPopup, "TOPLEFT", 221, control.y)
-        button.label = Text(button, 10, control.glyph)
-        button.label:SetAllPoints()
-        button.label:SetJustifyH("CENTER")
-        button:SetScript("OnClick", function() ScrollStyles(control.direction) end)
-        trailPopup.scrollButtons[#trailPopup.scrollButtons + 1] = button
+    trailPopup.scrollGrip = CreateFrame("Button", nil, trailPopup)
+    trailPopup.scrollGrip:SetSize(16, 99)
+    trailPopup.scrollGrip:SetPoint("TOPLEFT", trailPopup, "TOPLEFT", 221, -52)
+    trailPopup.scrollGrip:RegisterForDrag("LeftButton")
+    local function ScrollAtCursor()
+        if type(GetCursorPosition) ~= "function" then return end
+        local _, cursorY = GetCursorPosition()
+        local top = trailPopup.scrollTrack:GetTop()
+        if not (cursorY and top) then return end
+        local scale = UIParent:GetEffectiveScale()
+        local travel = trailPopup.scrollTrack:GetHeight() - trailPopup.scrollThumb:GetHeight()
+        local ratio = (top - cursorY / scale - trailPopup.scrollThumb:GetHeight() / 2) / travel
+        local index = math.floor(math.max(0, math.min(1, ratio)) * (#TRAIL_STYLES - 5) + .5)
+        ScrollStyles(index - trailPopup.scrollIndex)
     end
+    trailPopup.scrollGrip:SetScript("OnMouseDown", ScrollAtCursor)
+    trailPopup.scrollGrip:SetScript("OnDragStart", function(self)
+        self._dragging = true
+        ScrollAtCursor()
+    end)
+    trailPopup.scrollGrip:SetScript("OnDragStop", function(self) self._dragging = false end)
+    trailPopup.scrollGrip:SetScript("OnUpdate", function(self)
+        if self._dragging then ScrollAtCursor() end
+    end)
     trailPopup.rule2 = trailPopup:CreateTexture(nil, "ARTWORK")
     trailPopup.rule2:SetPoint("TOPLEFT", trailPopup, "TOPLEFT", 9, -177)
     trailPopup.rule2:SetPoint("TOPRIGHT", trailPopup, "TOPRIGHT", -9, -177)
@@ -1971,33 +2010,80 @@ local function EnsureTrailPopup()
             format=function(value) return math.floor(value * 100 + .5) .. "%" end },
         { key="vignetteRadarTrailSpeed", label="Flow", values=TRAIL_SPEEDS,
             format=function(value) return value == 0 and "Still" or value .. "×" end },
-        { key="vignetteRadarTrailLifetime", label="Fade", values=TRAIL_LIFETIMES,
-            format=function(value) return string.format("%d min", value / 60) end },
+        { key="vignetteRadarTrailLifetime", label="Fade (seconds)",
+            format=function(value) return tostring(value) end },
     }
     for index, definition in ipairs(controlDefinitions) do
         local y = -186 - (index - 1) * 32
         local control = { key=definition.key, values=definition.values, format=definition.format }
         control.label = Text(trailPopup, 10, definition.label)
         control.label:SetPoint("TOPLEFT", trailPopup, "TOPLEFT", 12, y - 3)
-        control.value = Text(trailPopup, 10, "")
-        control.value:SetSize(50, 20)
+        if control.key == "vignetteRadarTrailLifetime" then
+            control.value = CreateFrame("EditBox", nil, trailPopup, "BackdropTemplate")
+            Surface(control.value)
+            local font = EllesmereUI and (EllesmereUI.EXPRESSWAY or EllesmereUI._font)
+                or STANDARD_TEXT_FONT or "Fonts\\FRIZQT__.TTF"
+            control.value:SetFont(font, 10, "")
+            control.value:SetAutoFocus(false)
+            control.value:SetMaxLetters(3)
+            control.value:SetTextInsets(2, 2, 0, 0)
+            control.value:SetScript("OnEditFocusGained", function(self) self._editing = true end)
+            local function CommitFade(self)
+                self._editing = false
+                local raw = self:GetText() or ""
+                local seconds = raw:match("^%s*(%d+)%s*$")
+                if seconds then addon.SetVignetteRadarTrailOption(control.key, tonumber(seconds)) end
+                RefreshTrailPopup()
+            end
+            control.value:SetScript("OnEnterPressed", function(self)
+                CommitFade(self)
+                self:ClearFocus()
+            end)
+            control.value:SetScript("OnEditFocusLost", CommitFade)
+            control.value:SetScript("OnEscapePressed", function(self)
+                self:SetText(tostring(Settings()[control.key]))
+                self._editing = false
+                self:ClearFocus()
+            end)
+        else
+            control.value = Text(trailPopup, 10, "")
+        end
+        control.value:SetSize(46, 20)
         control.value:SetPoint("TOPLEFT", trailPopup, "TOPLEFT", 156, y)
         control.value:SetJustifyH("CENTER")
         for _, direction in ipairs({ -1, 1 }) do
-            local button = CreateFrame("Button", nil, trailPopup, "BackdropTemplate")
+            local button = CreateFrame("Button", nil, trailPopup)
             button:SetSize(20, 20)
             button:SetPoint("TOPLEFT", trailPopup, "TOPLEFT", direction < 0 and 132 or 208, y)
-            Surface(button)
-            button.label = Text(button, 14, direction < 0 and "−" or "+")
-            button.label:SetAllPoints()
-            button.label:SetJustifyH("CENTER")
+            button.direction = direction
+            button.glow = button:CreateTexture(nil, "BACKGROUND")
+            button.glow:SetSize(18, 18)
+            button.glow:SetPoint("CENTER")
+            button.glow:SetTexture(CIRCLE_TEXTURE)
+            button.strokes = {}
+            local horizontal = button:CreateLine(nil, "OVERLAY")
+            horizontal:SetThickness(2)
+            horizontal:SetStartPoint("CENTER", button, -5, 0)
+            horizontal:SetEndPoint("CENTER", button, 5, 0)
+            button.strokes[1] = horizontal
+            if direction > 0 then
+                local vertical = button:CreateLine(nil, "OVERLAY")
+                vertical:SetThickness(2)
+                vertical:SetStartPoint("CENTER", button, 0, -5)
+                vertical:SetEndPoint("CENTER", button, 0, 5)
+                button.strokes[2] = vertical
+            end
             button:SetScript("OnClick", function()
                 local current = Settings()[control.key]
-                for slot, value in ipairs(control.values) do
-                    if value == current then
-                        local nextValue = control.values[slot + direction]
-                        if nextValue then addon.SetVignetteRadarTrailOption(control.key, nextValue) end
-                        break
+                if control.key == "vignetteRadarTrailLifetime" then
+                    addon.SetVignetteRadarTrailOption(control.key, current + direction)
+                else
+                    for slot, value in ipairs(control.values) do
+                        if value == current then
+                            local nextValue = control.values[slot + direction]
+                            if nextValue then addon.SetVignetteRadarTrailOption(control.key, nextValue) end
+                            break
+                        end
                     end
                 end
             end)
@@ -2009,23 +2095,40 @@ local function EnsureTrailPopup()
     end
     trailPopup:SetScript("OnUpdate", function(self, elapsed)
         if not self:IsShown() then return end
+        local speed = Settings().vignetteRadarTrailSpeed or 1
+        if speed == 0 then self._elapsed = 0; return end
         self._elapsed = (self._elapsed or 0) + elapsed
         if self._elapsed < .04 then return end
-        local speed = Settings().vignetteRadarTrailSpeed or 1
         self._phase = ((self._phase or 0) + math.min(self._elapsed, .1) * 42
-            * (speed == 0 and 1 or speed)) % 56
+            * speed)
         self._elapsed = 0
         self:DrawPreviews()
     end)
     function trailPopup:DrawPreviews()
         local r, g, b = ACCENT[1], ACCENT[2], ACCENT[3]
         if addon.VignetteRadarStyle then r, g, b = addon.VignetteRadarStyle.Color("accent") end
+        local settings = Settings()
+        local spacing = settings.vignetteRadarTrailSpacing or 1
+        local lifetime = settings.vignetteRadarTrailLifetime or 180
+        local phase = self._phase or 0
         for rowIndex = self.scrollIndex + 1, self.scrollIndex + 5 do
             local row = self.rows[rowIndex]
+            local gap = row.definition.spacing * spacing
+            local offset = phase % gap
+            local cycle = math.floor(phase / gap)
             for index, mark in ipairs(row.marks) do
-                local x = 21 + ((index - 1) * 14 + (self._phase or 0)) % 56
-                DrawTrailGlyph(row.definition, mark, row.extraByMark[index], row, x, 0, 1, 0,
-                    r, g, b, .9, index)
+                local x = 21 + (index - 1) * gap + offset
+                if x <= 77 then
+                    -- Treat the left edge as three minutes old so Fade has a
+                    -- visible effect without waiting for real trail history.
+                    local age = (77 - x) * 180 / 56
+                    local alpha = .12 + .78 * math.max(0, 1 - age / lifetime)
+                    DrawTrailGlyph(row.definition, mark, row.extraByMark[index], row, x, 0, 1, 0,
+                        r, g, b, alpha, index - cycle)
+                else
+                    mark:Hide()
+                    for _, extra in ipairs(row.extraByMark[index] or {}) do extra:Hide() end
+                end
             end
         end
     end
@@ -3278,6 +3381,19 @@ local function EnsurePanel()
     panel:SetScript("OnUpdate", function(self, elapsed)
         self._renderElapsed = (self._renderElapsed or 0) + elapsed
         self._scanElapsed = (self._scanElapsed or 0) + elapsed
+        local settings = Settings()
+        if not preview and settings.vignetteRadarEnabled == true
+            and settings.vignetteRadarBreadcrumbs == true
+            and settings.vignetteRadarTrailLifetime <= 5 and activeMapID
+            and addon.VignetteRadarExploration then
+            self._shortTrailElapsed = (self._shortTrailElapsed or 0) + elapsed
+            if self._shortTrailElapsed >= .25 then
+                self._shortTrailElapsed = 0
+                addon.VignetteRadarExploration.UpdateTrail(PlayerSnapshot(activeMapID), activeMapID, Now())
+            end
+        else
+            self._shortTrailElapsed = 0
+        end
         self._questTooltipElapsed = (self._questTooltipElapsed or 0) + elapsed
         if self._questTooltipElapsed >= .1 then
             self._questTooltipElapsed = 0
@@ -3403,6 +3519,7 @@ RefreshRadar = function(rescan)
     if exploration and settings.vignetteRadarBreadcrumbs then trail, trailMap = exploration.GetTrail() end
     local hasExploration = exploration and mapID and
         (#exploration.GetPins(mapID) > 0 or #exploration.GetRoute(mapID) > 0
+            or (settings.vignetteRadarBreadcrumbs and settings.vignetteRadarTrailLifetime <= 5)
             or (trailMap == mapID and #trail > 1))
     if addon.VignetteRadarQuickConfig and addon.VignetteRadarQuickConfig.Refresh then
         addon.VignetteRadarQuickConfig.Refresh()
@@ -3573,9 +3690,12 @@ function addon.SetVignetteRadarTrailOption(key, value)
         or key == "vignetteRadarTrailSpeed" and TRAIL_SPEEDS
         or key == "vignetteRadarTrailLifetime" and TRAIL_LIFETIMES
     if not allowed then return false end
-    local valid = false
-    for _, candidate in ipairs(allowed) do
-        if candidate == value then valid = true; break end
+    local valid = key == "vignetteRadarTrailLifetime" and type(value) == "number"
+        and value == math.floor(value) and value >= allowed[1] and value <= allowed[2]
+    if not valid and key ~= "vignetteRadarTrailLifetime" then
+        for _, candidate in ipairs(allowed) do
+            if candidate == value then valid = true; break end
+        end
     end
     if not valid then return false end
     Settings()[key] = value

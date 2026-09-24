@@ -1598,8 +1598,11 @@ assert(trailPopup:IsShown() and trailPopup.width == 244 and trailPopup.height ==
     and trailPopup.clamped and settings.vignetteRadarTrailStyle == "dashes"
     and trailPopup.point[1] == "BOTTOMLEFT" and trailPopup.point[2] == panel
     and trailPopup.point[3] == "BOTTOMRIGHT" and trailPopup.point[4] == 8
-    and #trailPopup.rows == 10 and UISpecialFrames[#UISpecialFrames] == trailPopup.name,
-    "right-click must open a compact, screen-clamped ten-style picker without changing the trail")
+    and #trailPopup.rows == 12 and UISpecialFrames[#UISpecialFrames] == trailPopup.name,
+    "right-click must open a compact, screen-clamped style picker without changing the trail")
+assert(trailPopup.rows[4].style == "squares" and trailPopup.rows[5].style == "hollow-squares"
+    and trailPopup.rows[4].marks[1].texture == "Interface\\Buttons\\WHITE8X8",
+    "both square styles must be visible without scrolling the default picker")
 local previewRed, previewGreen, previewBlue = addon.VignetteRadarStyle.Color("accent")
 assert(trailPopup.title.textColor[1] == previewRed and trailPopup.title.textColor[2] == previewGreen
     and trailPopup.title.textColor[3] == previewBlue
@@ -1609,7 +1612,7 @@ for _, row in ipairs(trailPopup.rows) do
     assert(row.width == 202 and row.height == 24 and row.parent == trailPopup.content
         and row.point[4] >= 0 and row.point[4] + row.width <= trailPopup.scroll.width
         and -row.point[5] + row.height <= trailPopup.content.height
-        and #row.marks == 4,
+        and #row.marks == 9,
         "every scrollable choice needs a bounded animated example beside its label")
 end
 local previewStart = trailPopup.rows[1].marks[1].startPoint[3]
@@ -1645,36 +1648,87 @@ assert(settings.vignetteRadarTrailStyle == "dots" and panel.trailDots[1]
 panel.trailToggle.scripts.OnClick(panel.trailToggle, "RightButton")
 assert(#trailPopup.controls == 3 and trailPopup.controls[1].value.text == "100%"
     and trailPopup.controls[2].value.text == "1×"
-    and trailPopup.controls[3].value.text == "3 min",
+    and trailPopup.controls[3].value.text == "180"
+    and trailPopup.controls[3].value.kind == "EditBox"
+    and not trailPopup.scrollButtons and trailPopup.scrollGrip,
     "spacing, flow speed, and fade time must be visible in the picker")
 for _, control in ipairs(trailPopup.controls) do
     for _, button in ipairs({ control.minus, control.plus }) do
         assert(button.point[4] >= 8 and button.point[4] + button.width <= trailPopup.width - 8
-            and -button.point[5] + button.height <= trailPopup.height - 8,
-            "trail stepper buttons must stay inside the popup gutter")
+            and -button.point[5] + button.height <= trailPopup.height - 8
+            and button.backdrop == nil and button.glow and #button.strokes >= 1,
+            "trail steppers must use bounded, borderless radar glyphs")
     end
 end
+local previewDots = trailPopup.rows[3]
+local oldGap = previewDots.marks[2].point[4] - previewDots.marks[1].point[4]
+local oldFade = previewDots.marks[1].vertexColor[4]
 trailPopup.controls[1].plus.scripts.OnClick(trailPopup.controls[1].plus)
+assert(previewDots.marks[2].point[4] - previewDots.marks[1].point[4] > oldGap,
+    "spacing must update the animated style examples immediately")
 trailPopup.controls[2].minus.scripts.OnClick(trailPopup.controls[2].minus)
-trailPopup.controls[3].plus.scripts.OnClick(trailPopup.controls[3].plus)
+local halfSpeedPhase = trailPopup._phase
+trailPopup.scripts.OnUpdate(trailPopup, .06)
+assert(trailPopup._phase > halfSpeedPhase and trailPopup._phase - halfSpeedPhase < 2,
+    "preview flow must follow the selected half-speed setting")
+trailPopup.controls[2].minus.scripts.OnClick(trailPopup.controls[2].minus)
+local stillPhase = trailPopup._phase
+trailPopup.scripts.OnUpdate(trailPopup, .2)
+assert(trailPopup._phase == stillPhase and trailPopup.controls[2].value.text == "Still",
+    "Still flow must freeze the preview marks")
+trailPopup.controls[2].plus.scripts.OnClick(trailPopup.controls[2].plus)
+local fadeField = trailPopup.controls[3].value
+fadeField.scripts.OnEditFocusGained(fadeField)
+fadeField:SetText("300")
+fadeField.scripts.OnEnterPressed(fadeField)
+assert(previewDots.marks[1].vertexColor[4] > oldFade,
+    "a longer fade must brighten older marks in every preview")
+local longFade = previewDots.marks[1].vertexColor[4]
 assert(settings.vignetteRadarTrailSpacing == 1.25 and settings.vignetteRadarTrailSpeed == .5
     and settings.vignetteRadarTrailLifetime == 300
     and trailPopup.controls[1].value.text == "125%"
     and trailPopup.controls[2].value.text == "0.5×"
-    and trailPopup.controls[3].value.text == "5 min"
+    and fadeField.text == "300"
     and not addon.SetVignetteRadarTrailOption("vignetteRadarTrailSpeed", 99),
     "picker steppers must persist valid choices and reject invalid values")
+fadeField.scripts.OnEditFocusGained(fadeField)
+fadeField:SetText("1")
+fadeField.scripts.OnEnterPressed(fadeField)
+assert(settings.vignetteRadarTrailLifetime == 1 and fadeField.text == "1"
+    and not trailPopup.controls[3].minus.enabled
+    and previewDots.marks[1].vertexColor[4] < longFade,
+    "fade duration must accept one second and change the previews")
+trailPopup.controls[3].plus.scripts.OnClick(trailPopup.controls[3].plus)
+assert(settings.vignetteRadarTrailLifetime == 2 and fadeField.text == "2",
+    "the skinned fade stepper must advance one second at a time")
+fadeField.scripts.OnEditFocusGained(fadeField)
+fadeField:SetText("0")
+fadeField.scripts.OnEnterPressed(fadeField)
+assert(settings.vignetteRadarTrailLifetime == 2 and fadeField.text == "2",
+    "an invalid fade entry must restore the saved value")
+fadeField.scripts.OnEditFocusGained(fadeField)
+fadeField:SetText("300")
+fadeField.scripts.OnEnterPressed(fadeField)
 for index = 1, 5 do trailPopup.scroll.scripts.OnMouseWheel(trailPopup.scroll, -1) end
 assert(trailPopup.scrollIndex == 5 and trailPopup.scroll.verticalScroll == 135
-    and trailPopup.scrollThumb.point[5] == -50,
-    "the ten style rows must scroll five at a time with a visible scrollbar")
-local diamondPreview = trailPopup.rows[8].marks[1].startPoint[3]
+    and trailPopup.scrollThumb.point[5] < -40,
+    "the style rows must scroll with a visible scrollbar")
+local previousCursor = GetCursorPosition
+trailPopup.scrollTrack.top = 300
+GetCursorPosition = function() return 0, 300 - trailPopup.scrollTrack.height
+    + trailPopup.scrollThumb.height / 2 end
+trailPopup.scrollGrip.scripts.OnMouseDown(trailPopup.scrollGrip)
+GetCursorPosition = previousCursor
+assert(trailPopup.scrollIndex == 7 and trailPopup.scrollThumb.point[5]
+    == -(trailPopup.scrollTrack.height - trailPopup.scrollThumb.height),
+    "the arrow-free scrollbar must remain draggable")
+local diamondPreview = trailPopup.rows[10].marks[1].startPoint[3]
 trailPopup.scripts.OnUpdate(trailPopup, .06)
-assert(trailPopup.rows[8].marks[1].startPoint[3] ~= diamondPreview,
+assert(trailPopup.rows[10].marks[1].startPoint[3] ~= diamondPreview,
     "scrolled styles must animate their examples (shown=" .. tostring(trailPopup:IsShown())
         .. ", before=" .. tostring(diamondPreview) .. ", after="
-        .. tostring(trailPopup.rows[8].marks[1].startPoint[3]) .. ")")
-trailPopup.rows[8].scripts.OnClick(trailPopup.rows[8])
+        .. tostring(trailPopup.rows[10].marks[1].startPoint[3]) .. ")")
+trailPopup.rows[10].scripts.OnClick(trailPopup.rows[10])
 assert(settings.vignetteRadarTrailStyle == "diamonds" and panel.trailExtraMarks[1]:IsShown()
     and #panel.trailMarks <= 64 and panel.trailToggle.trailExtras[1][1]:IsShown(),
     "multi-line glyphs must share the capped trail mark pool")
@@ -1682,10 +1736,17 @@ addon.VignetteRadarLegend.Refresh()
 assert(legendPanel.guides.trail.label.text == "Trail: Diamonds"
     and legendPanel.guides.trail.extraMarks[1][1]:IsShown(),
     "the legend must name and depict the newly selected trail style")
-for _, styleID in ipairs({ "long", "slashes", "chevrons", "crosses", "beads", "pulses" }) do
+for _, styleID in ipairs({ "long", "slashes", "chevrons", "crosses", "beads", "pulses",
+    "squares", "hollow-squares" }) do
     assert(addon.SetVignetteRadarTrailStyle(styleID) and settings.vignetteRadarTrailStyle == styleID,
         "every new style must render and persist")
 end
+addon.SetVignetteRadarTrailStyle("squares")
+assert(panel.trailDots[1]:IsShown() and panel.trailDots[1].texture == "Interface\\Buttons\\WHITE8X8",
+    "filled squares must render as actual square trail marks")
+addon.VignetteRadarLegend.Refresh()
+assert(legendPanel.guides.trail.dots[1].texture == "Interface\\Buttons\\WHITE8X8",
+    "the legend must show the selected square mark")
 assert(not addon.SetVignetteRadarTrailStyle("invalid"), "unknown trail styles must be rejected")
 addon.SetVignetteRadarTrailStyle("dashes")
 addon.SetVignetteRadarTrailOption("vignetteRadarTrailSpeed", 0)

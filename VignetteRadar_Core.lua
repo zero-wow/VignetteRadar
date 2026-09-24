@@ -19,6 +19,9 @@ local TRAIL_STYLES = {
     { id="dashes", label="Dashes", spacing=12, segments={{-3.5,0,3.5,0,2.5}} },
     { id="ticks", label="Ticks", spacing=14, segments={{0,-3.5,0,3.5,2}} },
     { id="dots", label="Dots", spacing=9, dot=5 },
+    { id="squares", label="Squares", spacing=12, square=5 },
+    { id="hollow-squares", label="Hollow squares", spacing=15,
+        segments={{-3,-3,3,-3,1.5},{3,-3,3,3,1.5},{3,3,-3,3,1.5},{-3,3,-3,-3,1.5}} },
     { id="long", label="Long dashes", spacing=17, segments={{-5.5,0,5.5,0,2}} },
     { id="slashes", label="Slashes", spacing=13, segments={{-3,-3,3,3,2}} },
     { id="chevrons", label="Chevrons", spacing=15,
@@ -37,7 +40,6 @@ addon.VignetteRadarTrailStyleByID = TRAIL_STYLE_KEYS
 local TRAIL_SETTING_VALUES = {
     vignetteRadarTrailSpacing = { .75, 1, 1.25, 1.5, 2 },
     vignetteRadarTrailSpeed = { 0, .5, 1, 2 },
-    vignetteRadarTrailLifetime = { 60, 180, 300 },
 }
 local function TrailSetting(db, key, default)
     for _, value in ipairs(TRAIL_SETTING_VALUES[key]) do
@@ -152,7 +154,11 @@ function addon.GetSettings()
     if not TRAIL_STYLE_KEYS[db.vignetteRadarTrailStyle] then db.vignetteRadarTrailStyle = "dashes" end
     TrailSetting(db, "vignetteRadarTrailSpacing", 1)
     TrailSetting(db, "vignetteRadarTrailSpeed", 1)
-    TrailSetting(db, "vignetteRadarTrailLifetime", 180)
+    if type(db.vignetteRadarTrailLifetime) ~= "number"
+        or db.vignetteRadarTrailLifetime ~= math.floor(db.vignetteRadarTrailLifetime)
+        or db.vignetteRadarTrailLifetime < 1 or db.vignetteRadarTrailLifetime > 300 then
+        db.vignetteRadarTrailLifetime = 180
+    end
     if type(db.vignetteRadarApproachAlerts) ~= "boolean" then db.vignetteRadarApproachAlerts = false end
     if type(db.vignetteRadarApproachDistance) ~= "number" then db.vignetteRadarApproachDistance = 100 end
     db.vignetteRadarApproachDistance = math.max(25, math.min(600, db.vignetteRadarApproachDistance))

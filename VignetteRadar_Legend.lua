@@ -579,9 +579,11 @@ function API.Refresh()
     local trailDefinition = TRAIL_STYLES[trailStyle] or TRAIL_STYLES.dashes
     for index, dot in ipairs(panel.guides.trail.dots) do
         dot:SetVertexColor(accentRed, accentGreen, accentBlue, .85)
+        dot:SetTexture(trailDefinition.square and "Interface\\Buttons\\WHITE8X8"
+            or "Interface\\CharacterFrame\\TempPortraitAlphaMask")
         local dotSize = trailDefinition.alternating and index % 2 == 0 and 2.5 or 4
         dot:SetSize(dotSize, dotSize)
-        dot:SetShown(trailDefinition.dot ~= nil)
+        dot:SetShown(trailDefinition.dot ~= nil or trailDefinition.square ~= nil)
         local mark = panel.guides.trail.marks[index]
         local x = 2 + index * 5
         for part = 1, 4 do

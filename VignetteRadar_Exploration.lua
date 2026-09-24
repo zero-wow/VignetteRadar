@@ -93,12 +93,14 @@ function API.UpdateTrail(player, mapID, now)
     if Settings().vignetteRadarBreadcrumbs ~= true or not player then return trail end
     now = Number(now) or Now()
     local lifetime = Settings().vignetteRadarTrailLifetime or 180
+    local interval = lifetime <= 5 and .25 or 2
+    local minDistance = lifetime <= 5 and .5 or 6
     while #trail > 0 and now - trail[1].at > lifetime do table.remove(trail, 1) end
     local x, y = Number(player.worldX), Number(player.worldY)
     if not x or not y then return trail end
     local last = trail[#trail]
     local distance = last and math.sqrt((x-last.x)^2 + (y-last.y)^2) or math.huge
-    if now-lastTrailAt >= 2 and distance >= 6 then
+    if now-lastTrailAt >= interval and distance >= minDistance then
         trail[#trail+1] = { x=x, y=y, at=now, instanceID=player.instanceID }
         if #trail > MAX_TRAIL then table.remove(trail, 1) end
         lastTrailAt = now

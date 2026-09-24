@@ -48,6 +48,14 @@ current = 201
 assert(#E.UpdateTrail(player, 11, current) == 1,
     "one-minute fade must prune expired trail points")
 db.vignetteRadarTrailLifetime = 180
+db.vignetteRadarTrailLifetime = 1
+current, player.worldX = 202, 232
+assert(#E.UpdateTrail(player, 11, current) == 1,
+    "a one-second fade must prune older trail history")
+current, player.worldX = 202.3, 233
+assert(#E.UpdateTrail(player, 11, current) == 2,
+    "short fades must sample movement often enough to produce a visible trail")
+db.vignetteRadarTrailLifetime = 180
 
 assert(E.AddPin(player, "Cave mouth"))
 local pin = E.GetPins(10)[1]
