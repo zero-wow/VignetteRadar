@@ -549,6 +549,9 @@ assert(panel.zoomOut.backdrop == nil and panel.zoomIn.backdrop == nil
     and #panel.zoomOut.strokes == 1 and #panel.zoomIn.strokes == 2
     and panel.zoomOut.glow and panel.zoomIn.glow,
     "zoom controls must use borderless minus and plus icons with the radar's circular glow")
+assert(panel.trailToggle.backdrop == nil and #panel.trailToggle.strokes == 3
+    and panel.trailToggle.glow and panel.trailToggle.clickButtons[2] == "RightButtonUp",
+    "the trail shortcut must match the toolbar and accept a style-changing right click")
 assert(not panel.zoomIn._enabled and panel.zoomIn.strokes[1].color[4] < .4,
     "the zoom-in icon must visibly dim at the closest range")
 panel.zoomOut.scripts.OnEnter(panel.zoomOut)
@@ -594,7 +597,7 @@ local function inside(region, parent, gutter)
 end
 local function checkLayout(focused)
     local controls = { panel.target, panel.legend, panel.close, panel.zoomOut, panel.zoomIn, panel.zoomLabel,
-        panel.compass, panel.combatToggle }
+        panel.compass, panel.combatToggle, panel.trailToggle }
     inside(panel.settingsDot, panel, 4)
     separate(panel.settingsDot, panel.title, 2, "settings/title")
     separate(panel.settingsDot, panel.summary, 2, "settings/status")
@@ -1216,13 +1219,14 @@ local savedFieldPoint = panel.field.point
 panel.frameToggle.scripts.OnClick(panel.frameToggle)
 assert(settings.vignetteRadarCircleOnly == true and panel.backdropColor[4] == 0
     and panel.backdropBorderColor[4] == 0 and not panel.title:IsShown()
-    and not panel.combatToggle:IsShown() and not panel.resizeGrips.bottomRight:IsShown()
+    and not panel.combatToggle:IsShown() and not panel.trailToggle:IsShown()
+    and not panel.resizeGrips.bottomRight:IsShown()
     and panel.frameToggle:IsShown() and panel.field.point == savedFieldPoint
     and panel.frameToggle.chevron[1].endPoint[3] > panel.frameToggle.chevron[1].startPoint[3],
     "circle-only view must hide the rectangular frame without moving the radar or its restore chevron")
 panel.frameToggle.scripts.OnClick(panel.frameToggle)
 assert(settings.vignetteRadarCircleOnly == false and panel.backdropColor[4] == .98
-    and panel.title:IsShown() and panel.combatToggle:IsShown()
+    and panel.title:IsShown() and panel.combatToggle:IsShown() and panel.trailToggle:IsShown()
     and panel.resizeGrips.bottomRight:IsShown()
     and panel.frameToggle.chevron[1].endPoint[3] < panel.frameToggle.chevron[1].startPoint[3],
     "the circle control must restore full panel chrome and resize grips")
@@ -1269,7 +1273,7 @@ for _, key in ipairs({ "vignetteRadarEnabled", "vignetteRadarHideWhenEmpty", "vi
     "vignetteRadarRingOpacity", "vignetteRadarChevronOpacity", "vignetteRadarHeadingOpacity",
     "vignetteRadarChevronDistance", "vignetteRadarHeadingLength", "vignetteRadarFullSweep",
     "vignetteRadarTheme", "vignetteRadarSmartZoom", "vignetteRadarUntangle",
-    "vignetteRadarBreadcrumbs", "vignetteRadarApproachAlerts",
+    "vignetteRadarBreadcrumbs", "vignetteRadarTrailStyle", "vignetteRadarApproachAlerts",
     "vignetteRadarJournalEnabled", "vignetteRadarApproachDistance",
     "vignetteRadarPOISource", "vignetteRadarPOITypes" }) do
     assert(exposed[key], "compact settings missing: " .. key)
@@ -1285,8 +1289,11 @@ local function quickControl(page, key, value)
     end
 end
 quick.tabs.Explore.scripts.OnClick(quick.tabs.Explore)
-assert(quick.pages.Explore:IsShown() and quickControl("Explore", "vignetteRadarBreadcrumbs"),
-    "the compact Explore tab must expose the dotted trail directly")
+assert(quick.pages.Explore:IsShown() and quickControl("Explore", "vignetteRadarBreadcrumbs")
+    and quickControl("Explore", "vignetteRadarTrailStyle", "dashes")
+    and quickControl("Explore", "vignetteRadarTrailStyle", "ticks")
+    and quickControl("Explore", "vignetteRadarTrailStyle", "dots"),
+    "the compact Explore tab must expose the trail and all three styles")
 assert(quick.rangeMinus.backdrop == nil and #quick.rangeMinus.strokes == 1
     and quick.rangePlus.backdrop == nil and #quick.rangePlus.strokes == 2
     and quickControl("Layout", "vignetteRadarNorthUp").glyph.label
@@ -1555,7 +1562,7 @@ assert(panel.blipByKey.rare and panel.blipByKey.treasure,
 assert(panel.blipByKey.rare.target.groupMin == 3 and panel.blipByKey.rare.target.groupMax == 5,
     "Blizzard's available group-size recommendation must reach the marker")
 
--- Trail samples use x/y internally; rendering must accept them without Lua errors.
+-- Trail samples use x/y internally; each style reuses a bounded marker pool.
 local originalPlayerPosition = C_Map.GetPlayerMapPosition
 local movingX = .5
 C_Map.GetPlayerMapPosition = function() return { x=movingX, y=.5 } end
@@ -1564,13 +1571,13 @@ now = 1200
 addon.VignetteRadarAPI.Refresh(true)
 movingX, now = .51, 1203
 addon.VignetteRadarAPI.Refresh(true)
-assert(panel.trailDots[1] and panel.trailDots[1]:IsShown()
-    and panel.trailDots[1].kind == "Texture" and panel.trailDots[1].width == 5
-    and panel.trailDots[1].parent == panel.trailLayer
+assert(panel.trailMarks[1] and panel.trailMarks[1]:IsShown()
+    and panel.trailMarks[1].kind == "Line" and panel.trailMarks[1].thickness == 2.5
+    and panel.trailMarks[1].parent == panel.trailLayer
     and panel.trailLayer.level == panel.field.level + 3
-    and #panel.trailDots <= 64 and not panel.exploreLines[1]:IsShown(),
-    "walking must draw a capped dotted trail without allocating clickable markers or straight lines")
-local firstTrailDot = panel.trailDots[1]
+    and #panel.trailMarks <= 64 and not panel.exploreLines[1]:IsShown(),
+    "walking must draw a capped dashed trail without clickable markers")
+local firstTrailMark = panel.trailMarks[1]
 local trail = exploration.GetTrail()
 local currentPlayer = addon.VignetteRadarAPI.GetPlayerSnapshot()
 for index = 1, 16 do
@@ -1578,11 +1585,37 @@ for index = 1, 16 do
         y = currentPlayer.worldY, at = now, instanceID = currentPlayer.instanceID }
 end
 addon.VignetteRadarAPI.Refresh(false)
-assert(#panel.trailDots == 64 and panel.trailDots[1] == firstTrailDot,
-    "a long trail must stop at 64 reusable textures")
+local markCount = #panel.trailMarks
+assert(markCount > 0 and markCount <= 64 and panel.trailMarks[1] == firstTrailMark,
+    "a long dashed trail must respect the 64-mark cap")
 addon.VignetteRadarAPI.Refresh(false)
-assert(#panel.trailDots == 64 and panel.trailDots[1] == firstTrailDot,
-    "redrawing a stationary trail must not allocate more dots")
+assert(#panel.trailMarks == markCount and panel.trailMarks[1] == firstTrailMark,
+    "redrawing a stationary trail must not allocate more marks")
+local dashX = firstTrailMark.endPoint[3] - firstTrailMark.startPoint[3]
+local dashY = firstTrailMark.endPoint[4] - firstTrailMark.startPoint[4]
+panel.trailToggle.scripts.OnClick(panel.trailToggle, "RightButton")
+local tickX = firstTrailMark.endPoint[3] - firstTrailMark.startPoint[3]
+local tickY = firstTrailMark.endPoint[4] - firstTrailMark.startPoint[4]
+assert(settings.vignetteRadarTrailStyle == "ticks" and settings.vignetteRadarBreadcrumbs
+    and panel.trailToggle._selected and panel.trailMarks[1] == firstTrailMark
+    and panel.trailMarks[1].thickness == 2
+    and math.abs(dashX * tickX + dashY * tickY) < .001
+    and quickControl("Explore", "vignetteRadarTrailStyle", "ticks").highlightLocked,
+    "right-click must switch to crosswise ticks without reallocating the line pool")
+panel.trailToggle.scripts.OnClick(panel.trailToggle, "RightButton")
+assert(settings.vignetteRadarTrailStyle == "dots" and panel.trailDots[1]
+    and panel.trailDots[1]:IsShown() and not panel.trailMarks[1]:IsShown()
+    and #panel.trailDots <= 64,
+    "the optional dot style must reuse a capped texture pool")
+panel.trailToggle.scripts.OnClick(panel.trailToggle, "LeftButton")
+assert(not settings.vignetteRadarBreadcrumbs and not panel.trailToggle._selected
+    and not panel.trailDots[1]:IsShown()
+    and not quickControl("Explore", "vignetteRadarBreadcrumbs").checked,
+    "left-click must hide the trail and update settings immediately")
+panel.trailToggle.scripts.OnClick(panel.trailToggle, "RightButton")
+assert(settings.vignetteRadarBreadcrumbs and settings.vignetteRadarTrailStyle == "dashes"
+    and panel.trailMarks[1] == firstTrailMark,
+    "right-click while off must select and show the next style")
 C_Map.GetPlayerMapPosition = originalPlayerPosition
 
 -- One chosen HandyNotes pack supplies hollow, typed map notes without entering

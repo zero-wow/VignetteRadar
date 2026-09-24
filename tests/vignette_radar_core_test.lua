@@ -46,6 +46,14 @@ assert(defaults.vignetteRadarEnabled == true and defaults.vignetteRadarHideWhenE
     "the radar must work without either optional addon installed")
 assert(defaults.vignetteRadarPOISource == "auto",
     "new installations should follow the current zone when a data pack is available")
+assert(defaults.vignetteRadarTrailStyle == "dashes",
+    "new and migrated installations should use trail marks distinct from quest dots")
+defaults.vignetteRadarTrailStyle = "ticks"
+fresh.GetSettings()
+assert(defaults.vignetteRadarTrailStyle == "ticks", "the chosen trail style must persist")
+defaults.vignetteRadarTrailStyle = "unsupported"
+fresh.GetSettings()
+assert(defaults.vignetteRadarTrailStyle == "dashes", "invalid trail styles must recover safely")
 defaults.vignetteRadarPOISource = "none"
 fresh.GetSettings()
 assert(defaults.vignetteRadarPOISource == "none", "an existing Off choice must remain Off")

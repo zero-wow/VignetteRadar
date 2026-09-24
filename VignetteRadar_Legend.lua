@@ -330,12 +330,17 @@ local function CreateOtherGuide(parent, label, x, y, symbol)
         row.fill:SetTexture(CIRCLE_TEXTURE)
     elseif symbol == "trail" then
         row.dots = {}
+        row.marks = {}
         for index = 1, 3 do
             local dot = row:CreateTexture(nil, "ARTWORK")
             dot:SetSize(4, 4)
             dot:SetPoint("LEFT", row, "LEFT", 3 + index * 4, 0)
             dot:SetTexture(CIRCLE_TEXTURE)
             row.dots[index] = dot
+            local mark = row:CreateLine(nil, "ARTWORK")
+            mark:SetThickness(1.7)
+            mark:Hide()
+            row.marks[index] = mark
         end
     elseif symbol == "stale" then
         row.lines = {}
@@ -557,11 +562,23 @@ function API.Refresh()
     for _, line in ipairs(panel.guides.stale.lines) do
         line:SetColorTexture(rareRed, rareGreen, rareBlue, .4)
     end
-    for _, dot in ipairs(panel.guides.trail.dots) do
+    local trailStyle = settings.vignetteRadarTrailStyle or "dashes"
+    for index, dot in ipairs(panel.guides.trail.dots) do
         dot:SetVertexColor(accentRed, accentGreen, accentBlue, .85)
+        dot:SetShown(trailStyle == "dots")
+        local mark = panel.guides.trail.marks[index]
+        local x = 2 + index * 5
+        local horizontal = trailStyle ~= "ticks"
+        mark:SetStartPoint("LEFT", panel.guides.trail, x - (horizontal and 1.7 or 0),
+            horizontal and 0 or -2.5)
+        mark:SetEndPoint("LEFT", panel.guides.trail, x + (horizontal and 1.7 or 0),
+            horizontal and 0 or 2.5)
+        mark:SetColorTexture(accentRed, accentGreen, accentBlue, .85)
+        mark:SetShown(trailStyle ~= "dots")
     end
     panel.guides.trail:SetAlpha(settings.vignetteRadarBreadcrumbs and 1 or .6)
-    panel.guides.trail.label:SetText(settings.vignetteRadarBreadcrumbs and "Travel trail" or "Trail off")
+    local trailName = trailStyle == "ticks" and "Ticks" or trailStyle == "dots" and "Dots" or "Dashes"
+    panel.guides.trail.label:SetText(settings.vignetteRadarBreadcrumbs and ("Trail: " .. trailName) or "Trail off")
     if highlight then
         panel.status:SetText("SPOTLIGHT: " .. CATEGORIES[highlight].label)
         panel.all.label:SetTextColor(0.62, 0.66, 0.68, 1)

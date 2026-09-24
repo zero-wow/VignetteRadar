@@ -56,6 +56,10 @@ local function Changed(key, value, subkey)
         addon.SetVignetteRadarQuietCombat(value)
     elseif key == "vignetteRadarKeepVisibleCombat" then
         addon.SetVignetteRadarKeepVisibleCombat(value)
+    elseif key == "vignetteRadarBreadcrumbs" then
+        addon.SetVignetteRadarTrailEnabled(value)
+    elseif key == "vignetteRadarTrailStyle" then
+        addon.SetVignetteRadarTrailStyle(value)
     elseif key == "vignetteRadarCategories" and legend then
         legend.SetCategoryEnabled(subkey, value)
     elseif key == "vignetteRadarHighlight" and legend then
@@ -621,7 +625,10 @@ local function Build()
     local explore = quick.pages.Explore
     Check(explore, "vignetteRadarSmartZoom", "Smart zoom while moving", 14, -3)
     Check(explore, "vignetteRadarUntangle", "Spread overlapping markers", 14, -31)
-    Check(explore, "vignetteRadarBreadcrumbs", "Show dotted travel trail", 14, -59)
+    Check(explore, "vignetteRadarBreadcrumbs", "Travel trail", 14, -59, nil, 91)
+    Choice(explore, "vignetteRadarTrailStyle", "dashes", "Dash", 142, -61, 42)
+    Choice(explore, "vignetteRadarTrailStyle", "ticks", "Tick", 187, -61, 42)
+    Choice(explore, "vignetteRadarTrailStyle", "dots", "Dots", 232, -61, 42)
     Check(explore, "vignetteRadarApproachAlerts", "Alert near watched targets", 14, -87)
     Check(explore, "vignetteRadarJournalEnabled", "Save sighting history", 14, -115)
     Stepper(explore, "vignetteRadarApproachDistance", "Approach distance", -148,

@@ -34,6 +34,7 @@ function methods:SetAlpha(value) self.alpha = value end
 function methods:SetScript(name, callback) self.scripts = self.scripts or {}; self.scripts[name] = callback end
 function methods:IsShown() return self.shown == true end
 function methods:Show() self.shown = true end
+function methods:SetShown(value) if value then self:Show() else self:Hide() end end
 function methods:Hide()
     self.shown = false
     if self.scripts and self.scripts.OnHide then self.scripts.OnHide(self) end
@@ -146,7 +147,8 @@ end
 assert(panel.mapCaption.text:find("not live detections", 1, true)
     and panel.guides.quest.fill.width == 5 and panel.guides.area.fill.width == 11
     and panel.guides.pin and panel.guides.route.number.text == "1"
-    and #panel.guides.trail.dots == 3 and #panel.guides.stale.lines == 4,
+    and #panel.guides.trail.dots == 3 and #panel.guides.trail.marks == 3
+    and #panel.guides.stale.lines == 4,
     "legend must explain quest, exploration, and last-seen symbols accurately")
 for _, guide in pairs(panel.guides) do
     assert(guide.point[4] >= 9 and guide.point[4] + guide.width <= panel.width - 9
@@ -186,10 +188,13 @@ settings.vignetteRadarPOITypes = { treasure = true, mob = false, item = true, no
 settings.vignetteRadarQuestDots = true
 settings.vignetteRadarQuestAreas = true
 settings.vignetteRadarBreadcrumbs = true
+settings.vignetteRadarTrailStyle = "ticks"
 settings.vignetteRadarShapes = false
 legend.Refresh()
 assert(panel.mapNotes.treasure.alpha == 1 and panel.mapNotes.mob.alpha == .6
     and panel.guides.quest.alpha == 1 and panel.guides.trail.alpha == 1
+    and panel.guides.trail.label.text == "Trail: Ticks"
+    and panel.guides.trail.marks[1]:IsShown() and not panel.guides.trail.dots[1]:IsShown()
     and panel.rows.rare.swatch.texture == "Interface\\CharacterFrame\\TempPortraitAlphaMask"
     and panel.rows.treasure.swatch.texture == panel.rows.rare.swatch.texture,
     "guide and live symbols must track map filters, settings, and icon-free mode")

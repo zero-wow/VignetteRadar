@@ -210,6 +210,15 @@ assert(byKey["vignetteRadarAlertCategories.rare"].label.text == "Rares and bosse
 assert(byKey.vignetteRadarQuestDots.label.text == "Show quest location dots"
     and byKey.vignetteRadarQuestAreas.label.text == "Shade Blizzard quest areas",
     "quest dots and areas need separate plain-language switches")
+local trailChoices = {}
+for _, object in ipairs(objects) do
+    if object.parent == panel.pages.Explore and object.kind == "Button"
+        and (object.text == "Dashes" or object.text == "Ticks" or object.text == "Dots") then
+        trailChoices[object.text] = object
+    end
+end
+assert(trailChoices.Dashes and trailChoices.Ticks and trailChoices.Dots,
+    "the full Explore page must expose every trail style")
 assert(byKey.vignetteRadarNorthUp.glyph.label
     and #byKey.vignetteRadarKeepVisibleCombat.glyph.lines == 4
     and choices["-"].backdrop == nil and #choices["-"].strokes == 1

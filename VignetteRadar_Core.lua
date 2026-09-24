@@ -117,6 +117,8 @@ function addon.GetSettings()
     if type(db.vignetteRadarSmartZoom) ~= "boolean" then db.vignetteRadarSmartZoom = false end
     if type(db.vignetteRadarUntangle) ~= "boolean" then db.vignetteRadarUntangle = true end
     if type(db.vignetteRadarBreadcrumbs) ~= "boolean" then db.vignetteRadarBreadcrumbs = false end
+    if db.vignetteRadarTrailStyle ~= "dashes" and db.vignetteRadarTrailStyle ~= "ticks"
+        and db.vignetteRadarTrailStyle ~= "dots" then db.vignetteRadarTrailStyle = "dashes" end
     if type(db.vignetteRadarApproachAlerts) ~= "boolean" then db.vignetteRadarApproachAlerts = false end
     if type(db.vignetteRadarApproachDistance) ~= "number" then db.vignetteRadarApproachDistance = 100 end
     db.vignetteRadarApproachDistance = math.max(25, math.min(600, db.vignetteRadarApproachDistance))

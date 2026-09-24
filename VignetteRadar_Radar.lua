@@ -17,6 +17,7 @@ local UPDATE_SECONDS, RESCAN_SECONDS = 0.05, 1
 local MAX_BLIPS = 64
 local MAX_QUEST_DOTS = 64
 local MAX_MAP_NOTES = 48
+local TRAIL_STYLES = { "dashes", "ticks", "dots" }
 local ACCENT = { 0.05, 0.82, 0.62 }
 local RED = { 1, 0.18, 0.14 }
 local CIRCLE_TEXTURE = "Interface\\CharacterFrame\\TempPortraitAlphaMask"
@@ -1080,9 +1081,11 @@ local function RenderExploration(player, range)
     panel.exploreLines = panel.exploreLines or {}
     panel.exploreDots = panel.exploreDots or {}
     panel.trailDots = panel.trailDots or {}
+    panel.trailMarks = panel.trailMarks or {}
     for _, line in ipairs(panel.exploreLines) do line:Hide() end
     for _, dot in ipairs(panel.exploreDots) do dot:Hide() end
     for _, dot in ipairs(panel.trailDots) do dot:Hide() end
+    for _, mark in ipairs(panel.trailMarks) do mark:Hide() end
     if not player then return end
     local lineCount, dotCount = 0, 0
     local function Position(item, clamp)
@@ -1163,7 +1166,8 @@ local function RenderExploration(player, range)
             panel.trailLayer = layer
         end
         local trailDotCount, nextDot = 0, 0
-        local spacing, limit = 9, 64
+        local trailStyle = Settings().vignetteRadarTrailStyle or "dashes"
+        local spacing, limit = trailStyle == "dots" and 9 or trailStyle == "ticks" and 14 or 12, 64
         local edge = panel.plotRadius - 3
         local now = Now()
         local r, g, b = .25, .91, .7
@@ -1178,17 +1182,32 @@ local function RenderExploration(player, range)
                 local radiusSquared = x*x + y*y
                 if radiusSquared >= 49 and radiusSquared <= edge*edge then
                     trailDotCount = trailDotCount + 1
-                    local dot = panel.trailDots[trailDotCount]
-                    if not dot then
-                        dot = panel.trailLayer:CreateTexture(nil, "BACKGROUND")
-                        dot:SetSize(5, 5)
-                        dot:SetTexture(CIRCLE_TEXTURE)
-                        panel.trailDots[trailDotCount] = dot
+                    if trailStyle == "dots" then
+                        local dot = panel.trailDots[trailDotCount]
+                        if not dot then
+                            dot = panel.trailLayer:CreateTexture(nil, "BACKGROUND")
+                            dot:SetSize(5, 5)
+                            dot:SetTexture(CIRCLE_TEXTURE)
+                            panel.trailDots[trailDotCount] = dot
+                        end
+                        dot:SetVertexColor(r, g, b, alpha)
+                        dot:ClearAllPoints()
+                        dot:SetPoint("CENTER", panel.field, "CENTER", x, y)
+                        dot:Show()
+                    else
+                        local mark = panel.trailMarks[trailDotCount]
+                        if not mark then
+                            mark = panel.trailLayer:CreateLine(nil, "BACKGROUND")
+                            panel.trailMarks[trailDotCount] = mark
+                        end
+                        local ux, uy = dx / length, dy / length
+                        if trailStyle == "ticks" then ux, uy = -uy, ux end
+                        mark:SetThickness(trailStyle == "ticks" and 2 or 2.5)
+                        mark:SetColorTexture(r, g, b, alpha)
+                        mark:SetStartPoint("CENTER", panel.field, x - ux * 3.5, y - uy * 3.5)
+                        mark:SetEndPoint("CENTER", panel.field, x + ux * 3.5, y + uy * 3.5)
+                        mark:Show()
                     end
-                    dot:SetVertexColor(r, g, b, alpha)
-                    dot:ClearAllPoints()
-                    dot:SetPoint("CENTER", panel.field, "CENTER", x, y)
-                    dot:Show()
                 end
                 offset = offset + spacing
             end
@@ -1350,6 +1369,7 @@ local function ApplyPanelLayout(focused)
         Place(panel.zoomIn, "BOTTOMLEFT", 160, 8)
         Place(panel.combatToggle, "BOTTOMLEFT", 192, 9)
         Place(panel.compass, "BOTTOMLEFT", 214, 8)
+        Place(panel.trailToggle, "BOTTOMLEFT", 246, 8)
         Place(panel.target, "BOTTOMRIGHT", -74, 8)
         Place(panel.legend, "BOTTOMRIGHT", -42, 8)
         Place(panel.close, "BOTTOMRIGHT", -10, 8)
@@ -1366,9 +1386,11 @@ local function ApplyPanelLayout(focused)
         if compact then
             Place(panel.zoomLabel, "BOTTOM", 0, 38, 92, 12)
             Place(panel.combatToggle, "BOTTOMLEFT", 146, 32)
+            Place(panel.trailToggle, "BOTTOMLEFT", 18, 30)
         else
-            Place(panel.zoomLabel, "BOTTOMLEFT", 96, 10, 76, 12)
+            Place(panel.zoomLabel, "BOTTOMLEFT", 118, 10, 62, 12)
             Place(panel.combatToggle, "BOTTOMLEFT", 72, 7)
+            Place(panel.trailToggle, "BOTTOMLEFT", 94, 6)
         end
         -- Compact puts its range above a single, evenly spaced row of controls.
         panel.zoomOut:ClearAllPoints()
@@ -1489,7 +1511,7 @@ local function UpdatePanelChrome()
     panel:SetBackdropBorderColor(1, 1, 1, circleOnly and 0 or .15)
     panel:EnableMouseWheel(not circleOnly)
     for _, control in ipairs({ panel.title, panel.summary, panel.drag, panel.settingsDot,
-        panel.zoomOut, panel.zoomIn, panel.zoomLabel, panel.combatToggle, panel.compass,
+        panel.zoomOut, panel.zoomIn, panel.zoomLabel, panel.combatToggle, panel.trailToggle, panel.compass,
         panel.target, panel.legend, panel.close }) do
         control:SetShown(not circleOnly)
     end
@@ -1567,7 +1589,7 @@ ApplyAppearance = function()
         panel.legend.glow:SetVertexColor(ar, ag, ab,
             panel.legend._hovered and .18 or panel.legend._open and .12 or 0)
         panel.close.glow:SetVertexColor(ar, ag, ab, panel.close._hovered and .18 or 0)
-        for _, button in ipairs({ panel.zoomOut, panel.zoomIn, panel.compass }) do
+        for _, button in ipairs({ panel.zoomOut, panel.zoomIn, panel.compass, panel.trailToggle }) do
             if button and button.RefreshAppearance then button:RefreshAppearance() end
         end
         if panel.legend and panel.legend.dots then
@@ -1627,10 +1649,32 @@ local function UpdateCombatToggle()
     button.keepVisible = keepVisible
 end
 
+local function UpdateTrailToggle()
+    if not (panel and panel.trailToggle) then return end
+    local button = panel.trailToggle
+    local style = Settings().vignetteRadarTrailStyle or "dashes"
+    local selected = Settings().vignetteRadarBreadcrumbs == true
+    if button._style ~= style then
+        button._style = style
+        for index, line in ipairs(button.strokes) do
+            local x = (index - 2) * 5
+            local horizontal = style == "dashes"
+            local point = style == "dots" and .3 or 2.2
+            line:SetThickness(style == "dots" and 3 or 1.7)
+            line:SetStartPoint("CENTER", button, x - (horizontal and point or 0),
+                horizontal and 0 or -point)
+            line:SetEndPoint("CENTER", button, x + (horizontal and point or 0),
+                horizontal and 0 or point)
+        end
+    end
+    if button._selected ~= selected then button._selected = selected; button:RefreshAppearance() end
+end
+
 Render = function()
     if not panel or not panel:IsShown() then return end
     ApplyAppearance()
     UpdateCombatToggle()
+    UpdateTrailToggle()
     UpdateFullSweep(0)
     BeginBlips()
     local mapID = CurrentMapID()
@@ -2660,6 +2704,14 @@ local function EnsurePanel()
             button.label:SetJustifyH("CENTER")
             button:SetFontString(button.label)
             button:SetText("N")
+        elseif symbol == "trail" then
+            for index = 1, 3 do
+                local stroke = button:CreateLine(nil, "OVERLAY")
+                stroke:SetThickness(1.7)
+                stroke:SetStartPoint("CENTER", button, (index - 2) * 5 - 2, 0)
+                stroke:SetEndPoint("CENTER", button, (index - 2) * 5 + 2, 0)
+                button.strokes[index] = stroke
+            end
         else
             local horizontal = button:CreateLine(nil, "OVERLAY")
             horizontal:SetThickness(2)
@@ -2733,6 +2785,35 @@ local function EnsurePanel()
         GameTooltip:Show()
     end)
     panel.compass:HookScript("OnLeave", function() if GameTooltip then GameTooltip:Hide() end end)
+
+    panel.trailToggle = ToolbarIcon("trail", 22)
+    panel.trailToggle:RegisterForClicks("LeftButtonUp", "RightButtonUp")
+    panel.trailToggle:SetScript("OnClick", function(_, mouseButton)
+        if mouseButton == "RightButton" then
+            local current = Settings().vignetteRadarTrailStyle
+            for index, style in ipairs(TRAIL_STYLES) do
+                if style == current then
+                    addon.SetVignetteRadarTrailStyle(TRAIL_STYLES[index % #TRAIL_STYLES + 1], true)
+                    return
+                end
+            end
+            addon.SetVignetteRadarTrailStyle(TRAIL_STYLES[1], true)
+        else
+            addon.SetVignetteRadarTrailEnabled(Settings().vignetteRadarBreadcrumbs ~= true)
+        end
+    end)
+    panel.trailToggle:HookScript("OnEnter", function(self)
+        if not GameTooltip then return end
+        local style = Settings().vignetteRadarTrailStyle or "dashes"
+        local name = style == "ticks" and "Ticks" or style == "dots" and "Dots" or "Dashes"
+        GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+        GameTooltip:SetText("Travel trail: " .. (Settings().vignetteRadarBreadcrumbs and "ON" or "OFF"), 1, 1, 1)
+        GameTooltip:AddLine("Style: " .. name .. ". Left-click to toggle; right-click to switch style and turn it on.",
+            .7, .8, .8, true)
+        GameTooltip:Show()
+    end)
+    panel.trailToggle:HookScript("OnLeave", function() if GameTooltip then GameTooltip:Hide() end end)
+    UpdateTrailToggle()
 
     panel.combatToggle = CreateFrame("Button", nil, panel)
     panel.combatToggle:SetSize(18, 18)
@@ -3052,6 +3133,29 @@ function addon.SetVignetteRadarNorthUp(enabled)
     Settings().vignetteRadarNorthUp = enabled == true
     RefreshRadar(false)
     if addon.RefreshVignetteRadarOptions then addon.RefreshVignetteRadarOptions() end
+end
+
+function addon.SetVignetteRadarTrailEnabled(enabled)
+    Settings().vignetteRadarBreadcrumbs = enabled == true
+    RefreshRadar(false)
+    if addon.RefreshVignetteRadarOptions then addon.RefreshVignetteRadarOptions() end
+    local quick = addon.VignetteRadarQuickConfig
+    if quick and quick.Refresh then quick.Refresh() end
+end
+
+function addon.SetVignetteRadarTrailStyle(style, enable)
+    local valid = false
+    for _, candidate in ipairs(TRAIL_STYLES) do
+        if style == candidate then valid = true; break end
+    end
+    if not valid then return false end
+    Settings().vignetteRadarTrailStyle = style
+    if enable then Settings().vignetteRadarBreadcrumbs = true end
+    RefreshRadar(false)
+    if addon.RefreshVignetteRadarOptions then addon.RefreshVignetteRadarOptions() end
+    local quick = addon.VignetteRadarQuickConfig
+    if quick and quick.Refresh then quick.Refresh() end
+    return true
 end
 
 function addon.SetVignetteRadarQuietCombat(fadeInCombat)
