@@ -335,7 +335,9 @@ local function Build()
         addon.ResetVignetteRadarPositions()
         API.Reanchor()
     end)
-    Label(radar, "Stay fully visible overrides auto-hide.", 14, -226, 10)
+    Button(radar, "Explore tools", 14, -221, 260, function()
+        if addon.VignetteRadarExploration then addon.VignetteRadarExploration.TogglePanel() end
+    end)
 
     local layout = quick.pages.Layout
     Section(layout, "PANEL STYLE", -5)

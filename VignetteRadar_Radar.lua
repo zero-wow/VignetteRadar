@@ -38,6 +38,9 @@ local questMapBasis
 local activeMapID
 local activeWorldMapMode
 local pulseUntil = 0
+local approachPulseKey, approachPulseUntil
+local displayedRange
+local clusterHoverKey, clusterHoverUntil
 local RefreshRadar, ScanVignettes, Render, UpdateLauncher, EnsureLauncher, ApplyAppearance
 local PREVIEW_TARGETS = {
     { key = "preview-rare", x = 28, y = 52, launcherX = 3, launcherY = 6,
@@ -94,7 +97,7 @@ local function Ranges()
 end
 
 local function StepRange(step)
-    local ranges, current = Ranges(), Settings().vignetteRadarRange
+    local ranges, current = Ranges(), displayedRange or Settings().vignetteRadarRange
     for index, value in ipairs(ranges) do
         if current == value then
             local nextIndex = math.max(1, math.min(#ranges, index + step))
@@ -277,6 +280,11 @@ local function CollectVignettes(mapID)
                 local worldX, worldY, instanceID = MapToWorld(mapID, mapPosition)
                 if mapX and mapY and worldX and worldY then
                     local worldBoss = Features() and Features().IsWorldBoss(info) or false
+                    local groupMin, groupMax
+                    if C_VignetteInfo.GetRecommendedGroupSize then
+                        local minimum, maximum = Call(C_VignetteInfo.GetRecommendedGroupSize, guid)
+                        groupMin, groupMax = SafeNumber(minimum), SafeNumber(maximum)
+                    end
                     targets[#targets + 1] = {
                         key = tostring(guid),
                         vignetteID = SafeNumber(SafeField(info, "vignetteID")),
@@ -292,6 +300,7 @@ local function CollectVignettes(mapID)
                         worldX = worldX,
                         worldY = worldY,
                         instanceID = instanceID,
+                        groupMin = groupMin, groupMax = groupMax,
                     }
                     -- Collect beyond the visible pool so ignored entries cannot starve useful ones.
                 end
@@ -524,8 +533,18 @@ function addon.HandleVignetteClick(target, button)
     if not target then return false end
     local shift = IsShiftKeyDown and IsShiftKeyDown()
     local alt = IsAltKeyDown and IsAltKeyDown()
+    local ctrl = IsControlKeyDown and IsControlKeyDown()
     local features = Features()
-    if button == "RightButton" then
+    if ctrl and button ~= "RightButton" and not target.sample then
+        local exploration = addon.VignetteRadarExploration
+        if exploration then
+            if alt then exploration.Watch(target)
+            else
+                local ok, reason = exploration.AddRouteStop(target)
+                if not ok then exploration.Tell(reason) end
+            end
+        end
+    elseif button == "RightButton" then
         if not features then return false end
         if not target.sample then features.Ignore(target, shift == true) end
     elseif shift and features then
@@ -585,10 +604,24 @@ local function Tooltip(owner)
     if not (target and GameTooltip) then return end
     GameTooltip:SetOwner(owner, "ANCHOR_RIGHT")
     GameTooltip:SetText(target.name or "Detected vignette", 1, 1, 1)
+    if owner.cluster and #owner.cluster > 1 then
+        clusterHoverKey, clusterHoverUntil = owner.cluster[1].key, Now() + 2.5
+        GameTooltip:AddLine(#owner.cluster .. " detections here; hover to spread them.", .52, .91, .77)
+        for index = 2, math.min(#owner.cluster, 6) do
+            GameTooltip:AddLine(owner.cluster[index].name or "Detected vignette", .7, .8, .77)
+        end
+    elseif owner.clusterKey then
+        clusterHoverKey, clusterHoverUntil = owner.clusterKey, Now() + 2.5
+    end
     local r, g, b = TargetColor(target)
     GameTooltip:AddLine(TargetKind(target), r, g, b)
     if target.distance then
         GameTooltip:AddLine(math.floor(target.distance + 0.5) .. " yd from you", 0.72, 0.76, 0.78)
+    end
+    if target.groupMin and target.groupMin > 0 then
+        local group = target.groupMax and target.groupMax > target.groupMin
+            and (target.groupMin .. "–" .. target.groupMax) or tostring(target.groupMin)
+        GameTooltip:AddLine("Suggested group: " .. group, 0.85, 0.76, 0.53)
     end
     if FocusedTargetKey() == target.key then
         GameTooltip:AddLine("Specific vignette focus is active.", ACCENT[1], ACCENT[2], ACCENT[3])
@@ -608,6 +641,7 @@ local function Tooltip(owner)
         if not target.stale then GameTooltip:AddLine("Shift-click: navigate.", 0.65, 0.80, 0.77, true) end
         GameTooltip:AddLine("Alt-click: favorite. Right-click: ignore this session.", 0.65, 0.80, 0.77, true)
         GameTooltip:AddLine("Shift-right-click: remember ignore.", 0.65, 0.80, 0.77, true)
+        GameTooltip:AddLine("Ctrl-click: route stop. Ctrl-Alt-click: watch approach.", 0.65, 0.80, 0.77, true)
     end
     GameTooltip:Show()
 end
@@ -700,6 +734,10 @@ local function AcquireBlip()
         blip.favorite = Text(blip, 9, "*")
         blip.favorite:SetPoint("BOTTOMLEFT", blip, "TOPRIGHT", -3, -3)
         blip.favorite:SetTextColor(1, 0.82, 0.30, 1)
+        blip.count = Text(blip, 8, "")
+        blip.count:SetPoint("BOTTOM", blip, "TOP", 0, -2)
+        blip.count:SetTextColor(1, 1, 1, 1)
+        blip.count:Hide()
         panel.blips[#panel.blips + 1] = blip
     end
     blip:Show()
@@ -779,12 +817,23 @@ local function RenderQuestDots(player, range)
                             GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
                             GameTooltip:SetText(self.quest.name, 1, 0.82, 0.35)
                             GameTooltip:AddLine(math.floor(self.distance + 0.5) .. " yd from you", 0.72, 0.76, 0.78)
+                            local exploration = addon.VignetteRadarExploration
+                            local progress = exploration and exploration.ObjectiveProgress(self.quest.questID)
+                            if progress then GameTooltip:AddLine(progress, 1, .74, .28) end
+                            GameTooltip:AddLine("Click to spotlight; click again to show all.", .6, .8, .72, true)
                             GameTooltip:Show()
                         end)
                         dot:SetScript("OnLeave", function() if GameTooltip then GameTooltip:Hide() end end)
+                        dot:SetScript("OnClick", function(self)
+                            local exploration = addon.VignetteRadarExploration
+                            if exploration and self.quest then exploration.FocusQuest(self.quest.questID) end
+                        end)
                         panel.questDots[count] = dot
                     end
                     dot.quest, dot.distance = quest, distance
+                    local exploration = addon.VignetteRadarExploration
+                    local spotlight = exploration and exploration.GetFocusedQuest()
+                    dot:SetAlpha(spotlight and spotlight ~= quest.questID and .24 or 1)
                     dot:ClearAllPoints()
                     dot:SetPoint("CENTER", panel.field, "CENTER", x, y)
                     dot:Show()
@@ -856,6 +905,10 @@ local function UpdateQuestAreaTooltip()
     GameTooltip:SetOwner(blob, "ANCHOR_CURSOR_RIGHT", 5, 2)
     GameTooltip:SetText(quest.name, 1, .82, .35)
     GameTooltip:AddLine("Quest area", .72, .76, .78)
+    local exploration = addon.VignetteRadarExploration
+    local progress = exploration and exploration.ObjectiveProgress(quest.questID)
+    if progress then GameTooltip:AddLine(progress, 1, .74, .28) end
+    GameTooltip:AddLine("Click to spotlight; click again to show all.", .6, .8, .72, true)
     GameTooltip:Show()
 end
 
@@ -893,7 +946,9 @@ local function RenderQuestAreas(player, mapID, range)
     local pixelsPerYard = panel.plotRadius / range
     local width, height = questMapBasis.horizontal * pixelsPerYard, questMapBasis.vertical * pixelsPerYard
     if width > 8192 or height > 8192 or width < 1 or height < 1 then HideQuestAreas(); return end
-    local key = tostring(mapID) .. ":" .. tostring(width) .. ":" .. tostring(height)
+    local exploration = addon.VignetteRadarExploration
+    local spotlight = exploration and exploration.GetFocusedQuest()
+    local key = tostring(mapID) .. ":" .. tostring(width) .. ":" .. tostring(height) .. ":" .. tostring(spotlight)
     for _, quest in ipairs(activeQuests) do key = key .. ":" .. tostring(quest.questID) end
     blob:SetSize(width, height)
     blob:ClearAllPoints()
@@ -907,7 +962,9 @@ local function RenderQuestAreas(player, mapID, range)
         if ok then ok = pcall(blob.DrawNone, blob) end
         if ok then
             for _, quest in ipairs(activeQuests) do
-                if not pcall(blob.DrawBlob, blob, quest.questID, true) then ok = false; break end
+                if not spotlight or spotlight == quest.questID then
+                    if not pcall(blob.DrawBlob, blob, quest.questID, true) then ok = false; break end
+                end
             end
         end
         if not ok then HideQuestAreas(); return end
@@ -929,6 +986,8 @@ local function PlaceBlip(key, screenX, screenY, target)
     end
     blip._seen = true
     blip.target = target
+    blip.cluster, blip.clusterKey = nil, nil
+    blip.count:Hide()
     local r, g, b = TargetColor(target)
     local size = tonumber(Settings().vignetteRadarMarkerSize) or 7
     local hitSize = math.max(14, size + (target.isWorldBoss and 11 or 8))
@@ -941,6 +1000,115 @@ local function PlaceBlip(key, screenX, screenY, target)
     blip:SetAlpha(CategoryOpacity(target.category) * TargetAlpha(target))
     blip:ClearAllPoints()
     blip:SetPoint("CENTER", panel.field, "CENTER", screenX, screenY)
+end
+
+local function RenderExploration(player, range)
+    local exploration = addon.VignetteRadarExploration
+    if not exploration or not panel then return end
+    panel.exploreLines = panel.exploreLines or {}
+    panel.exploreDots = panel.exploreDots or {}
+    for _, line in ipairs(panel.exploreLines) do line:Hide() end
+    for _, dot in ipairs(panel.exploreDots) do dot:Hide() end
+    if not player then return end
+    local lineCount, dotCount = 0, 0
+    local function Position(item, clamp)
+        if player.instanceID and item.instanceID and player.instanceID ~= item.instanceID then return nil end
+        local dx, dy = item.worldX - player.worldX, item.worldY - player.worldY
+        local distance = math.sqrt(dx * dx + dy * dy)
+        if distance > range and not clamp then return nil end
+        local x, y = Project(dx, dy, distance, ViewFacing(player.facing), panel.plotRadius, range)
+        if not x then return nil end
+        if clamp and distance > range then
+            local factor = panel.plotRadius / math.max(1, math.sqrt(x*x + y*y))
+            x, y = x * factor, y * factor
+        end
+        return x, y, distance
+    end
+    local function Line(x1, y1, x2, y2, r, g, b, a, thick)
+        lineCount = lineCount + 1
+        local line = panel.exploreLines[lineCount]
+        if not line then
+            line = panel.field:CreateLine(nil, "ARTWORK")
+            panel.exploreLines[lineCount] = line
+        end
+        line:SetThickness(thick or 1)
+        line:SetColorTexture(r, g, b, a)
+        line:SetStartPoint("CENTER", panel.field, x1, y1)
+        line:SetEndPoint("CENTER", panel.field, x2, y2)
+        line:Show()
+    end
+    local function Dot(item, x, y, label, r, g, b, onClick)
+        dotCount = dotCount + 1
+        local dot = panel.exploreDots[dotCount]
+        if not dot then
+            dot = CreateFrame("Button", nil, panel.field)
+            dot:SetSize(16, 16)
+            dot:SetFrameLevel(panel.field:GetFrameLevel() + 2)
+            dot.fill = dot:CreateTexture(nil, "ARTWORK")
+            dot.fill:SetSize(10, 10)
+            dot.fill:SetPoint("CENTER")
+            dot.fill:SetTexture(CIRCLE_TEXTURE)
+            dot.text = Text(dot, 8, "")
+            dot.text:SetAllPoints()
+            dot.text:SetJustifyH("CENTER")
+            dot:RegisterForClicks("LeftButtonUp", "RightButtonUp")
+            dot:SetScript("OnEnter", function(self)
+                if not GameTooltip then return end
+                GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+                GameTooltip:SetText(self.item.name or "Stop", 1, 1, 1)
+                GameTooltip:AddLine(self.hint or "", .65, .8, .75, true)
+                GameTooltip:Show()
+            end)
+            dot:SetScript("OnLeave", function() if GameTooltip then GameTooltip:Hide() end end)
+            dot:SetScript("OnClick", function(self, button)
+                if self.onClick then self.onClick(self.item, button) end
+            end)
+            panel.exploreDots[dotCount] = dot
+        end
+        dot.item, dot.onClick = item, onClick
+        local dx, dy = item.worldX-player.worldX, item.worldY-player.worldY
+        local distance = math.floor(math.sqrt(dx*dx+dy*dy)+.5)
+        dot.hint = label == "" and (distance .. " yd straight line. Click: route; right-click: remove.")
+            or ("Route stop " .. label .. " • " .. distance .. " yd straight line")
+        dot.fill:SetVertexColor(r, g, b, .9)
+        dot.text:SetText(label)
+        dot:ClearAllPoints()
+        dot:SetPoint("CENTER", panel.field, "CENTER", x, y)
+        dot:Show()
+    end
+    local trail = exploration.UpdateTrail(player, player.mapID, Now())
+    if Settings().vignetteRadarBreadcrumbs then
+        local priorX, priorY
+        for index, point in ipairs(trail) do
+            local x, y = Position(point, false)
+            if x and priorX then
+                local age = math.max(0, Now() - point.at)
+                Line(priorX, priorY, x, y, .36, .68, .65,
+                    (index / #trail) * math.max(0, 1 - age / 180) * .32, 1.5)
+            end
+            priorX, priorY = x, y
+        end
+    end
+    for _, pin in ipairs(exploration.GetPins(player.mapID)) do
+        local x, y, distance = Position(pin, false)
+        if x and distance > 12 then
+            Dot(pin, x, y, "", .92, .71, .34, function(item, button)
+                if button == "RightButton" then exploration.RemovePin(item.id)
+                else exploration.AddRouteStop(item) end
+            end)
+        end
+    end
+    local priorX, priorY = 0, 0
+    for index, stop in ipairs(exploration.GetRoute(player.mapID)) do
+        local x, y, distance = Position(stop, true)
+        if x then
+            if distance > 12 then
+                Line(priorX, priorY, x, y, .3, .88, .71, .55, 1.7)
+                Dot(stop, x, y, tostring(index), .16, .7, .54, nil)
+            end
+            priorX, priorY = x, y
+        end
+    end
 end
 
 local CARDINALS = {
@@ -1136,7 +1304,7 @@ local function UpdateFocusReadout(target, player, selected)
     panel.focusDivider:SetShown(selected or squat)
     panel.layoutHint:SetShown(squat and target == nil)
     if squat then
-        local outside = target and target.distance and target.distance > Settings().vignetteRadarRange
+        local outside = target and target.distance and target.distance > (displayedRange or Settings().vignetteRadarRange)
         local questContext = not target and #activeQuests > 0 and (Settings().vignetteRadarQuestDots
             or (Settings().vignetteRadarQuestAreas and Settings().vignetteRadarNorthUp))
         panel.sideCaption:SetText(selected and "TRACKING" or (outside and "OUTSIDE RADAR RANGE"
@@ -1178,7 +1346,7 @@ local function UpdateFocusReadout(target, player, selected)
     panel.focusArrow:SetShown(x ~= nil and y ~= nil)
     if x and y then
         DrawArrow(panel.focusArrow, x, y, r, g, b)
-        local range = tonumber(Settings().vignetteRadarRange) or 450
+        local range = displayedRange or tonumber(Settings().vignetteRadarRange) or 450
         if selected and not target.stale and target.distance and target.distance > range then
             local magnitude = math.sqrt(x * x + y * y)
             if magnitude > 0 then
@@ -1341,7 +1509,18 @@ Render = function()
     UpdateCombatToggle()
     UpdateFullSweep(0)
     BeginBlips()
-    local range = tonumber(Settings().vignetteRadarRange) or 450
+    local mapID = CurrentMapID()
+    if not preview and mapID ~= activeMapID then ScanVignettes(mapID) end
+    local targets = SelectableTargets()
+    local focusedTarget
+    for _, target in ipairs(targets) do
+        if target.key == FocusedTargetKey() then focusedTarget = target; break end
+    end
+    local player = not preview and PlayerSnapshot(mapID) or nil
+    local exploration = addon.VignetteRadarExploration
+    local range = exploration and exploration.Range(player, focusedTarget)
+        or tonumber(Settings().vignetteRadarRange) or 450
+    displayedRange = range
     UpdateRingLabels(range)
     panel.zoomLabel:SetText(range .. " yd")
     local ranges = Ranges()
@@ -1353,14 +1532,6 @@ Render = function()
         if northUp then panel.compass:LockHighlight() else panel.compass:UnlockHighlight() end
     end
     panel:SetAlpha(VisuallyQuiet() and 0.35 or 1)
-    local mapID = CurrentMapID()
-    if not preview and mapID ~= activeMapID then ScanVignettes(mapID) end
-    local targets = SelectableTargets()
-    local focusedTarget
-    for _, target in ipairs(targets) do
-        if target.key == FocusedTargetKey() then focusedTarget = target; break end
-    end
-    local player = not preview and PlayerSnapshot(mapID) or nil
     local sidebarTarget = focusedTarget
     if not sidebarTarget and Settings().vignetteRadarLayout == "squat" then
         if preview then
@@ -1384,6 +1555,7 @@ Render = function()
     UpdatePanelChrome()
 
     if preview then
+        RenderExploration(nil, range)
         HideQuestDots()
         HideQuestAreas()
         panel.summary:SetText(FocusedTargetKey() and "PREVIEW FOCUS" or "PREVIEW")
@@ -1404,6 +1576,7 @@ Render = function()
     end
 
     if not player then
+        RenderExploration(nil, range)
         HideQuestDots()
         HideQuestAreas()
         panel.summary:SetText("POSITION UNAVAILABLE")
@@ -1426,7 +1599,9 @@ Render = function()
     for _, line in ipairs(panel.headingChevron) do line:SetShown(player.headingAvailable) end
     local questAreasShown = RenderQuestAreas(player, mapID, range)
     local questsInRange = RenderQuestDots(player, range)
+    RenderExploration(player, range)
     local shown, staleShown, totalInRange = 0, 0, 0
+    local groups = {}
     for _, target in ipairs(targets) do
         if TargetVisible(target)
             and not (player.instanceID and target.instanceID and player.instanceID ~= target.instanceID) then
@@ -1435,13 +1610,60 @@ Render = function()
             if distance <= range then
                 totalInRange = totalInRange + 1
                 local screenX, screenY = Project(dx, dy, distance, ViewFacing(player.facing), panel.plotRadius, range)
-                if screenX and screenY and shown < MAX_BLIPS then
+                if screenX and screenY then
                     target.distance = distance
-                    PlaceBlip(target.key, screenX, screenY, target)
-                    shown = shown + 1
-                    if target.stale then staleShown = staleShown + 1 end
+                    local group
+                    if Settings().vignetteRadarUntangle ~= false then
+                        for _, candidate in ipairs(groups) do
+                            if (candidate.x-screenX)^2 + (candidate.y-screenY)^2 <= 16^2 then
+                                group = candidate; break
+                            end
+                        end
+                    end
+                    if not group then
+                        group = { x=screenX, y=screenY, items={} }
+                        groups[#groups+1] = group
+                    end
+                    group.items[#group.items+1] = { target=target, x=screenX, y=screenY }
                 end
             end
+        end
+    end
+    local drawn = 0
+    for _, group in ipairs(groups) do
+        local items, size = group.items, #group.items
+        if drawn < MAX_BLIPS then
+            local expanded = size > 1 and clusterHoverKey == items[1].target.key
+                and Now() < (clusterHoverUntil or 0)
+            local count = expanded and math.min(size, MAX_BLIPS-drawn) or 1
+            for index=1,count do
+                local entry = items[index]
+                local x, y = entry.x, entry.y
+                if expanded then
+                    local angle = (index-1) * TWO_PI / size
+                    local radius = math.min(25, 14 + size*1.5)
+                    x, y = group.x + math.sin(angle)*radius, group.y + math.cos(angle)*radius
+                    local magnitude = math.sqrt(x*x+y*y)
+                    if magnitude > panel.plotRadius-7 then
+                        local factor = (panel.plotRadius-7)/magnitude
+                        x, y = x*factor, y*factor
+                    end
+                end
+                PlaceBlip(entry.target.key, x, y, entry.target)
+                local blip = panel.blipByKey[entry.target.key]
+                if blip and size > 1 then
+                    blip.clusterKey = items[1].target.key
+                    if not expanded then
+                        blip.cluster = {}
+                        for _, member in ipairs(items) do blip.cluster[#blip.cluster+1] = member.target end
+                        blip.count:SetText(size > 9 and "9+" or tostring(size))
+                        blip.count:Show()
+                    end
+                end
+                drawn = drawn + 1
+            end
+            shown = shown + size
+            for _, entry in ipairs(items) do if entry.target.stale then staleShown = staleShown + 1 end end
         end
     end
     if FocusedTargetKey() then
@@ -2093,9 +2315,20 @@ local function EnsurePanel()
     panel.field:EnableMouse(true)
     panel.field:RegisterForDrag("LeftButton")
     panel.field:SetScript("OnDragStart", function()
-        if Settings().vignetteRadarCircleOnly == true then panel:StartMoving() end
+        if Settings().vignetteRadarCircleOnly == true then
+            panel.field._dragged = true
+            panel:StartMoving()
+        end
     end)
     panel.field:SetScript("OnDragStop", function() panel:StopMovingOrSizing(); SavePosition() end)
+    panel.field:SetScript("OnMouseUp", function(self, button)
+        local dragged = self._dragged
+        self._dragged = nil
+        if button == "LeftButton" and not dragged and panel.questBlob and panel.questBlob.tooltipQuestID then
+            local exploration = addon.VignetteRadarExploration
+            if exploration then exploration.FocusQuest(panel.questBlob.tooltipQuestID) end
+        end
+    end)
     panel.field:SetFrameLevel(panel:GetFrameLevel() + 1)
     panel.frameToggle = CreateFrame("Button", nil, panel)
     panel.frameToggle:SetSize(16, 20)
@@ -2375,11 +2608,17 @@ local function EnsurePanel()
 end
 
 ScanVignettes = function(mapID)
-    if activeMapID ~= mapID then questMapBasis = nil end
-    if activeMapID ~= mapID or preview or Settings().vignetteRadarEnabled ~= true then pulseUntil = 0 end
+    local changedMap = activeMapID ~= mapID
+    if changedMap then questMapBasis = nil end
+    if activeMapID ~= mapID or preview or Settings().vignetteRadarEnabled ~= true then
+        pulseUntil, approachPulseKey, approachPulseUntil = 0, nil, nil
+    end
     activeMapID = mapID
     activeTargets = CollectVignettes(mapID)
     activeQuests = CollectQuests(mapID)
+    if addon.VignetteRadarExploration then
+        addon.VignetteRadarExploration.ValidateQuestFocus(activeQuests, changedMap)
+    end
     if Features() then
         local worldMapMode = Settings().vignetteRadarWorldMap ~= false
         if activeWorldMapMode ~= nil and worldMapMode ~= activeWorldMapMode then
@@ -2404,10 +2643,34 @@ ScanVignettes = function(mapID)
             end
         end
     end
+    local exploration = addon.VignetteRadarExploration
+    if exploration and not preview and Settings().vignetteRadarEnabled == true then
+        local player = PlayerSnapshot(mapID)
+        exploration.UpdateTrail(player, mapID, Now())
+        exploration.RecordSightings(activeTargets, mapID)
+        local approach = exploration.CheckApproach(activeTargets, player, mapID)
+        if approach and not Quiet() then
+            approach.newUntil = Now() + 3
+            approachPulseKey, approachPulseUntil = approach.key, approach.newUntil
+            pulseUntil = math.max(pulseUntil, approach.newUntil)
+            if Settings().vignetteRadarAlertSound == true and PlaySound and SOUNDKIT then
+                pcall(PlaySound, SOUNDKIT.TELL_MESSAGE or SOUNDKIT.IG_MAINMENU_OPTION_CHECKBOX_ON, "SFX")
+            end
+        end
+    end
+    if approachPulseKey and approachPulseUntil and Now() < approachPulseUntil then
+        for _, target in ipairs(activeTargets) do
+            if target.key == approachPulseKey then target.newUntil = approachPulseUntil; break end
+        end
+    end
 end
 
 RefreshRadar = function(rescan)
     local settings = Settings()
+    local exploration = addon.VignetteRadarExploration
+    local mapID = CurrentMapID()
+    local hasExploration = exploration and mapID and
+        (#exploration.GetPins(mapID) > 0 or #exploration.GetRoute(mapID) > 0)
     if addon.VignetteRadarQuickConfig and addon.VignetteRadarQuickConfig.Refresh then
         addon.VignetteRadarQuickConfig.Refresh()
     end
@@ -2429,7 +2692,7 @@ RefreshRadar = function(rescan)
         if panel then panel:Hide() end
     elseif manualPanelState == true or preview or settings.vignetteRadarKeepVisibleCombat == true
         or settings.vignetteRadarHideWhenEmpty == false
-        or #SelectableTargets() > 0 or (#activeQuests > 0 and (settings.vignetteRadarQuestDots
+        or hasExploration or #SelectableTargets() > 0 or (#activeQuests > 0 and (settings.vignetteRadarQuestDots
             or (settings.vignetteRadarQuestAreas and settings.vignetteRadarNorthUp))) then
         EnsurePanel():Show()
         Render()
@@ -2443,6 +2706,7 @@ end
 addon.RefreshVignetteRadar = function(rescan) RefreshRadar(rescan ~= false) end
 addon.VignetteRadarAPI = {
     GetTargets = function() return activeTargets end,
+    GetPlayerSnapshot = function() return PlayerSnapshot(CurrentMapID()) end,
     GetSelectableTargets = SelectableTargets,
     GetPanel = function() return panel end,
     GetLauncher = function() return launcher end,
@@ -2489,6 +2753,7 @@ end
 function addon.SetVignetteRadarRange(range)
     for _, supported in ipairs(Ranges()) do
         if range == supported then
+            if addon.VignetteRadarExploration then addon.VignetteRadarExploration.ManualZoom() end
             Settings().vignetteRadarRange = supported
             RefreshRadar(false)
             if addon.RefreshVignetteRadarOptions then addon.RefreshVignetteRadarOptions() end
@@ -2574,6 +2839,17 @@ SlashCmdList.VIGNETTERADAR = function(message)
     message = (message or ""):lower():match("^%s*(.-)%s*$")
     if message == "config" or message == "options" then
         if addon.OpenOptions then addon.OpenOptions() end
+        return
+    elseif message == "explore" then
+        if addon.VignetteRadarExploration then addon.VignetteRadarExploration.TogglePanel() end
+        return
+    elseif message == "pin" or message:match("^pin%s+") then
+        local exploration = addon.VignetteRadarExploration
+        if exploration then
+            local name = message:match("^pin%s+(.+)$") or "My pin"
+            local ok, result = exploration.AddPin(PlayerSnapshot(CurrentMapID()), name)
+            exploration.Tell(ok and ("Pinned " .. result.name) or result)
+        end
         return
     elseif message == "layout" or message:match("^layout%s+") then
         local layout = message:match("^layout%s+(%S+)$")

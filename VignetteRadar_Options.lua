@@ -207,6 +207,9 @@ local function BuildPanel()
     AddButton(radar, "Reset positions", 169, -283, 133, function()
         addon.ResetVignetteRadarPositions()
     end)
+    AddButton(radar, "Explore tools", 314, -283, 182, function()
+        if addon.VignetteRadarExploration then addon.VignetteRadarExploration.TogglePanel() end
+    end)
     AddFooter(radar, "Stay fully visible (Behavior) overrides auto-hide.")
 
     local layout = AddPage("Layout", 2)

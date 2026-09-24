@@ -84,6 +84,11 @@ local function Tooltip(owner, target)
     if type(target.distance) == "number" then
         GameTooltip:AddLine(math.floor(target.distance + 0.5) .. " yd away", 0.72, 0.76, 0.78)
     end
+    if type(target.groupMin) == "number" and target.groupMin > 0 then
+        local group = type(target.groupMax) == "number" and target.groupMax > target.groupMin
+            and (target.groupMin .. "–" .. target.groupMax) or tostring(target.groupMin)
+        GameTooltip:AddLine("Suggested group: " .. group, .85, .76, .53)
+    end
     if target.stale then
         local age = LastSeenAge(target)
         GameTooltip:AddLine(age and ("Last seen " .. AgeLabel(age):lower() .. ".") or "Last seen recently.",
@@ -99,6 +104,7 @@ local function Tooltip(owner, target)
         GameTooltip:AddLine("Alt-left-click: toggle favorite.", 0.55, 0.86, 0.76, true)
         GameTooltip:AddLine("Right-click: ignore this session.", 0.55, 0.86, 0.76, true)
         GameTooltip:AddLine("Shift-right-click: ignore persistently.", 0.55, 0.86, 0.76, true)
+        GameTooltip:AddLine("Ctrl-click: route stop. Ctrl-Alt-click: watch approach.", 0.55, 0.86, 0.76, true)
     end
     GameTooltip:Show()
 end

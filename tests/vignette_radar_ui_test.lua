@@ -84,6 +84,12 @@ function methods:SetEndPoint(...)
     assert(type(self.endPoint[3]) == "number" and type(self.endPoint[3]) == "number")
 end
 function methods:SetFont(...) self.font = { ... } end
+function methods:SetFontObject(value) self.fontObject = value end
+function methods:SetTextInsets(...) self.textInsets = { ... } end
+function methods:SetAutoFocus(value) self.autoFocus = value end
+function methods:SetMaxLetters(value) self.maxLetters = value end
+function methods:GetText() return self.text end
+function methods:ClearFocus() self.focused = false end
 function methods:SetFontString(value) self.fontString = value end
 function methods:SetText(value) self.text = value; if self.fontString then self.fontString:SetText(value) end end
 function methods:SetTextColor(...) self.textColor = { ... } end
@@ -153,6 +159,9 @@ C_VignetteInfo = {
     GetVignettes = function() return {} end,
     GetVignetteInfo = function() end,
     GetVignettePosition = function() end,
+    GetRecommendedGroupSize = function(key)
+        if key == "rare" then return 3, 5 end
+    end,
 }
 C_Texture = { GetAtlasInfo = function(name) return name == "VignetteLoot" and {} or nil end }
 GetPlayerFacing = function() return 0 end
@@ -176,6 +185,7 @@ assert(loadfile("VignetteRadar_Core.lua"))("VignetteRadar", addon)
 assert(loadfile("VignetteRadar_Style.lua"))("VignetteRadar", addon)
 assert(loadfile("VignetteRadar_Controls.lua"))("VignetteRadar", addon)
 assert(loadfile("VignetteRadar_Features.lua"))("VignetteRadar", addon)
+assert(loadfile("VignetteRadar_Exploration.lua"))("VignetteRadar", addon)
 assert(loadfile(legendSourcePath))("VignetteRadar", addon)
 assert(loadfile(targetPickerSourcePath))("VignetteRadar", addon)
 assert(loadfile(sourcePath))("VignetteRadar", addon)
@@ -219,6 +229,17 @@ settings.vignetteRadarScale = 1
 panel:SetScale(1)
 assert(settings.vignetteRadarEnabled == false, "layout preview must not silently enable live tracking")
 assert(panel:IsShown() and panel.width == 220 and panel.height == 278, "preview must reserve space for zoom controls")
+SlashCmdList.VIGNETTERADAR("explore")
+local explore = assert(_G.VignetteRadarExplorePanel)
+assert(explore:IsShown() and explore.width == 330 and explore.height == 425,
+    "exploration controls must fit the compact popout")
+for _, content in pairs(explore.pages) do
+    assert(content.point[3] == -73 and content.height == 346 and 73 + content.height < explore.height,
+        "all exploration pages must stay inside the popout")
+end
+assert(explore.pages.Modes:IsShown() and not explore.pages.Tools:IsShown())
+explore.tabs.Tools.scripts.OnClick(explore.tabs.Tools)
+assert(explore.pages.Tools:IsShown() and not explore.pages.Modes:IsShown())
 assert(panel.field.width == 200 and panel.field.height == 200 and panel.field.point[1] == "BOTTOM"
     and panel.field.point[3] == 35, "radar field must fit between header and zoom controls with visible gutters")
 assert(panel.drag.width == 106 and panel.target.point[1] == "TOPRIGHT"
@@ -1046,8 +1067,14 @@ panel.questBlob.hoverQuestID = 12345
 GetCursorPosition = function() return panel.field:GetWidth() / 2, panel.field:GetHeight() / 2 end
 panel.scripts.OnUpdate(panel, .11)
 assert(GameTooltip:IsShown() and GameTooltip:GetOwner() == panel.questBlob
-    and GameTooltip.text == "Nearby quest" and GameTooltip.line == "Quest area",
+    and GameTooltip.text == "Nearby quest" and GameTooltip.line:find("Click to spotlight", 1, true),
     "hovering a native quest shape must identify the quest without a clickable blob layer")
+panel.field.scripts.OnMouseUp(panel.field, "LeftButton")
+assert(addon.VignetteRadarExploration.GetFocusedQuest() == 12345,
+    "clicking a hovered native blob must spotlight its quest")
+panel.field.scripts.OnMouseUp(panel.field, "LeftButton")
+assert(addon.VignetteRadarExploration.GetFocusedQuest() == nil,
+    "clicking a spotlighted blob again must restore all quest areas")
 GetCursorPosition = function() return panel.field:GetWidth() * .8, panel.field:GetHeight() / 2 end
 panel.scripts.OnUpdate(panel, .11)
 assert(not GameTooltip:IsShown(), "hovering outside the exact quest shape must clear its tooltip")
@@ -1446,5 +1473,40 @@ assert(panel:IsShown() and panel.blipByKey.treasure and panel.blipByKey.treasure
     "live detections returning after a map transition must render normally")
 livePositions.treasure = savedTreasurePosition
 C_QuestLog = savedQuestLog
+
+-- Exploration overlays stay inside the field and crowded detections remain selectable.
+local exploration = addon.VignetteRadarExploration
+local ok, pin = exploration.AddPin(addon.VignetteRadarAPI.GetPlayerSnapshot(), "Test cave")
+pin.worldX = pin.worldX + 40
+assert(ok and exploration.AddRouteStop(pin))
+addon.VignetteRadarAPI.Refresh(false)
+assert(panel.exploreDots and panel.exploreDots[1]:IsShown() and panel.exploreLines[1]:IsShown(),
+    "pins and numbered route stops must draw on the radar")
+for _, dot in ipairs(panel.exploreDots) do
+    if dot:IsShown() then
+        local x, y = dot.point[4], dot.point[5]
+        assert(x*x+y*y <= panel.plotRadius*panel.plotRadius,
+            "exploration dots must stay inside the plotting ring")
+    end
+end
+exploration.ClearRoute()
+exploration.RemovePin(pin.id)
+addon.VignetteRadarTargetPicker.ClearFocus()
+settings.vignetteRadarCategories = { rare=true, treasure=true, event=true, other=true }
+settings.vignetteRadarUntangle = true
+livePositions.rare = { x=.51, y=.5 }
+livePositions.treasure = { x=.51, y=.5 }
+now, guids = 1100, { "rare", "treasure" }
+addon.VignetteRadarAPI.Refresh(true)
+local crowded
+for _, blip in pairs(panel.blipByKey) do if blip.cluster then crowded = blip; break end end
+assert(crowded and crowded.count:IsShown() and crowded.count.text == "2",
+    "overlapping detections must expose a count badge")
+crowded.scripts.OnEnter(crowded)
+panel.scripts.OnUpdate(panel, .06)
+assert(panel.blipByKey.rare and panel.blipByKey.treasure,
+    "hovering a count badge must spread individual targets for selection")
+assert(panel.blipByKey.rare.target.groupMin == 3 and panel.blipByKey.rare.target.groupMax == 5,
+    "Blizzard's available group-size recommendation must reach the marker")
 
 io.write("vignette radar UI tests passed\n")

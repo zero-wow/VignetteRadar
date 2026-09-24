@@ -107,6 +107,17 @@ function addon.GetSettings()
     if type(db.vignetteRadarShapes) ~= "boolean" then db.vignetteRadarShapes = true end
     if type(db.vignetteRadarShowHealth) ~= "boolean" then db.vignetteRadarShowHealth = true end
     if type(db.vignetteRadarFullSweep) ~= "boolean" then db.vignetteRadarFullSweep = false end
+    if type(db.vignetteRadarSmartZoom) ~= "boolean" then db.vignetteRadarSmartZoom = false end
+    if type(db.vignetteRadarUntangle) ~= "boolean" then db.vignetteRadarUntangle = true end
+    if type(db.vignetteRadarBreadcrumbs) ~= "boolean" then db.vignetteRadarBreadcrumbs = false end
+    if type(db.vignetteRadarApproachAlerts) ~= "boolean" then db.vignetteRadarApproachAlerts = false end
+    if type(db.vignetteRadarApproachDistance) ~= "number" then db.vignetteRadarApproachDistance = 100 end
+    db.vignetteRadarApproachDistance = math.max(25, math.min(600, db.vignetteRadarApproachDistance))
+    if type(db.vignetteRadarJournalEnabled) ~= "boolean" then db.vignetteRadarJournalEnabled = false end
+    if type(db.vignetteRadarPins) ~= "table" then db.vignetteRadarPins = {} end
+    if type(db.vignetteRadarRoute) ~= "table" then db.vignetteRadarRoute = {} end
+    if type(db.vignetteRadarJournal) ~= "table" then db.vignetteRadarJournal = {} end
+    if type(db.vignetteRadarCustomPresets) ~= "table" then db.vignetteRadarCustomPresets = {} end
     local style = addon.VignetteRadarStyle
     if (style and not style.HasTheme(db.vignetteRadarTheme))
         or (not style and type(db.vignetteRadarTheme) ~= "string") then

@@ -22,7 +22,18 @@ Click the small **N** compass button to switch orientation. A small chevron tuck
 
 The small eye icon in the footer controls automatic fading and hiding. When it is bright, the radar and launcher stay fully visible both in combat and inside instances, and an empty radar stays open through zone or phase changes. It overrides **Hide when empty**, including while map data is temporarily unavailable. Click it again to allow automatic fading and hiding. The setting is saved and also appears as **Stay fully visible** under Behavior. You can still close the radar yourself or disable tracking. Alert muting remains a separate choice.
 
-The full radar supports 150, 300, 450, 600, 1,200, 2,400, and 4,800-yard radii. Scroll down over it or click `-` to zoom out; scroll up or click `+` to zoom in. The range readout is the distance from you to the outer range ring. The launcher stays at 150 yards.
+The full radar supports 150, 300, 450, 600, 1,200, 2,400, and 4,800-yard radii. Scroll down over it or click `-` to zoom out; scroll up or click `+` to zoom in. The range readout is the distance from you to the outer range ring. The launcher stays at 150 yards. Optional **Smart zoom** widens the view while moving quickly and chooses a close range around a focused target. Manual zoom takes control for 30 seconds.
+
+Open **Explore tools** from either settings panel or type `/vr explore`. Its four pages keep optional hunting tools off the radar face:
+
+- **Modes:** Treasure, Rare, Questing, and Exploring presets change the range, layout, and filters together. Save up to eight named presets with your current colors and appearance; click a saved preset to load it or right-click it to delete it.
+- **Tools:** Smart zoom, crowded-marker spreading, a fading travel trail, watched-target approach alerts, and the sightings journal can be switched independently. Set the approach distance from 25 to 600 yards. Watch or unwatch a live detection with Ctrl-Alt-click; entering the chosen radius pulses it and plays a sound when the existing alert-sound setting is on and alerts are not muted.
+- **Pins:** Give your current location a name with **Add pin** or `/vr pin <name>`. Pins are saved and shown as gold dots on the same map once you move clear of the player marker. Click one to add a route stop or right-click it to remove it. The Pins page also lets you add or delete saved pins.
+- **Journal:** When enabled, keeps the last 100 first sightings with their map coordinates and time. The journal records what the game exposed, not whether a creature was killed or loot was taken.
+
+Ctrl-click a live detection or click a saved pin to add it to an eight-stop route. Numbered stops and connecting lines give straight-line guidance; **Next route stop** advances the queue and **Clear route** empties it. Routes and pins are saved. Stops from another map remain in the queue and appear when you return to that map. The trail only keeps recent points in memory and fades out after three minutes.
+
+When detections overlap, a single marker shows a count; hover it to spread the individual markers briefly, then choose one. Turn this off in Explore tools if you prefer every marker drawn at its exact position. Quest dots and hovered quest areas show objective completion when Blizzard provides it. Click a quest dot or area to spotlight its quest; click it again to restore all quest areas. Suggested group size appears on vignette tooltips when Blizzard supplies one.
 
 World-map detections are included by default and can be disabled on the Radar settings tab. Only publicly exposed, unfogged map entries with usable positions are included; tooltips identify their source. Changing this option clears incompatible last-seen markers and seeds the new view silently. Increasing the displayed radius cannot make Blizzard supply hidden or unloaded spawns, so there is no guaranteed detection distance. The addon maintains up to 256 current/last-seen entries and draws up to 64 at once; crowded views show an explicit count and individual entries remain available in the target picker.
 
@@ -35,6 +46,7 @@ Copy the `VignetteRadar` folder to `_retail_/Interface/AddOns/`, then reload the
 - `/vr` toggles the full radar.
 - `/vr on`, `/vr off`, and `/vr preview` control visibility.
 - `/vr config` opens the addon settings.
+- `/vr explore` opens Explore tools; `/vr pin <name>` saves a pin at your current position.
 - `/vr layout` cycles styles; `/vr layout classic`, `/vr layout squat`, and `/vr layout compact` select one directly.
 - `/vradar`, `/vignetteradar`, and `/whradar` remain aliases.
 
@@ -57,6 +69,6 @@ Preview samples support focus without changing favorites, ignores, or navigation
 
 ## Development validation
 
-Current development build: `0.1.0-dev.25` (base version `0.1.0`).
+Current development build: `0.1.0-dev.26` (base version `0.1.0`).
 
 Run each `tests/*_test.lua` with Lua from the addon root and check Lua files with `luac -p`. The tests cover migration, radar projection, filters, target actions, alert/last-seen state, navigation fallbacks, quiet modes, mouse-wheel/button zoom, world-map visibility guards, and UI layout bounds using mocked game APIs. Layout checks exercise repeated style changes, automatic Squat details, focused and unfocused states, edge and corner resizing, pop-outs, resized rings and markers, and an 800×600 canvas. Orientation checks cover quarter turns, fixed markers/cardinals, the player direction line, both radars, preview, unknown facing, and out-of-range focus. These checks do not replace in-game validation of rendering, navigation, or API availability.
