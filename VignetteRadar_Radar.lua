@@ -1083,6 +1083,13 @@ local function RenderExploration(player, range)
     end
     local trail, trailMap = exploration.GetTrail()
     if Settings().vignetteRadarBreadcrumbs and trailMap == player.mapID then
+        if not panel.trailLayer then
+            local layer = CreateFrame("Frame", nil, panel.field)
+            layer:SetAllPoints(panel.field)
+            layer:SetFrameLevel(panel.field:GetFrameLevel() + 3)
+            layer:EnableMouse(false)
+            panel.trailLayer = layer
+        end
         local trailDotCount, nextDot = 0, 0
         local spacing, limit = 9, 64
         local edge = panel.plotRadius - 3
@@ -1101,7 +1108,7 @@ local function RenderExploration(player, range)
                     trailDotCount = trailDotCount + 1
                     local dot = panel.trailDots[trailDotCount]
                     if not dot then
-                        dot = panel.field:CreateTexture(nil, "ARTWORK")
+                        dot = panel.trailLayer:CreateTexture(nil, "BACKGROUND")
                         dot:SetSize(5, 5)
                         dot:SetTexture(CIRCLE_TEXTURE)
                         panel.trailDots[trailDotCount] = dot

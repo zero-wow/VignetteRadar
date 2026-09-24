@@ -1531,6 +1531,8 @@ movingX, now = .51, 1203
 addon.VignetteRadarAPI.Refresh(true)
 assert(panel.trailDots[1] and panel.trailDots[1]:IsShown()
     and panel.trailDots[1].kind == "Texture" and panel.trailDots[1].width == 5
+    and panel.trailDots[1].parent == panel.trailLayer
+    and panel.trailLayer.level == panel.field.level + 3
     and #panel.trailDots <= 64 and not panel.exploreLines[1]:IsShown(),
     "walking must draw a capped dotted trail without allocating clickable markers or straight lines")
 local firstTrailDot = panel.trailDots[1]
