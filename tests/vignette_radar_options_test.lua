@@ -86,6 +86,8 @@ local db = {
     vignetteRadarNorthUp = false,
     vignetteRadarWorldMap = true,
     vignetteRadarQuestDots = false, vignetteRadarQuestAreas = false,
+    vignetteRadarQuestHalos = true, vignetteRadarQuestColors = true,
+    vignetteRadarQuestHaloRadius = 10,
     vignetteRadarAlerts = true, vignetteRadarAlertSound = false,
     vignetteRadarAlertCategories = { rare = true, treasure = 1, event = false, other = false },
     vignetteRadarAlertCooldown = 60, vignetteRadarLastSeen = true,
@@ -195,6 +197,7 @@ assert(#controls >= 26, "each feature must have a usable control")
 for _, key in ipairs({
     "vignetteRadarEnabled", "vignetteRadarHideWhenEmpty", "vignetteRadarLauncherVisible",
     "vignetteRadarWorldMap", "vignetteRadarNorthUp", "vignetteRadarQuestDots", "vignetteRadarQuestAreas",
+    "vignetteRadarQuestHalos", "vignetteRadarQuestColors",
     "vignetteRadarAlerts", "vignetteRadarAlertSound", "vignetteRadarAlertCategories.rare",
     "vignetteRadarAlertCategories.treasure", "vignetteRadarAlertCategories.event",
     "vignetteRadarAlertCategories.other", "vignetteRadarLastSeen", "vignetteRadarQuietCombat",
@@ -209,8 +212,10 @@ assert(byKey["vignetteRadarAlertCategories.rare"].label.text == "Rares and bosse
     and byKey["vignetteRadarShapes"].label.text == "Recognizable icons"
     and byKey["vignetteRadarWorldMap"].label.text == "Include world-map detections",
     "rare alerts and icon settings must use recognizable player-facing names")
-assert(byKey.vignetteRadarQuestDots.label.text == "Show quest location dots"
-    and byKey.vignetteRadarQuestAreas.label.text == "Shade Blizzard quest areas",
+assert(byKey.vignetteRadarQuestDots.label.text == "Show quest diamonds"
+    and byKey.vignetteRadarQuestAreas.label.text == "Shade Blizzard quest areas"
+    and byKey.vignetteRadarQuestHalos.label.text == "Approximate quest circles"
+    and byKey.vignetteRadarQuestColors.label.text == "Color each quest uniquely",
     "quest dots and areas need separate plain-language switches")
 local trailPickerButton
 for _, object in ipairs(objects) do

@@ -2,7 +2,7 @@
     <Binding name="VIGNETTERADAR_RAISE_LAUNCHER" header="VIGNETTERADAR" category="ADDONS" runOnUp="true">
         VignetteRadar_RaiseLauncher(keystate)
     </Binding>
-    <Binding name="VIGNETTERADAR_PEEK_RADAR" header="VIGNETTERADAR" category="ADDONS" runOnUp="true">
+    <Binding name="VIGNETTERADAR_PEEK_RADAR" category="ADDONS" runOnUp="true">
         VignetteRadar_PeekRadar(keystate)
     </Binding>
 </Bindings>

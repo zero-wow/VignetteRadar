@@ -22,6 +22,9 @@ assert(db.vignetteRadarKeepVisibleCombat == false,
     "existing quiet-combat settings should preserve combat fading")
 assert(db.vignetteRadarQuestDots == false and db.vignetteRadarQuestAreas == false,
     "new quest overlays should preserve the existing uncluttered radar until enabled")
+assert(db.vignetteRadarQuestHalos == true and db.vignetteRadarQuestColors == true
+    and db.vignetteRadarQuestHaloRadius == 10,
+    "estimated quest circles should be ready when quest dots and areas are enabled")
 assert(db.vignetteRadarPosition.x == 111 and db.vignetteRadarLauncherPosition.y == -44
     and db.vignetteRadarCategories.rare == false and db.vignetteRadarHighlight == "treasure",
     "standalone addon must preserve placement and category choices")
@@ -121,12 +124,17 @@ defaults.vignetteRadarRange = 999
 defaults.vignetteRadarWorldMap = "bad"
 defaults.vignetteRadarQuestDots = "bad"
 defaults.vignetteRadarQuestAreas = "bad"
+defaults.vignetteRadarQuestHalos = "bad"
+defaults.vignetteRadarQuestColors = "bad"
+defaults.vignetteRadarQuestHaloRadius = 999
 defaults.vignetteRadarLayout = "unsupported"
 defaults.vignetteRadarNorthUp = "bad"
 defaults.vignetteRadarScale = "bad"
 fresh.GetSettings()
 assert(defaults.vignetteRadarRange == 450 and defaults.vignetteRadarWorldMap == true
     and defaults.vignetteRadarQuestDots == false and defaults.vignetteRadarQuestAreas == false
+    and defaults.vignetteRadarQuestHalos == true and defaults.vignetteRadarQuestColors == true
+    and defaults.vignetteRadarQuestHaloRadius == 10
     and defaults.vignetteRadarLayout == "classic" and defaults.vignetteRadarNorthUp == false
     and defaults.vignetteRadarScale == 1,
     "invalid range, mode, layout, and north-up values must reset to safe defaults")

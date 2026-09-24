@@ -579,14 +579,16 @@ local function Build()
     end)
 
     local quests = quick.pages.Quests
-    Check(quests, "vignetteRadarQuestDots", "Show gold quest dots", 14, -3)
+    Check(quests, "vignetteRadarQuestDots", "Show quest diamonds", 14, -3)
     Check(quests, "vignetteRadarQuestAreas", "Shade Blizzard quest areas", 14, -31)
-    Check(quests, "vignetteRadarFollowTrackedQuest", "Follow Blizzard's tracked quest", 14, -59)
-    Label(quests, "Quest areas switch the radar to a square.", 14, -100, 10)
-    Label(quests, "The exact area shape needs north-up mode.", 14, -120, 10)
-    Check(quests, "vignetteRadarNorthUp", "Keep north at the top", 14, -144)
-    Label(quests, "Quest dots follow either radar orientation.", 14, -183, 10)
-    Check(quests, "vignetteRadarEdgeCues", "Show nearby off-screen cues", 14, -211)
+    Check(quests, "vignetteRadarQuestHalos", "Approximate quest circles", 14, -59)
+    Check(quests, "vignetteRadarFollowTrackedQuest", "Outline Blizzard's tracked quest", 14, -87)
+    Check(quests, "vignetteRadarNorthUp", "Keep north at the top", 14, -115)
+    Check(quests, "vignetteRadarEdgeCues", "Show nearby off-screen cues", 14, -143)
+    Check(quests, "vignetteRadarQuestColors", "Color each quest uniquely", 14, -171)
+    Label(quests, "Exact blobs need north-up; circles are estimates.", 14, -204, 10)
+    Stepper(quests, "vignetteRadarQuestHaloRadius", "Circle radius", -225,
+        { 10, 20, 40, 80 }, function(value) return value .. " yd" end)
 
     local mapData = quick.pages["Map Data"]
     Section(mapData, "CHOOSE ONE MAP-DATA PACK", -3)

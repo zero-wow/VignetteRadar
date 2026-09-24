@@ -322,12 +322,17 @@ local function CreateOtherGuide(parent, label, x, y, symbol)
     local row = GuideRow(parent, label, x, y)
     row.symbol = symbol
     if symbol == "quest" then
-        row.rim = Circle(row, 8)
+        row.rim = Circle(row, 11)
+        row.rim:SetTexture("Interface\\AddOns\\VignetteRadar\\Media\\quest-diamond.tga")
         row.rim:SetVertexColor(.04, .04, .03, .9)
+        row.halo = row:CreateTexture(nil, "BACKGROUND")
+        row.halo:SetSize(16, 16)
+        row.halo:SetPoint("CENTER", row.rim, "CENTER")
+        row.halo:SetTexture(CIRCLE_TEXTURE)
         row.fill = row:CreateTexture(nil, "OVERLAY")
-        row.fill:SetSize(5, 5)
+        row.fill:SetSize(8, 8)
         row.fill:SetPoint("CENTER", row.rim, "CENTER")
-        row.fill:SetTexture(CIRCLE_TEXTURE)
+        row.fill:SetTexture("Interface\\AddOns\\VignetteRadar\\Media\\quest-diamond.tga")
     elseif symbol == "area" then
         row.fill = row:CreateTexture(nil, "ARTWORK")
         row.fill:SetSize(11, 11)
@@ -492,7 +497,7 @@ local function EnsurePanel()
     panel.otherHeading = GuideLabel(panel, "MORE ON THE RADAR", 10, 238, PANEL_W - 20, 9)
     panel.otherHeading:SetTextColor(.68, .75, .77, 1)
     panel.guides = {
-        quest = CreateOtherGuide(panel, "Quest dot", 10, 256, "quest"),
+        quest = CreateOtherGuide(panel, "Quest diamond", 10, 256, "quest"),
         area = CreateOtherGuide(panel, "Quest area", 120, 256, "area"),
         pin = CreateOtherGuide(panel, "Saved pin", 10, 278, "pin"),
         route = CreateOtherGuide(panel, "Route stop", 120, 278, "route"),
@@ -578,12 +583,18 @@ function API.Refresh()
         or settings.vignetteRadarPOIIcons and "Pack icons vary · saved, not live"
         or "Saved in one pack; not live detections")
     local questRed, questGreen, questBlue = Color("quest", { 1, .74, .27 })
+    if settings.vignetteRadarQuestColors then questRed, questGreen, questBlue = .37, .86, .78 end
     panel.guides.quest.fill:SetVertexColor(questRed, questGreen, questBlue, 1)
+    panel.guides.quest.halo:SetVertexColor(questRed, questGreen, questBlue, .16)
+    local showQuestHalo = settings.vignetteRadarQuestDots and settings.vignetteRadarQuestAreas
+        and settings.vignetteRadarQuestHalos
+    panel.guides.quest.halo:SetShown(showQuestHalo == true)
     panel.guides.area.fill:SetVertexColor(questRed, questGreen, questBlue, .3)
     panel.guides.quest:SetAlpha(settings.vignetteRadarQuestDots and 1 or .6)
-    panel.guides.quest.label:SetText(settings.vignetteRadarQuestDots and "Quest dot" or "Quest dot off")
+    panel.guides.quest.label:SetText(not settings.vignetteRadarQuestDots and "Quest off"
+        or showQuestHalo and "Quest + halo" or "Quest diamond")
     panel.guides.area:SetAlpha(settings.vignetteRadarQuestAreas and 1 or .6)
-    panel.guides.area.label:SetText(settings.vignetteRadarQuestAreas and "Quest area" or "Quest area off")
+    panel.guides.area.label:SetText(settings.vignetteRadarQuestAreas and "Native area" or "Area off")
     panel.guides.pin.fill:SetVertexColor(.92, .71, .34, .9)
     panel.guides.route.fill:SetVertexColor(.16, .7, .54, .9)
     panel.guides.edge.fill:SetVertexColor(questRed, questGreen, questBlue, .9)

@@ -145,7 +145,9 @@ for _, kind in ipairs({ "treasure", "mob", "item", "note" }) do
         "map note entries must stay within the legend's visible gutters")
 end
 assert(panel.mapCaption.text:find("not live detections", 1, true)
-    and panel.guides.quest.fill.width == 5 and panel.guides.area.fill.width == 11
+    and panel.guides.quest.fill.width == 8
+    and panel.guides.quest.fill.texture == "Interface\\AddOns\\VignetteRadar\\Media\\quest-diamond.tga"
+    and panel.guides.area.fill.width == 11
     and panel.guides.pin and panel.guides.route.number.text == "1"
     and #panel.guides.trail.dots == 3 and #panel.guides.trail.marks == 3
     and #panel.guides.stale.lines == 4,
@@ -180,19 +182,22 @@ settings.vignetteRadarBreadcrumbs = false
 legend.Refresh()
 assert(panel.mapNotes.mob.alpha == .6 and panel.mapNotes.mob.label.text == "Mob off"
     and panel.mapCaption.text:find("Map notes off", 1, true)
-    and panel.guides.quest.label.text == "Quest dot off"
+    and panel.guides.quest.label.text == "Quest off"
     and panel.guides.trail.label.text == "Trail off",
     "the guide must visibly identify optional features that are switched off")
 settings.vignetteRadarPOISource = "auto"
 settings.vignetteRadarPOITypes = { treasure = true, mob = false, item = true, note = true }
 settings.vignetteRadarQuestDots = true
 settings.vignetteRadarQuestAreas = true
+settings.vignetteRadarQuestHalos = true
 settings.vignetteRadarBreadcrumbs = true
 settings.vignetteRadarTrailStyle = "ticks"
 settings.vignetteRadarShapes = false
 legend.Refresh()
 assert(panel.mapNotes.treasure.alpha == 1 and panel.mapNotes.mob.alpha == .6
-    and panel.guides.quest.alpha == 1 and panel.guides.trail.alpha == 1
+    and panel.guides.quest.alpha == 1 and panel.guides.quest.halo:IsShown()
+    and panel.guides.quest.label.text == "Quest + halo"
+    and panel.guides.area.label.text == "Native area" and panel.guides.trail.alpha == 1
     and panel.guides.trail.label.text == "Trail: Ticks"
     and panel.guides.trail.marks[1]:IsShown() and not panel.guides.trail.dots[1]:IsShown()
     and panel.rows.rare.swatch.texture == "Interface\\CharacterFrame\\TempPortraitAlphaMask"

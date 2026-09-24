@@ -109,6 +109,12 @@ function addon.GetSettings()
     if type(db.vignetteRadarWorldMap) ~= "boolean" then db.vignetteRadarWorldMap = true end
     if type(db.vignetteRadarQuestDots) ~= "boolean" then db.vignetteRadarQuestDots = false end
     if type(db.vignetteRadarQuestAreas) ~= "boolean" then db.vignetteRadarQuestAreas = false end
+    if type(db.vignetteRadarQuestHalos) ~= "boolean" then db.vignetteRadarQuestHalos = true end
+    if type(db.vignetteRadarQuestColors) ~= "boolean" then db.vignetteRadarQuestColors = true end
+    local haloRadius = db.vignetteRadarQuestHaloRadius
+    if haloRadius ~= 10 and haloRadius ~= 20 and haloRadius ~= 40 and haloRadius ~= 80 then
+        db.vignetteRadarQuestHaloRadius = 10
+    end
     if type(db.vignetteRadarFollowTrackedQuest) ~= "boolean" then db.vignetteRadarFollowTrackedQuest = false end
     if type(db.vignetteRadarEdgeCues) ~= "boolean" then db.vignetteRadarEdgeCues = true end
     if type(db.vignetteRadarEmptyHelp) ~= "boolean" then db.vignetteRadarEmptyHelp = true end

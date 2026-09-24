@@ -31,10 +31,16 @@ local TRAIL_LIFETIMES = { 1, 300 }
 local ACCENT = { 0.05, 0.82, 0.62 }
 local RED = { 1, 0.18, 0.14 }
 local CIRCLE_TEXTURE = "Interface\\CharacterFrame\\TempPortraitAlphaMask"
+local QUEST_DIAMOND_TEXTURE = "Interface\\AddOns\\VignetteRadar\\Media\\quest-diamond.tga"
 local SQUARE_TEXTURE = "Interface\\Buttons\\WHITE8X8"
 local ROUNDED_SQUARE_TEXTURE = "Interface\\AddOns\\VignetteRadar\\Media\\radar-rounded-square.tga"
 local ROUNDED_BORDER_TEXTURE = "Interface\\AddOns\\VignetteRadar\\Media\\radar-rounded-border.tga"
+local ROUNDED_CONTROL_TEXTURE = "Interface\\AddOns\\VignetteRadar\\Media\\control-rounded-square.tga"
 local QUEST_CLIP_INSET = 4
+local QUEST_COLORS = {
+    { .37, .86, .78 }, { 1, .70, .34 }, { .71, .59, 1 }, { 1, .47, .52 },
+    { .43, .78, 1 }, { .73, .86, .37 }, { .96, .60, .83 }, { 1, .57, .32 },
+}
 local SKULL_TEXTURE = "Interface\\TargetingFrame\\UI-TargetingFrame-Skull"
 local LAUNCHER_BEZEL = "Interface\\AddOns\\VignetteRadar\\Media\\vignette-radar-bezel.tga"
 local LAUNCHER_CLOSED = "Interface\\AddOns\\VignetteRadar\\Media\\vignette-radar-closed.tga"
@@ -51,6 +57,7 @@ local preview = false
 local manualPanelState
 local activeTargets = {}
 local activeQuests = {}
+local questColorByID, questColorMapID = {}, nil
 local activeMapNotes = {}
 local mapNotesMapID, mapNotesSource, mapNotesUpdatedAt
 local questMapBasis
@@ -448,6 +455,24 @@ local function CollectQuests(mapID)
                 }
             end
         end
+    end
+    if questColorMapID ~= mapID then questColorByID, questColorMapID = {}, mapID end
+    local present, used = {}, {}
+    for _, quest in ipairs(quests) do present[quest.questID] = true end
+    for questID, slot in pairs(questColorByID) do
+        if present[questID] then used[slot] = true else questColorByID[questID] = nil end
+    end
+    for _, quest in ipairs(quests) do
+        local slot = questColorByID[quest.questID]
+        if not slot then
+            for candidate = 1, #QUEST_COLORS do
+                if not used[candidate] then slot = candidate; break end
+            end
+            slot = slot or (quest.questID % #QUEST_COLORS) + 1
+            questColorByID[quest.questID] = slot
+            used[slot] = true
+        end
+        quest.colorSlot = slot
     end
     return quests
 end
@@ -874,7 +899,10 @@ end
 
 local function HideQuestDots()
     if not panel or not panel.questDots then return end
-    for _, dot in ipairs(panel.questDots) do dot:Hide() end
+    for _, dot in ipairs(panel.questDots) do
+        dot:Hide()
+        if dot.halo then dot.halo:Hide() end
+    end
 end
 
 local function AddQuestTooltipObjectives(questID)
@@ -1003,7 +1031,16 @@ local function RenderMapNotes(player, range)
 end
 
 local function RenderQuestDots(player, range)
-    if not (Settings().vignetteRadarQuestDots and player) then HideQuestDots(); return 0 end
+    local showDots = Settings().vignetteRadarQuestDots
+    local showHalos = Settings().vignetteRadarQuestAreas and Settings().vignetteRadarQuestHalos
+        and panel.questClip and panel.questClip.canClip
+    if not ((showDots or showHalos) and player) then HideQuestDots(); return 0 end
+    local haloRadius = math.max(10, math.min(panel.plotRadius,
+        (Settings().vignetteRadarQuestHaloRadius or 10) * panel.plotRadius / range))
+    local haloRed, haloGreen, haloBlue = 1, .74, .27
+    if showHalos and addon.VignetteRadarStyle then
+        haloRed, haloGreen, haloBlue = addon.VignetteRadarStyle.Color("quest")
+    end
     local count = 0
     for _, quest in ipairs(activeQuests) do
         if not (player.instanceID and quest.instanceID and player.instanceID ~= quest.instanceID) then
@@ -1016,22 +1053,17 @@ local function RenderQuestDots(player, range)
                     local dot = panel.questDots[count]
                     if not dot then
                         dot = CreateFrame("Button", nil, panel.field)
-                        dot:SetSize(12, 12)
+                        dot:SetSize(14, 14)
                         dot:SetFrameLevel(panel.field:GetFrameLevel() + 3)
                         dot.rim = dot:CreateTexture(nil, "ARTWORK")
-                        dot.rim:SetSize(8, 8)
+                        dot.rim:SetSize(13, 13)
                         dot.rim:SetPoint("CENTER")
-                        dot.rim:SetTexture(CIRCLE_TEXTURE)
-                        dot.rim:SetVertexColor(0.04, 0.04, 0.03, 0.9)
+                        dot.rim:SetTexture(QUEST_DIAMOND_TEXTURE)
+                        dot.rim:SetVertexColor(.04, .05, .06, .98)
                         dot.fill = dot:CreateTexture(nil, "OVERLAY")
-                        dot.fill:SetSize(5, 5)
+                        dot.fill:SetSize(9, 9)
                         dot.fill:SetPoint("CENTER")
-                        dot.fill:SetTexture(CIRCLE_TEXTURE)
-                        if addon.VignetteRadarStyle then
-                            dot.fill:SetVertexColor(addon.VignetteRadarStyle.Color("quest"))
-                        else
-                            dot.fill:SetVertexColor(1, 0.74, 0.27, 1)
-                        end
+                        dot.fill:SetTexture(QUEST_DIAMOND_TEXTURE)
                         dot:EnableMouseWheel(true)
                         dot:SetScript("OnMouseWheel", OnZoomWheel)
                         dot:SetScript("OnEnter", function(self)
@@ -1039,8 +1071,11 @@ local function RenderQuestDots(player, range)
                             GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
                             GameTooltip:SetText(self.quest.name, 1, 0.82, 0.35)
                             GameTooltip:AddLine(math.floor(self.distance + 0.5) .. " yd from you", 0.72, 0.76, 0.78)
+                            if self.halo and self.halo:IsShown() then
+                                GameTooltip:AddLine("Soft circle: estimated location, not a Blizzard quest area.", .72, .76, .78, true)
+                            end
                             AddQuestTooltipObjectives(self.quest.questID)
-                            GameTooltip:AddLine("Click to spotlight; click again to show all.", .6, .8, .72, true)
+                            GameTooltip:AddLine("Click to spotlight; click again to clear.", .6, .8, .72, true)
                             GameTooltip:Show()
                         end)
                         dot:SetScript("OnLeave", function() if GameTooltip then GameTooltip:Hide() end end)
@@ -1051,17 +1086,56 @@ local function RenderQuestDots(player, range)
                         panel.questDots[count] = dot
                     end
                     dot.quest, dot.distance = quest, distance
+                    local tracked = Settings().vignetteRadarFollowTrackedQuest
+                        and followedQuestID == quest.questID and followedQuestMapID == activeMapID
+                    dot.rim:SetVertexColor(tracked and .95 or .04, tracked and .97 or .05,
+                        tracked and .93 or .06, .98)
+                    if Settings().vignetteRadarQuestColors then
+                        local color = QUEST_COLORS[quest.colorSlot or 1]
+                        dot.fill:SetVertexColor(color[1], color[2], color[3], 1)
+                    elseif addon.VignetteRadarStyle then
+                        dot.fill:SetVertexColor(addon.VignetteRadarStyle.Color("quest"))
+                    else
+                        dot.fill:SetVertexColor(1, .74, .27, 1)
+                    end
                     local exploration = addon.VignetteRadarExploration
                     local spotlight = exploration and exploration.GetFocusedQuest()
-                    dot:SetAlpha(spotlight and spotlight ~= quest.questID and .24 or 1)
+                    dot:SetAlpha(spotlight and spotlight ~= quest.questID and .65 or 1)
+                    dot.screenX, dot.screenY = x, y
                     dot:ClearAllPoints()
                     dot:SetPoint("CENTER", panel.field, "CENTER", x, y)
-                    dot:Show()
+                    dot:SetShown(showDots)
+                    if showHalos then
+                        if not dot.halo then
+                            -- A clipped child frame keeps the approximation inside the
+                            -- square radar without adding mouse hit regions or timers.
+                            local halo = CreateFrame("Frame", nil, panel.questClip)
+                            halo:SetFrameLevel(panel.field:GetFrameLevel() + 1)
+                            halo:EnableMouse(false)
+                            halo.fill = halo:CreateTexture(nil, "ARTWORK")
+                            halo.fill:SetAllPoints(halo)
+                            halo.fill:SetTexture(CIRCLE_TEXTURE)
+                            dot.halo = halo
+                        end
+                        dot.halo:SetSize(haloRadius * 2, haloRadius * 2)
+                        dot.halo:ClearAllPoints()
+                        dot.halo:SetPoint("CENTER", panel.field, "CENTER", x, y)
+                        local color = Settings().vignetteRadarQuestColors and QUEST_COLORS[quest.colorSlot or 1]
+                        dot.halo.fill:SetVertexColor(color and color[1] or haloRed,
+                            color and color[2] or haloGreen, color and color[3] or haloBlue, .16)
+                        dot.halo:SetAlpha(spotlight and spotlight ~= quest.questID and .65 or 1)
+                        dot.halo:Show()
+                    elseif dot.halo then
+                        dot.halo:Hide()
+                    end
                 end
             end
         end
     end
-    for index = count + 1, #panel.questDots do panel.questDots[index]:Hide() end
+    for index = count + 1, #panel.questDots do
+        panel.questDots[index]:Hide()
+        if panel.questDots[index].halo then panel.questDots[index].halo:Hide() end
+    end
     return count
 end
 
@@ -1074,38 +1148,101 @@ local function HideQuestAreas()
         panel.questBlob:Hide()
         panel.questBlob.drawnKey = nil
         panel.questBlob.nextDrawAt = nil
+        if panel.questColorBlobs then
+            for index = 2, #panel.questColorBlobs do
+                local colored = panel.questColorBlobs[index]
+                colored:Hide()
+                colored.drawnKey = nil
+            end
+        end
     end
+end
+
+local function ColoredQuestBlobs()
+    if not (Settings().vignetteRadarQuestColors and not panel.questColorFailed) then return nil end
+    if panel.questColorBlobs then return panel.questColorBlobs end
+    if type(InCombatLockdown) == "function" and SafeBoolean(Call(InCombatLockdown)) then return nil end
+    local blobs = { panel.questBlob }
+    for index = 2, #QUEST_COLORS do
+        local ok, blob = pcall(CreateFrame, "QuestPOIFrame", nil, panel.questClip)
+        if not (ok and blob and type(blob.DrawNone) == "function" and type(blob.DrawBlob) == "function"
+            and type(blob.SetMapID) == "function" and type(blob.SetFillTexture) == "function"
+            and type(blob.SetBorderTexture) == "function") then
+            for _, created in ipairs(blobs) do if created ~= panel.questBlob then created:Hide() end end
+            panel.questColorFailed = true
+            return nil
+        end
+        blob:SetFrameLevel(panel.field:GetFrameLevel() + 2)
+        blob:EnableMouse(false)
+        blob:Hide()
+        blobs[index] = blob
+    end
+    panel.questColorBlobs = blobs
+    return blobs
+end
+
+local function StyleQuestBlob(blob, slot)
+    if blob.colorSlot == slot then return true end
+    local fill = slot and ("Interface\\AddOns\\VignetteRadar\\Media\\quest-area-%02d.tga"):format(slot)
+        or "Interface\\WorldMap\\UI-QuestBlob-Inside"
+    local border = slot and fill or "Interface\\WorldMap\\UI-QuestBlob-Outside"
+    local ok = pcall(function()
+        blob:SetFillTexture(fill)
+        blob:SetBorderTexture(border)
+        blob:SetFillAlpha(slot and 38 or 48)
+        blob:SetBorderAlpha(slot and 78 or 0)
+    end)
+    if ok then blob.colorSlot = slot end
+    return ok
 end
 
 local function UpdateQuestAreaTooltip()
     local blob = panel and panel.questBlob
-    if not (blob and blob:IsShown() and GameTooltip and type(blob.UpdateMouseOverTooltip) == "function"
-        and type(GetCursorPosition) == "function") then return end
-    local owner = GameTooltip.GetOwner and GameTooltip:GetOwner()
-    if owner and owner ~= blob and GameTooltip.IsShown and GameTooltip:IsShown() then return end
-    local cursorX, cursorY = Call(GetCursorPosition)
+    if not (blob and GameTooltip and type(GetCursorPosition) == "function") then return end
     local field = panel.field
+    local owner = GameTooltip.GetOwner and GameTooltip:GetOwner()
+    if owner and owner ~= blob and owner ~= field
+        and GameTooltip.IsShown and GameTooltip:IsShown() then return end
+    local cursorX, cursorY = Call(GetCursorPosition)
     local scale = field.GetEffectiveScale and SafeNumber(field:GetEffectiveScale()) or 1
     if not (SafeNumber(cursorX) and SafeNumber(cursorY) and scale and scale > 0) then return end
     cursorX, cursorY = cursorX / scale, cursorY / scale
     local fieldLeft, fieldTop = SafeNumber(field:GetLeft()), SafeNumber(field:GetTop())
-    local blobLeft, blobTop = SafeNumber(blob:GetLeft()), SafeNumber(blob:GetTop())
-    local width, height = SafeNumber(blob:GetWidth()), SafeNumber(blob:GetHeight())
-    local questID
-    if fieldLeft and fieldTop and blobLeft and blobTop and width and height and width > 0 and height > 0 then
-        local fromCenterX = cursorX - fieldLeft - field:GetWidth() / 2
-        local fromCenterY = cursorY - fieldTop + field:GetHeight() / 2
-        local inside
-        if panel.squarePlot then
-            inside = math.abs(fromCenterX) <= panel.fieldRadius - QUEST_CLIP_INSET
-                and math.abs(fromCenterY) <= panel.fieldRadius - QUEST_CLIP_INSET
-        else
-            inside = fromCenterX * fromCenterX + fromCenterY * fromCenterY <= panel.fieldRadius * panel.fieldRadius
-        end
-        if inside then
+    if not (fieldLeft and fieldTop) then return end
+    local fromCenterX = cursorX - fieldLeft - field:GetWidth() / 2
+    local fromCenterY = cursorY - fieldTop + field:GetHeight() / 2
+    local inside = panel.squarePlot
+        and math.abs(fromCenterX) <= panel.fieldRadius - QUEST_CLIP_INSET
+        and math.abs(fromCenterY) <= panel.fieldRadius - QUEST_CLIP_INSET
+        or not panel.squarePlot
+        and fromCenterX * fromCenterX + fromCenterY * fromCenterY <= panel.fieldRadius * panel.fieldRadius
+    local questID, estimated
+    if inside and blob:IsShown() and type(blob.UpdateMouseOverTooltip) == "function" then
+        local blobLeft, blobTop = SafeNumber(blob:GetLeft()), SafeNumber(blob:GetTop())
+        local width, height = SafeNumber(blob:GetWidth()), SafeNumber(blob:GetHeight())
+        if blobLeft and blobTop and width and height and width > 0 and height > 0 then
             local x, y = (cursorX - blobLeft) / width, (blobTop - cursorY) / height
             if x >= 0 and x <= 1 and y >= 0 and y <= 1 then
-                questID = SafeNumber(Call(blob.UpdateMouseOverTooltip, blob, x, y))
+                for _, source in ipairs(panel.questBlobSources or { blob }) do
+                    if source:IsShown() and type(source.UpdateMouseOverTooltip) == "function" then
+                        questID = SafeNumber(Call(source.UpdateMouseOverTooltip, source, x, y))
+                        if questID then break end
+                    end
+                end
+            end
+        end
+    end
+    if inside and not questID and Settings().vignetteRadarQuestAreas
+        and Settings().vignetteRadarQuestHalos then
+        local nearest = math.huge
+        for _, dot in ipairs(panel.questDots) do
+            if dot.halo and dot.halo:IsShown() and dot.quest and dot.screenX and dot.screenY then
+                local dx, dy = fromCenterX - dot.screenX, fromCenterY - dot.screenY
+                local distanceSquared = dx * dx + dy * dy
+                local radius = dot.halo:GetWidth() / 2
+                if distanceSquared <= radius * radius and distanceSquared < nearest then
+                    nearest, questID, estimated = distanceSquared, dot.quest.questID, true
+                end
             end
         end
     end
@@ -1116,17 +1253,22 @@ local function UpdateQuestAreaTooltip()
         end
     end
     if not quest then
-        if owner == blob then GameTooltip:Hide() end
+        if owner == blob or owner == field then GameTooltip:Hide() end
         blob.tooltipQuestID = nil
+        panel.hoverQuestID = nil
         return
     end
-    if blob.tooltipQuestID == questID and owner == blob and GameTooltip:IsShown() then return end
+    local tooltipOwner = estimated and field or blob
+    if blob.tooltipQuestID == questID and blob.tooltipEstimated == estimated
+        and owner == tooltipOwner and GameTooltip:IsShown() then return end
     blob.tooltipQuestID = questID
-    GameTooltip:SetOwner(blob, "ANCHOR_CURSOR_RIGHT", 5, 2)
+    blob.tooltipEstimated = estimated
+    panel.hoverQuestID = questID
+    GameTooltip:SetOwner(tooltipOwner, "ANCHOR_CURSOR_RIGHT", 5, 2)
     GameTooltip:SetText(quest.name, 1, .82, .35)
-    GameTooltip:AddLine("Quest area", .72, .76, .78)
+    GameTooltip:AddLine(estimated and "Estimated quest location" or "Quest area", .72, .76, .78)
     AddQuestTooltipObjectives(quest.questID)
-    GameTooltip:AddLine("Click to spotlight; click again to show all.", .6, .8, .72, true)
+    GameTooltip:AddLine("Click to spotlight; click again to clear.", .6, .8, .72, true)
     GameTooltip:Show()
 end
 
@@ -1164,34 +1306,59 @@ local function RenderQuestAreas(player, mapID, range)
     local pixelsPerYard = panel.plotRadius / range
     local width, height = questMapBasis.horizontal * pixelsPerYard, questMapBasis.vertical * pixelsPerYard
     if width > 8192 or height > 8192 or width < 1 or height < 1 then HideQuestAreas(); return end
-    local exploration = addon.VignetteRadarExploration
-    local spotlight = exploration and exploration.GetFocusedQuest()
-    local key = tostring(mapID) .. ":" .. tostring(width) .. ":" .. tostring(height) .. ":" .. tostring(spotlight)
+    local key = tostring(mapID) .. ":" .. tostring(width) .. ":" .. tostring(height)
     for _, quest in ipairs(activeQuests) do key = key .. ":" .. tostring(quest.questID) end
-    blob:SetSize(width, height)
-    blob:ClearAllPoints()
-    blob:SetPoint("CENTER", panel.field, "CENTER", (0.5 - player.mapX) * width, (player.mapY - 0.5) * height)
-    if blob.drawnKey ~= key or now >= (blob.nextDrawAt or 0) then
-        local ok = true
-        if blob.mapContextID ~= mapID then
-            ok = pcall(blob.SetMapID, blob, mapID)
-            if ok then blob.mapContextID = mapID end
+    local colored = ColoredQuestBlobs()
+    local sources = colored or { blob }
+    panel.questBlobSources = sources
+    for index, source in ipairs(sources) do
+        local slot = colored and index or nil
+        if not StyleQuestBlob(source, slot) then
+            if colored then
+                panel.questColorFailed = true
+                HideQuestAreas()
+                return RenderQuestAreas(player, mapID, range)
+            end
+            HideQuestAreas()
+            return
         end
-        if ok then ok = pcall(blob.DrawNone, blob) end
-        if ok then
-            for _, quest in ipairs(activeQuests) do
-                if not spotlight or spotlight == quest.questID then
-                    if not pcall(blob.DrawBlob, blob, quest.questID, true) then ok = false; break end
+        source:SetSize(width, height)
+        source:ClearAllPoints()
+        source:SetPoint("CENTER", panel.field, "CENTER", (0.5 - player.mapX) * width,
+            (player.mapY - 0.5) * height)
+        local sourceKey = key .. ":" .. tostring(index) .. ":" .. tostring(colored ~= nil)
+        if source.drawnKey ~= sourceKey or now >= (source.nextDrawAt or 0) then
+            local ok = true
+            if source.mapContextID ~= mapID then
+                ok = pcall(source.SetMapID, source, mapID)
+                if ok then source.mapContextID = mapID end
+            end
+            if ok then ok = pcall(source.DrawNone, source) end
+            if ok then
+                for _, quest in ipairs(activeQuests) do
+                    if not slot or quest.colorSlot == slot then
+                        if not pcall(source.DrawBlob, source, quest.questID, true) then ok = false; break end
+                    end
                 end
             end
+            if not ok then
+                if colored then
+                    panel.questColorFailed = true
+                    HideQuestAreas()
+                    return RenderQuestAreas(player, mapID, range)
+                end
+                HideQuestAreas()
+                return
+            end
+            source.drawnKey = sourceKey
+            -- DrawBlob can succeed before Blizzard loads the shape data.
+            source.nextDrawAt = now + RESCAN_SECONDS
         end
-        if not ok then HideQuestAreas(); return end
-        blob.drawnKey = key
-        -- DrawBlob has no readiness result: a successful call can precede its
-        -- data. Refresh at the scan interval as well as on quest-data events.
-        blob.nextDrawAt = now + RESCAN_SECONDS
+        source:Show()
     end
-    blob:Show()
+    if not colored and panel.questColorBlobs then
+        for index = 2, #panel.questColorBlobs do panel.questColorBlobs[index]:Hide() end
+    end
     return true
 end
 
@@ -1496,6 +1663,14 @@ local function ApplyPanelLayout(focused)
     local layout = LAYOUTS[name]
     local left, top = PanelPosition()
     panel.layout, panel.layoutFocused, panel.squarePlot = name, focused, square
+    local highlightTexture = square and ROUNDED_CONTROL_TEXTURE or CIRCLE_TEXTURE
+    for _, control in ipairs({ panel.zoomOut, panel.zoomIn, panel.compass, panel.trailToggle,
+        panel.combatToggle, panel.target, panel.legend, panel.close, panel.frameToggle }) do
+        if control and control.glow then control.glow:SetTexture(highlightTexture) end
+    end
+    if panel.hoverTools then
+        for _, control in ipairs(panel.hoverTools) do control.glow:SetTexture(highlightTexture) end
+    end
     panel.fieldRadius = layout.field / 2 - 9
     panel.plotRadius = panel.fieldRadius - 15
     panel:SetSize(layout.width, layout.height + (focused and layout.focus or 0))
@@ -3403,9 +3578,9 @@ local function EnsurePanel()
     panel.field:SetScript("OnMouseUp", function(self, button)
         local dragged = self._dragged
         self._dragged = nil
-        if button == "LeftButton" and not dragged and panel.questBlob and panel.questBlob.tooltipQuestID then
+        if button == "LeftButton" and not dragged and panel.hoverQuestID then
             local exploration = addon.VignetteRadarExploration
-            if exploration then exploration.FocusQuest(panel.questBlob.tooltipQuestID) end
+            if exploration then exploration.FocusQuest(panel.hoverQuestID) end
         end
     end)
     panel.field:SetFrameLevel(panel:GetFrameLevel() + 1)
@@ -3456,6 +3631,7 @@ local function EnsurePanel()
     panel.questClip:EnableMouse(false)
     if type(panel.questClip.SetClipsChildren) == "function" then
         panel.questClip:SetClipsChildren(true)
+        panel.questClip.canClip = true
         local ok, blob = pcall(CreateFrame, "QuestPOIFrame", nil, panel.questClip)
         if ok and blob and type(blob.SetMapID) == "function" and type(blob.DrawBlob) == "function"
             and type(blob.DrawNone) == "function" and type(blob.SetFillTexture) == "function"
@@ -3845,7 +4021,6 @@ local function EnsurePanel()
     HoverTool("eye", "Stay fully visible", panel.combatToggle, "BOTTOMLEFT", 30, 10)
     HoverTool("help", "Radar status", nil, "BOTTOMLEFT", 10, 30)
     HoverTool("close", "Tuck away radar", panel.close, "BOTTOMRIGHT", -10, 10)
-    HoverTool("frame", "Show full frame", panel.frameToggle, "BOTTOMRIGHT", -30, 10)
     panel.field:SetScript("OnEnter", function()
         panel._hoverToolsShown = true
         UpdatePanelChrome()
@@ -3998,12 +4173,8 @@ ScanVignettes = function(mapID)
             for _, quest in ipairs(activeQuests) do
                 if quest.questID == trackedID then available = true; break end
             end
-            if available and (trackedID ~= followedQuestID or mapID ~= followedQuestMapID) then
-                exploration.SetQuestFocus(trackedID)
-                followedQuestID, followedQuestMapID = trackedID, mapID
-            elseif not available then
-                followedQuestID, followedQuestMapID = nil, nil
-            end
+            followedQuestID, followedQuestMapID = available and trackedID or nil,
+                available and mapID or nil
         else
             followedQuestID, followedQuestMapID = nil, nil
         end

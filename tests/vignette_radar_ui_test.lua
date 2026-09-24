@@ -1052,9 +1052,14 @@ settings.vignetteRadarNorthUp = false
 GetPlayerFacing = function() return 0 end
 addon.VignetteRadarAPI.Refresh(true)
 local questDot = assert(panel.questDots[1], "quest locations must create a distinct dot")
+assert(questDot.halo and questDot.halo:IsShown() and questDot.halo.parent == panel.questClip
+    and questDot.halo.level < questDot.level and questDot.halo:GetWidth() == 20
+    and questDot.rim.texture == "Interface\\AddOns\\VignetteRadar\\Media\\quest-diamond.tga",
+    "quest dots should get a subtle clipped location circle behind the dot")
 questDot.scripts.OnEnter(questDot)
 assert(GameTooltip.text == "Nearby quest"
     and table.concat(GameTooltip.lines, " | "):find("Collect supplies: 1/3", 1, true)
+    and table.concat(GameTooltip.lines, " | "):find("estimated location", 1, true)
     and not table.concat(GameTooltip.lines, " | "):find("Find the camp", 1, true),
     "quest dots must name the quest and list only unfinished objectives")
 questDot.scripts.OnLeave(questDot)
@@ -1063,11 +1068,36 @@ assert(questDot:IsShown() and questDot.quest.questID == 12345 and questDot.point
 assert(panel.questBlob and not panel.questBlob:IsShown(), "exact blobs must wait for north-up mode")
 assert(panel.squarePlot and panel.field.background.texture == "Interface\\AddOns\\VignetteRadar\\Media\\radar-rounded-square.tga",
     "enabling quest areas must select a stable square surface even before blobs are available")
+local savedQuestCursor, savedFieldLeft, savedFieldTop = GetCursorPosition, panel.field.left, panel.field.top
+panel.field.left, panel.field.top = 0, panel.field:GetHeight()
+GetCursorPosition = function()
+    return panel.field:GetWidth() / 2 + questDot.screenX,
+        panel.field:GetHeight() / 2 + questDot.screenY
+end
+settings.vignetteRadarQuestDots = false
+addon.VignetteRadarAPI.Refresh(false)
+panel.scripts.OnUpdate(panel, .11)
+assert(not questDot:IsShown() and questDot.halo:IsShown()
+    and GameTooltip:IsShown() and GameTooltip:GetOwner() == panel.field
+    and table.concat(GameTooltip.lines, " | "):find("Estimated quest location", 1, true),
+    "an unselected quest must show a usable estimated area even with diamonds hidden")
+panel.field.scripts.OnMouseUp(panel.field, "LeftButton")
+assert(addon.VignetteRadarExploration.GetFocusedQuest() == 12345,
+    "clicking an estimated area should spotlight that quest")
+panel.field.scripts.OnMouseUp(panel.field, "LeftButton")
+assert(addon.VignetteRadarExploration.GetFocusedQuest() == nil,
+    "clicking the estimated area again should clear its spotlight")
+settings.vignetteRadarQuestDots = true
+addon.VignetteRadarAPI.Refresh(false)
+GameTooltip:Hide()
+GetCursorPosition = savedQuestCursor
+panel.field.left, panel.field.top = savedFieldLeft, savedFieldTop
 settings.vignetteRadarFollowTrackedQuest = true
 C_SuperTrack.GetSuperTrackedQuestID = function() return 12345 end
 addon.VignetteRadarAPI.Refresh(true)
-assert(addon.VignetteRadarExploration.GetFocusedQuest() == 12345,
-    "tracked-quest following must focus an available quest using the existing quest scan")
+assert(addon.VignetteRadarExploration.GetFocusedQuest() == nil
+    and questDot.rim.vertexColor[1] > .9,
+    "Blizzard's tracked quest may gain a bright outline but must not auto-spotlight")
 settings.vignetteRadarFollowTrackedQuest = false
 addon.VignetteRadarExploration.SetQuestFocus(nil)
 C_SuperTrack.GetSuperTrackedQuestID = nil
@@ -1077,18 +1107,72 @@ assert(questDot.point[5] < 0, "quest dots should turn with the facing-up radar")
 addon.SetVignetteRadarNorthUp(true)
 assert(questDot.point[4] > 0 and math.abs(questDot.point[5]) < 0.001,
     "quest dots must return to their fixed map position in north-up mode")
+assert(questDot.halo.point[4] == questDot.point[4] and questDot.halo.point[5] == questDot.point[5],
+    "estimated circles must follow quest dots in either orientation")
+settings.vignetteRadarQuestHaloRadius = 80
+addon.VignetteRadarAPI.Refresh(false)
+assert(questDot.halo:GetWidth() > 20, "the radius setting must change the rendered circle")
+settings.vignetteRadarQuestHaloRadius = 10
+settings.vignetteRadarQuestHalos = false
+addon.VignetteRadarAPI.Refresh(false)
+assert(not questDot.halo:IsShown() and questDot:IsShown(),
+    "turning off estimates should keep the quest dot and native area")
+settings.vignetteRadarQuestHalos = true
+addon.VignetteRadarAPI.Refresh(false)
 assert(panel.questClip.clipsChildren and panel.questBlob:IsShown() and panel.questBlob.mapID == 781
     and panel.questBlob.drawnQuests[1] == 12345 and panel.questBlob.fillAlpha < 128
     and panel.questBlob.level < questDot.level,
     "native quest shapes must be translucent, clipped, and behind markers")
+local oneQuest = C_QuestLog.GetQuestsOnMap
+C_QuestLog.GetQuestsOnMap = function() return {
+    { questID = 12345, x = .52, y = .5, name = "Nearby quest" },
+    { questID = 12346, x = .49, y = .5, name = "Second quest" },
+} end
+addon.VignetteRadarAPI.Refresh(true)
+local secondQuestDot = assert(panel.questDots[2], "a second quest needs a second diamond")
+assert(secondQuestDot:IsShown() and secondQuestDot.fill.vertexColor[1] ~= questDot.fill.vertexColor[1]
+    and secondQuestDot.halo.fill.vertexColor[1] == secondQuestDot.fill.vertexColor[1]
+    and panel.questColorBlobs[1].drawnQuests[1] == 12345
+    and panel.questColorBlobs[2].drawnQuests[1] == 12346
+    and panel.questColorBlobs[1].fillTexture ~= panel.questColorBlobs[2].fillTexture
+    and panel.questColorBlobs[1].borderAlpha > 0,
+    "each nearby quest needs matching diamond, circle, and bordered native area colors")
+addon.VignetteRadarExploration.FocusQuest(12346)
+addon.VignetteRadarAPI.Refresh(false)
+assert(panel.questColorBlobs[1].drawnQuests[1] == 12345
+    and panel.questColorBlobs[2].drawnQuests[1] == 12346
+    and questDot.halo:IsShown() and questDot.halo.alpha >= .65,
+    "spotlighting one quest must not erase other tracked quests' areas")
+addon.VignetteRadarExploration.FocusQuest(nil)
+settings.vignetteRadarQuestDots = false
+addon.VignetteRadarAPI.Refresh(false)
+assert(not questDot:IsShown() and questDot.halo:IsShown()
+    and not secondQuestDot:IsShown() and secondQuestDot.halo:IsShown(),
+    "quest-area circles must show for all map quests even with diamonds disabled")
+settings.vignetteRadarQuestDots = true
+addon.VignetteRadarAPI.Refresh(false)
+settings.vignetteRadarQuestColors = false
+addon.VignetteRadarAPI.Refresh(false)
+assert(panel.questBlob.fillTexture == "Interface\\WorldMap\\UI-QuestBlob-Inside"
+    and #panel.questBlob.drawnQuests == 2 and not panel.questColorBlobs[2]:IsShown(),
+    "turning off individual colors must restore the shared Blizzard area renderer")
+settings.vignetteRadarQuestColors = true
+C_QuestLog.GetQuestsOnMap = oneQuest
+addon.VignetteRadarAPI.Refresh(true)
+assert(not secondQuestDot:IsShown() and not secondQuestDot.halo:IsShown(),
+    "removed quests must release both their diamond and estimated circle")
 for _, layoutName in ipairs({ "classic", "compact", "squat" }) do
     addon.SetVignetteRadarLayout(layoutName)
     addon.SetVignetteRadarCircleOnly(true)
     panel.field.hovered = true
     panel.field.scripts.OnEnter(panel.field)
-    assert(#panel.hoverTools == 11 and panel.hoverTools[1]:IsShown()
+    assert(#panel.hoverTools == 10 and panel.hoverTools[1]:IsShown()
         and not panel.settingsDot:IsShown(),
         "square radar-only view must reveal its corner controls on hover")
+    assert(panel.hoverTools[1].glow.texture
+            == "Interface\\AddOns\\VignetteRadar\\Media\\control-rounded-square.tga"
+        and panel.zoomIn.glow.texture == panel.hoverTools[1].glow.texture,
+        "square view must use rounded-square highlights on its corner and toolbar controls")
     local side, center = panel.field:GetWidth(), panel.field:GetWidth() / 2
     for _, tool in ipairs(panel.hoverTools) do
         local point, x, y = tool.point[1], tool.point[4], tool.point[5]
@@ -1124,7 +1208,7 @@ for _, name in ipairs({ "classic", "compact", "squat" }) do
     local face, clip, toggle = bounds(panel.field.background), bounds(panel.questClip), bounds(panel.frameToggle)
     assert(panel.questBlob == originalBlob and panel.questBlob:IsShown()
         and panel.questBlob.parent == panel.questClip and panel.questClip.clipsChildren,
-        "every square layout must preserve the single working native blob renderer")
+        "every square layout must preserve the working native blob renderer")
     assert(face[3] - face[1] == panel.fieldRadius * 2 and face[4] - face[2] == panel.fieldRadius * 2
         and clip[1] == face[1] + 4 and clip[2] == face[2] + 4
         and clip[3] == face[3] - 4 and clip[4] == face[4] - 4,
@@ -1154,7 +1238,8 @@ local blobCount = 0
 for _, object in ipairs(objects) do
     if object.kind == "QuestPOIFrame" then blobCount = blobCount + 1 end
 end
-assert(blobCount == 1, "layout changes must never duplicate the native blob renderer")
+assert(blobCount == 8 and #panel.questColorBlobs == 8,
+    "quest colors must reuse at most eight native blob renderers across layouts")
 SlashCmdList.VIGNETTERADAR("preview")
 addon.HandleVignetteClick(panel.blipByKey["preview-rare"].target, "LeftButton")
 for _, name in ipairs({ "classic", "compact", "squat" }) do
@@ -1224,12 +1309,15 @@ assert(not settings.vignetteRadarCircleOnly and panel.questBlob:IsShown(),
 settings.vignetteRadarQuestAreas = false
 settings.vignetteRadarQuestDots = false
 addon.VignetteRadarAPI.Refresh(true)
-assert(not questDot:IsShown() and not panel.questBlob:IsShown(),
+assert(not questDot:IsShown() and not questDot.halo:IsShown() and not panel.questBlob:IsShown(),
     "each quest overlay must disappear as soon as its option is disabled")
 assert(not panel.squarePlot and panel.field.background.texture == "Interface\\CharacterFrame\\TempPortraitAlphaMask"
     and panel.field.halo:IsShown() and panel.outerRing[1]:IsShown() and not panel.squareBorder:IsShown()
     and panel.frameToggle.width == 16 and panel.questBlob == originalBlob,
     "disabling quest areas must restore the original circular face without replacing the blob renderer")
+assert(panel.hoverTools[1].glow.texture == "Interface\\CharacterFrame\\TempPortraitAlphaMask"
+    and panel.zoomIn.glow.texture == panel.hoverTools[1].glow.texture,
+    "circular view must restore circular button highlights")
 settings.vignetteRadarQuestAreas = true
 mapID = 782
 C_Map.GetWorldPosFromMapPos = originalWorldPosition
@@ -1386,6 +1474,7 @@ for _, key in ipairs({ "vignetteRadarEnabled", "vignetteRadarHideWhenEmpty", "vi
     "vignetteRadarLastSeen", "vignetteRadarLastSeenSeconds", "vignetteRadarQuietCombat",
     "vignetteRadarKeepVisibleCombat",
     "vignetteRadarQuietInstances", "vignetteRadarQuestDots", "vignetteRadarQuestAreas",
+    "vignetteRadarQuestHalos", "vignetteRadarQuestHaloRadius", "vignetteRadarQuestColors",
     "vignetteRadarRingOpacity", "vignetteRadarChevronOpacity", "vignetteRadarHeadingOpacity",
     "vignetteRadarChevronDistance", "vignetteRadarHeadingLength", "vignetteRadarFullSweep",
     "vignetteRadarTheme", "vignetteRadarSmartZoom", "vignetteRadarUntangle",
