@@ -32,6 +32,7 @@ local atan2 = math.atan2 or function(y, x) return math.atan(y, x) end
 local Unpack = unpack or table.unpack
 
 local panel, launcher
+local trailPopup, HideTrailPopup, ToggleTrailPopup, RefreshTrailPopup
 local preview = false
 local manualPanelState
 local activeTargets = {}
@@ -1423,6 +1424,7 @@ local function ApplyPanelLayout(focused)
     end
     if changed then
         -- Close pop-outs; opening them again chooses the side that fits the resized panel.
+        if HideTrailPopup then HideTrailPopup() end
         local legend, picker = LegendAPI(), TargetPickerAPI()
         if legend and legend.Hide then legend.Hide() end
         if picker and picker.Hide then picker.Hide() end
@@ -1503,6 +1505,7 @@ end
 
 local function UpdatePanelChrome()
     local circleOnly = Settings().vignetteRadarCircleOnly == true
+    if circleOnly and HideTrailPopup then HideTrailPopup() end
     local style = addon.VignetteRadarStyle
     local br, bg, bb = .02, .025, .03
     if style then br, bg, bb = style.Color("background") end
@@ -1592,6 +1595,7 @@ ApplyAppearance = function()
         for _, button in ipairs({ panel.zoomOut, panel.zoomIn, panel.compass, panel.trailToggle }) do
             if button and button.RefreshAppearance then button:RefreshAppearance() end
         end
+        if RefreshTrailPopup then RefreshTrailPopup() end
         if panel.legend and panel.legend.dots then
             for index, slot in ipairs({ "rare", "treasure", "event" }) do
                 panel.legend.dots[index]:SetVertexColor(style.Color(slot))
@@ -1668,6 +1672,196 @@ local function UpdateTrailToggle()
         end
     end
     if button._selected ~= selected then button._selected = selected; button:RefreshAppearance() end
+end
+
+HideTrailPopup = function()
+    if trailPopup and trailPopup:IsShown() then trailPopup:Hide() end
+end
+
+RefreshTrailPopup = function()
+    if not trailPopup then return end
+    local style = addon.VignetteRadarStyle
+    local ar, ag, ab = ACCENT[1], ACCENT[2], ACCENT[3]
+    local br, bg, bb = .045, .052, .06
+    if style then
+        ar, ag, ab = style.Color("accent")
+        br, bg, bb = style.Color("background")
+    end
+    trailPopup:SetBackdropColor(math.min(.14, br * 2.7), math.min(.14, bg * 2.7),
+        math.min(.14, bb * 2.7), .98)
+    trailPopup.rail:SetColorTexture(ar, ag, ab, .8)
+    trailPopup.title:SetTextColor(ar, ag, ab, 1)
+    trailPopup.rule:SetColorTexture(ar, ag, ab, .18)
+    trailPopup.close.label:SetTextColor(ar, ag, ab, trailPopup.close._hovered and 1 or .7)
+    for _, row in ipairs(trailPopup.rows) do
+        local selected = row.style == Settings().vignetteRadarTrailStyle
+        row:SetBackdropColor(ar, ag, ab, selected and .13 or row._hovered and .07 or .025)
+        row:SetBackdropBorderColor(ar, ag, ab, selected and .48 or row._hovered and .25 or .10)
+        row.rail:SetColorTexture(ar, ag, ab, selected and .9 or 0)
+        row.label:SetTextColor(selected and ar or .82, selected and ag or .87,
+            selected and ab or .88, 1)
+        row.track:SetColorTexture(ar, ag, ab, .12)
+        for _, mark in ipairs(row.marks) do
+            if row.style == "dots" then mark:SetVertexColor(ar, ag, ab, .9)
+            else mark:SetColorTexture(ar, ag, ab, .9) end
+        end
+    end
+end
+
+local function PositionTrailPopup(anchor)
+    if not (trailPopup and panel and anchor) then return end
+    trailPopup:ClearAllPoints()
+    local screenWidth = UIParent and UIParent:GetWidth()
+    local panelLeft, panelRight = panel:GetLeft(), panel:GetRight()
+    if screenWidth and panelRight and screenWidth - panelRight >= trailPopup:GetWidth() + 16 then
+        trailPopup:SetPoint("BOTTOMLEFT", panel, "BOTTOMRIGHT", 8, 0)
+    elseif panelLeft and panelLeft >= trailPopup:GetWidth() + 16 then
+        trailPopup:SetPoint("BOTTOMRIGHT", panel, "BOTTOMLEFT", -8, 0)
+    else
+        local buttonLeft, buttonRight = anchor:GetLeft(), anchor:GetRight()
+        local screenHeight, buttonTop = UIParent and UIParent:GetHeight(), anchor:GetTop()
+        local above = screenHeight and buttonTop and screenHeight - buttonTop >= trailPopup:GetHeight() + 16
+        local alignRight = screenWidth and buttonLeft and buttonLeft + trailPopup:GetWidth() > screenWidth - 8
+            and buttonRight ~= nil
+        trailPopup:SetPoint(above and (alignRight and "BOTTOMRIGHT" or "BOTTOMLEFT")
+                or (alignRight and "TOPRIGHT" or "TOPLEFT"), anchor,
+            above and (alignRight and "TOPRIGHT" or "TOPLEFT")
+                or (alignRight and "BOTTOMRIGHT" or "BOTTOMLEFT"), 0, above and 8 or -8)
+    end
+end
+
+local function EnsureTrailPopup()
+    if trailPopup then return trailPopup end
+    trailPopup = CreateFrame("Frame", "VignetteRadarTrailStylePopup", UIParent, "BackdropTemplate")
+    trailPopup:SetSize(218, 122)
+    trailPopup:SetFrameStrata("DIALOG")
+    trailPopup:SetClampedToScreen(true)
+    trailPopup:EnableMouse(true)
+    Surface(trailPopup)
+    trailPopup.rail = trailPopup:CreateTexture(nil, "OVERLAY")
+    trailPopup.rail:SetPoint("TOPLEFT", 1, -1)
+    trailPopup.rail:SetPoint("BOTTOMLEFT", 1, 1)
+    trailPopup.rail:SetWidth(2)
+    trailPopup.title = Text(trailPopup, 10, "TRAIL STYLE", true)
+    trailPopup.title:SetPoint("TOPLEFT", 11, -9)
+    trailPopup.rule = trailPopup:CreateTexture(nil, "ARTWORK")
+    trailPopup.rule:SetPoint("TOPLEFT", 9, -28)
+    trailPopup.rule:SetPoint("TOPRIGHT", -9, -28)
+    trailPopup.rule:SetHeight(1)
+    trailPopup.close = CreateFrame("Button", nil, trailPopup)
+    trailPopup.close:SetSize(18, 18)
+    trailPopup.close:SetPoint("TOPRIGHT", -6, -5)
+    trailPopup.close.label = Text(trailPopup.close, 15, "×")
+    trailPopup.close.label:SetAllPoints()
+    trailPopup.close.label:SetJustifyH("CENTER")
+    trailPopup.close:SetScript("OnClick", HideTrailPopup)
+    trailPopup.close:SetScript("OnEnter", function(self)
+        self._hovered = true
+        RefreshTrailPopup()
+    end)
+    trailPopup.close:SetScript("OnLeave", function(self)
+        self._hovered = false
+        RefreshTrailPopup()
+    end)
+    trailPopup.rows = {}
+    for index, definition in ipairs({ { "dashes", "Dashes" }, { "ticks", "Ticks" }, { "dots", "Dots" } }) do
+        local row = CreateFrame("Button", nil, trailPopup, "BackdropTemplate")
+        row:SetSize(202, 24)
+        row:SetPoint("TOPLEFT", trailPopup, "TOPLEFT", 8, -34 - (index - 1) * 27)
+        Surface(row)
+        row.style = definition[1]
+        row.rail = row:CreateTexture(nil, "ARTWORK")
+        row.rail:SetPoint("TOPLEFT", 1, -1)
+        row.rail:SetPoint("BOTTOMLEFT", 1, 1)
+        row.rail:SetWidth(2)
+        row.label = Text(row, 10, definition[2])
+        row.label:SetPoint("LEFT", 11, 0)
+        row.label:SetWidth(76)
+        row.track = row:CreateTexture(nil, "ARTWORK")
+        row.track:SetSize(76, 1)
+        row.track:SetPoint("RIGHT", -9, 0)
+        row.marks = {}
+        for markIndex = 1, 4 do
+            local mark
+            if row.style == "dots" then
+                mark = row:CreateTexture(nil, "OVERLAY")
+                mark:SetSize(4, 4)
+                mark:SetTexture(CIRCLE_TEXTURE)
+            else
+                mark = row:CreateLine(nil, "OVERLAY")
+                mark:SetThickness(row.style == "ticks" and 2 or 2.5)
+            end
+            row.marks[markIndex] = mark
+        end
+        row:SetScript("OnClick", function(self)
+            HideTrailPopup()
+            addon.SetVignetteRadarTrailStyle(self.style, true)
+        end)
+        row:SetScript("OnEnter", function(self)
+            self._hovered = true
+            RefreshTrailPopup()
+        end)
+        row:SetScript("OnLeave", function(self)
+            self._hovered = false
+            RefreshTrailPopup()
+        end)
+        trailPopup.rows[index] = row
+    end
+    trailPopup:SetScript("OnUpdate", function(self, elapsed)
+        if not self:IsShown() then return end
+        self._elapsed = (self._elapsed or 0) + elapsed
+        if self._elapsed < .04 then return end
+        self._phase = ((self._phase or 0) + math.min(self._elapsed, .1) * 42) % 56
+        self._elapsed = 0
+        self:DrawPreviews()
+    end)
+    function trailPopup:DrawPreviews()
+        for _, row in ipairs(self.rows) do
+            for index, mark in ipairs(row.marks) do
+                local x = 123 + ((index - 1) * 14 + (self._phase or 0)) % 56
+                if row.style == "dots" then
+                    mark:ClearAllPoints()
+                    mark:SetPoint("CENTER", row, "LEFT", x, 0)
+                elseif row.style == "ticks" then
+                    mark:SetStartPoint("LEFT", row, x, -3.5)
+                    mark:SetEndPoint("LEFT", row, x, 3.5)
+                else
+                    mark:SetStartPoint("LEFT", row, x - 3.5, 0)
+                    mark:SetEndPoint("LEFT", row, x + 3.5, 0)
+                end
+            end
+        end
+    end
+    trailPopup:SetScript("OnHide", function()
+        if panel and panel.trailToggle then
+            panel.trailToggle._popupOpen = false
+            panel.trailToggle:RefreshAppearance()
+        end
+    end)
+    if type(UISpecialFrames) == "table" then
+        UISpecialFrames[#UISpecialFrames + 1] = "VignetteRadarTrailStylePopup"
+    end
+    trailPopup:Hide()
+    return trailPopup
+end
+
+ToggleTrailPopup = function(anchor)
+    local popup = EnsureTrailPopup()
+    if popup:IsShown() then HideTrailPopup(); return false end
+    local legend, picker = LegendAPI(), TargetPickerAPI()
+    if legend and legend.Hide then legend.Hide() end
+    if picker and picker.Hide then picker.Hide() end
+    if addon.VignetteRadarQuickConfig then addon.VignetteRadarQuickConfig.Hide() end
+    PositionTrailPopup(anchor)
+    popup._phase, popup._elapsed = 0, 0
+    popup:DrawPreviews()
+    RefreshTrailPopup()
+    popup:Show()
+    if panel and panel.trailToggle then
+        panel.trailToggle._popupOpen = true
+        panel.trailToggle:RefreshAppearance()
+    end
+    return true
 end
 
 Render = function()
@@ -2336,6 +2530,7 @@ local function EnsurePanel()
     panel.settingsDot.dot:SetTexture(CIRCLE_TEXTURE)
     panel.settingsDot.dot:SetVertexColor(ACCENT[1], ACCENT[2], ACCENT[3], 1)
     panel.settingsDot:SetScript("OnClick", function()
+        HideTrailPopup()
         local quick = addon.VignetteRadarQuickConfig
         if not (quick and quick.Toggle) then return end
         local legend, picker = LegendAPI(), TargetPickerAPI()
@@ -2382,6 +2577,7 @@ local function EnsurePanel()
     panel.target.dot:SetTexture(CIRCLE_TEXTURE)
     panel.target.dot:SetVertexColor(ACCENT[1], ACCENT[2], ACCENT[3], 1)
     panel.target:SetScript("OnClick", function(self, button)
+        HideTrailPopup()
         if addon.VignetteRadarQuickConfig then addon.VignetteRadarQuickConfig.Hide() end
         local picker = TargetPickerAPI()
         if not picker then return end
@@ -2440,6 +2636,7 @@ local function EnsurePanel()
         line:SetColorTexture(0.68, 0.72, 0.74, 0.72)
     end
     panel.legend:SetScript("OnClick", function(self)
+        HideTrailPopup()
         if addon.VignetteRadarQuickConfig then addon.VignetteRadarQuickConfig.Hide() end
         local legend = LegendAPI()
         if not (legend and type(legend.Toggle) == "function") then return end
@@ -2729,7 +2926,7 @@ local function EnsurePanel()
         button._enabled = true
         function button:RefreshAppearance()
             local enabled, hovered = self._enabled, self._hovered
-            local selected = self._selected == true
+            local selected = self._selected == true or self._popupOpen == true
             local r, g, b = .69, .77, .78
             if selected or hovered then r, g, b = ACCENT[1], ACCENT[2], ACCENT[3] end
             local opacity = not enabled and .32 or (hovered or selected) and 1 or .78
@@ -2790,15 +2987,10 @@ local function EnsurePanel()
     panel.trailToggle:RegisterForClicks("LeftButtonUp", "RightButtonUp")
     panel.trailToggle:SetScript("OnClick", function(_, mouseButton)
         if mouseButton == "RightButton" then
-            local current = Settings().vignetteRadarTrailStyle
-            for index, style in ipairs(TRAIL_STYLES) do
-                if style == current then
-                    addon.SetVignetteRadarTrailStyle(TRAIL_STYLES[index % #TRAIL_STYLES + 1], true)
-                    return
-                end
-            end
-            addon.SetVignetteRadarTrailStyle(TRAIL_STYLES[1], true)
+            if GameTooltip then GameTooltip:Hide() end
+            ToggleTrailPopup(panel.trailToggle)
         else
+            HideTrailPopup()
             addon.SetVignetteRadarTrailEnabled(Settings().vignetteRadarBreadcrumbs ~= true)
         end
     end)
@@ -2808,7 +3000,7 @@ local function EnsurePanel()
         local name = style == "ticks" and "Ticks" or style == "dots" and "Dots" or "Dashes"
         GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
         GameTooltip:SetText("Travel trail: " .. (Settings().vignetteRadarBreadcrumbs and "ON" or "OFF"), 1, 1, 1)
-        GameTooltip:AddLine("Style: " .. name .. ". Left-click to toggle; right-click to switch style and turn it on.",
+        GameTooltip:AddLine("Style: " .. name .. ". Left-click to toggle; right-click to choose from moving previews.",
             .7, .8, .8, true)
         GameTooltip:Show()
     end)
@@ -2884,6 +3076,7 @@ local function EnsurePanel()
         end
     end)
     panel:SetScript("OnHide", function()
+        HideTrailPopup()
         ReleaseAllBlips()
         HideQuestDots()
         HideMapNotes()
@@ -3152,6 +3345,7 @@ function addon.SetVignetteRadarTrailStyle(style, enable)
     Settings().vignetteRadarTrailStyle = style
     if enable then Settings().vignetteRadarBreadcrumbs = true end
     RefreshRadar(false)
+    if RefreshTrailPopup then RefreshTrailPopup() end
     if addon.RefreshVignetteRadarOptions then addon.RefreshVignetteRadarOptions() end
     local quick = addon.VignetteRadarQuickConfig
     if quick and quick.Refresh then quick.Refresh() end

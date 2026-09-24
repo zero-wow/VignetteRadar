@@ -87,6 +87,8 @@ local function AddCheckbox(parent, key, title, x, y, subkey, labelWidth, present
             addon.SetVignetteRadarCircleOnly(enabled)
         elseif key == "vignetteRadarKeepVisibleCombat" then
             addon.SetVignetteRadarKeepVisibleCombat(enabled)
+        elseif key == "vignetteRadarBreadcrumbs" and type(addon.SetVignetteRadarTrailEnabled) == "function" then
+            addon.SetVignetteRadarTrailEnabled(enabled)
         elseif subkey then
             local db = addon.GetSettings()
             if type(db[key]) ~= "table" then db[key] = {} end
@@ -116,8 +118,12 @@ end
 
 local function AddChoice(parent, key, value, title, x, y, width)
     local button = AddButton(parent, title, x, y, width, function()
-        addon.GetSettings()[key] = value
-        Changed()
+        if key == "vignetteRadarTrailStyle" and type(addon.SetVignetteRadarTrailStyle) == "function" then
+            addon.SetVignetteRadarTrailStyle(value)
+        else
+            addon.GetSettings()[key] = value
+            Changed()
+        end
     end)
     if not choiceGroups[key] then choiceGroups[key] = {} end
     choiceGroups[key][value] = button

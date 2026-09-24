@@ -1594,15 +1594,51 @@ assert(#panel.trailMarks == markCount and panel.trailMarks[1] == firstTrailMark,
 local dashX = firstTrailMark.endPoint[3] - firstTrailMark.startPoint[3]
 local dashY = firstTrailMark.endPoint[4] - firstTrailMark.startPoint[4]
 panel.trailToggle.scripts.OnClick(panel.trailToggle, "RightButton")
+local trailPopup = assert(_G.VignetteRadarTrailStylePopup)
+assert(trailPopup:IsShown() and trailPopup.width == 218 and trailPopup.height == 122
+    and trailPopup.clamped and settings.vignetteRadarTrailStyle == "dashes"
+    and trailPopup.point[1] == "BOTTOMLEFT" and trailPopup.point[2] == panel
+    and trailPopup.point[3] == "BOTTOMRIGHT" and trailPopup.point[4] == 8
+    and #trailPopup.rows == 3 and UISpecialFrames[#UISpecialFrames] == trailPopup.name,
+    "right-click must open a compact, screen-clamped style picker without changing the trail")
+local previewRed, previewGreen, previewBlue = addon.VignetteRadarStyle.Color("accent")
+assert(trailPopup.title.textColor[1] == previewRed and trailPopup.title.textColor[2] == previewGreen
+    and trailPopup.title.textColor[3] == previewBlue
+    and trailPopup.rows[1].backdropBorderColor[4] > trailPopup.rows[2].backdropBorderColor[4],
+    "the picker must match the active theme and identify the current style")
+for _, row in ipairs(trailPopup.rows) do
+    assert(row.width == 202 and row.height == 24 and row.point[4] >= 8
+        and row.point[4] + row.width <= trailPopup.width - 8
+        and -row.point[5] + row.height <= trailPopup.height - 8
+        and #row.marks == 4,
+        "every choice needs a bounded animated example beside its label")
+end
+local previewStart = trailPopup.rows[1].marks[1].startPoint[3]
+trailPopup.scripts.OnUpdate(trailPopup, .06)
+assert(trailPopup.rows[1].marks[1].startPoint[3] ~= previewStart,
+    "open previews must visibly advance along their sample paths")
+trailPopup.rows[2].scripts.OnClick(trailPopup.rows[2])
+local stoppedPreview = trailPopup.rows[1].marks[1].startPoint[3]
+trailPopup.scripts.OnUpdate(trailPopup, .2)
+assert(trailPopup.rows[1].marks[1].startPoint[3] == stoppedPreview,
+    "closed preview animation must do no work")
 local tickX = firstTrailMark.endPoint[3] - firstTrailMark.startPoint[3]
 local tickY = firstTrailMark.endPoint[4] - firstTrailMark.startPoint[4]
 assert(settings.vignetteRadarTrailStyle == "ticks" and settings.vignetteRadarBreadcrumbs
+    and not trailPopup:IsShown() and not panel.trailToggle._popupOpen
     and panel.trailToggle._selected and panel.trailMarks[1] == firstTrailMark
     and panel.trailMarks[1].thickness == 2
     and math.abs(dashX * tickX + dashY * tickY) < .001
     and quickControl("Explore", "vignetteRadarTrailStyle", "ticks").highlightLocked,
     "right-click must switch to crosswise ticks without reallocating the line pool")
 panel.trailToggle.scripts.OnClick(panel.trailToggle, "RightButton")
+assert(trailPopup:IsShown() and trailPopup.rows[2].backdropBorderColor[4] >
+    trailPopup.rows[1].backdropBorderColor[4],
+    "reopening the picker must highlight the saved style")
+panel.trailToggle.scripts.OnClick(panel.trailToggle, "RightButton")
+assert(not trailPopup:IsShown(), "a second right-click must close the picker")
+panel.trailToggle.scripts.OnClick(panel.trailToggle, "RightButton")
+trailPopup.rows[3].scripts.OnClick(trailPopup.rows[3])
 assert(settings.vignetteRadarTrailStyle == "dots" and panel.trailDots[1]
     and panel.trailDots[1]:IsShown() and not panel.trailMarks[1]:IsShown()
     and #panel.trailDots <= 64,
@@ -1613,9 +1649,40 @@ assert(not settings.vignetteRadarBreadcrumbs and not panel.trailToggle._selected
     and not quickControl("Explore", "vignetteRadarBreadcrumbs").checked,
     "left-click must hide the trail and update settings immediately")
 panel.trailToggle.scripts.OnClick(panel.trailToggle, "RightButton")
+assert(trailPopup:IsShown() and not settings.vignetteRadarBreadcrumbs
+    and settings.vignetteRadarTrailStyle == "dots",
+    "opening the picker while off must preserve the off state until a style is chosen")
+trailPopup.rows[1].scripts.OnClick(trailPopup.rows[1])
 assert(settings.vignetteRadarBreadcrumbs and settings.vignetteRadarTrailStyle == "dashes"
     and panel.trailMarks[1] == firstTrailMark,
-    "right-click while off must select and show the next style")
+    "choosing a preview while off must select and show that trail style")
+local oldWidth, oldHeight = UIParent.width, UIParent.height
+local oldPanelLeft, oldPanelRight = panel.left, panel.right
+local oldButtonLeft, oldButtonRight, oldButtonTop = panel.trailToggle.left,
+    panel.trailToggle.right, panel.trailToggle.top
+UIParent:SetSize(800, 600)
+panel.left, panel.right = 213, 587
+panel.trailToggle.left, panel.trailToggle.right, panel.trailToggle.top = 459, 481, 215
+panel.trailToggle.scripts.OnClick(panel.trailToggle, "RightButton")
+assert(trailPopup.point[1] == "BOTTOMLEFT" and trailPopup.point[2] == panel.trailToggle
+    and trailPopup.point[3] == "TOPLEFT" and trailPopup.point[5] == 8,
+    "when neither side fits, the picker must open above the button in the free gutter")
+panel.left, panel.right = 8, 792
+panel.trailToggle.left, panel.trailToggle.right = 758, 780
+panel.trailToggle.scripts.OnClick(panel.trailToggle, "RightButton")
+panel.trailToggle.scripts.OnClick(panel.trailToggle, "RightButton")
+assert(trailPopup.point[1] == "BOTTOMRIGHT" and trailPopup.point[3] == "TOPRIGHT",
+    "a picker near the screen edge must align its right edge with the button")
+panel.trailToggle.scripts.OnClick(panel.trailToggle, "RightButton")
+UIParent:SetSize(oldWidth, oldHeight)
+panel.left, panel.right = oldPanelLeft, oldPanelRight
+panel.trailToggle.left, panel.trailToggle.right, panel.trailToggle.top =
+    oldButtonLeft, oldButtonRight, oldButtonTop
+panel.trailToggle.scripts.OnClick(panel.trailToggle, "RightButton")
+panel.legend.scripts.OnClick(panel.legend)
+assert(not trailPopup:IsShown() and legendPanel:IsShown(),
+    "opening the legend must close the trail picker")
+panel.legend.scripts.OnClick(panel.legend)
 C_Map.GetPlayerMapPosition = originalPlayerPosition
 
 -- One chosen HandyNotes pack supplies hollow, typed map notes without entering
