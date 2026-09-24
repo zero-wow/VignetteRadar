@@ -1,7 +1,7 @@
 local _, addon = ...
 if type(addon) ~= "table" then return end
 
-local WIDTH, HEIGHT = 288, 389
+local WIDTH, HEIGHT = 288, 412
 local THEME_COLUMNS, THEME_ROW, THEME_VIEW_HEIGHT = 4, 24, 46
 local THEME_VIEW_WIDTH = 244
 local ACCENT = { 0.05, 0.82, 0.62 }
@@ -84,6 +84,8 @@ local function Check(page, key, title, x, y, subkey, labelWidth)
     hit:SetSize(labelWidth or WIDTH - x - 43, 26)
     box.label = Label(hit, title, 0, -7, 10, hit:GetWidth())
     box.optionKey, box.subkey = key, subkey
+    if key == "vignetteRadarNorthUp" then box:SetGlyph("N")
+    elseif key == "vignetteRadarKeepVisibleCombat" then box:SetGlyph("eye") end
     box:SetScript("OnClick", function(self)
         Changed(key, self:GetChecked() == true or self:GetChecked() == 1, subkey)
     end)
@@ -177,7 +179,9 @@ local function ColorSwatch(page, slot, x, y)
 end
 
 Button = function(page, title, x, y, width, action)
-    local button = addon.VignetteRadarControls.Button(page, title, width, 21)
+    local controls = addon.VignetteRadarControls
+    local button = (title == "+" or title == "-" or title == "−")
+        and controls.IconButton(page, title, width, 21) or controls.Button(page, title, width, 21)
     button:SetPoint("TOPLEFT", page, "TOPLEFT", x, y)
     button:SetScript("OnClick", action)
     return button
@@ -198,6 +202,49 @@ local function StepRange(step)
             if ranges[index + step] then Changed("vignetteRadarRange", ranges[index + step]) end
             return
         end
+    end
+end
+
+local function RefreshPOISources()
+    if not quick or not quick.poiRows then return end
+    local poi = addon.VignetteRadarPOIs
+    local sources = poi and poi.Sources() or {}
+    local entries = { { id = "none", enabled = true } }
+    for _, source in ipairs(sources) do entries[#entries + 1] = source end
+    quick.poiEntries = entries
+    local maxOffset = math.max(0, #entries - #quick.poiRows)
+    quick.poiOffset = math.min(maxOffset, quick.poiOffset or 0)
+    local selected = Settings().vignetteRadarPOISource
+    local selectedEntry
+    for _, entry in ipairs(entries) do
+        if entry.id == selected then selectedEntry = entry; break end
+    end
+    for index, row in ipairs(quick.poiRows) do
+        local entry = entries[index + quick.poiOffset]
+        row.sourceID = entry and entry.id
+        row:SetShown(entry ~= nil)
+        if entry then
+            row:SetText(entry.id == "none" and "Off"
+                or entry.id:gsub("(%l)(%u)", "%1 %2"):gsub("_", " "))
+            row:SetEnabled(entry.enabled)
+            if entry.id == selected then row:LockHighlight() else row:UnlockHighlight() end
+        end
+    end
+    local track = 112
+    quick.poiThumb:SetHeight(math.max(16, track * math.min(1, #quick.poiRows / #entries)))
+    quick.poiThumb:ClearAllPoints()
+    quick.poiThumb:SetPoint("TOP", quick.poiTrack, "TOP", 0,
+        maxOffset > 0 and -((track - quick.poiThumb:GetHeight()) * quick.poiOffset / maxOffset) or 0)
+    quick.poiTrack:SetShown(maxOffset > 0)
+    if selected == "none" then
+        quick.poiStatus:SetText(#sources == 0 and "Install HandyNotes and a map-data pack."
+            or "Choose one pack. Saved notes never trigger alerts.")
+    elseif not selectedEntry then
+        quick.poiStatus:SetText("Selected pack is not installed or loaded.")
+    elseif not selectedEntry.enabled then
+        quick.poiStatus:SetText("Enable this pack in HandyNotes first.")
+    else
+        quick.poiStatus:SetText("One pack at a time · hollow dots are map notes.")
     end
 end
 
@@ -232,6 +279,7 @@ function API.Refresh()
         quick.rail:SetColorTexture(ar, ag, ab, .75)
         quick.headerLine:SetColorTexture(ar, ag, ab, .18)
         quick.bead:SetColorTexture(ar, ag, ab, 1)
+        if quick.poiThumb then quick.poiThumb:SetColorTexture(ar, ag, ab, .7) end
         if quick.themeThumb then quick.themeThumb:SetColorTexture(ar, ag, ab, .95) end
         for _, label in ipairs(sections) do label:SetTextColor(ar, ag, ab, .88) end
         if anchor and anchor.settingsDot then
@@ -246,6 +294,7 @@ function API.Refresh()
         quick.customLabel:SetText(style.IsCustomized() and "CUSTOM COLORS" or "THEME COLORS")
         addon.VignetteRadarControls.RefreshTheme()
     end
+    RefreshPOISources()
 end
 
 local function SelectPage(name)
@@ -304,7 +353,7 @@ local function Build()
     close:SetScript("OnClick", function() quick:Hide() end)
     quick.close = close
 
-    local order = { "Radar", "Layout", "Explore", "Alerts", "Markers", "Guides", "Themes", "Behavior", "Quests" }
+    local order = { "Radar", "Layout", "Explore", "Alerts", "Markers", "Guides", "Themes", "Behavior", "Quests", "Map Data" }
     for index, name in ipairs(order) do
         local row, column = math.floor((index - 1) / 3), (index - 1) % 3
         local tab = addon.VignetteRadarControls.Button(quick, name, 84, 20)
@@ -312,8 +361,8 @@ local function Build()
         tab:SetScript("OnClick", function() SelectPage(name) end)
         quick.tabs[name] = tab
         local page = CreateFrame("Frame", nil, quick)
-        page:SetSize(WIDTH, HEIGHT - 114)
-        page:SetPoint("TOPLEFT", quick, "TOPLEFT", 0, -114)
+        page:SetSize(WIDTH, HEIGHT - 137)
+        page:SetPoint("TOPLEFT", quick, "TOPLEFT", 0, -137)
         page:Hide()
         quick.pages[name] = page
     end
@@ -521,6 +570,47 @@ local function Build()
     Check(quests, "vignetteRadarNorthUp", "Keep north at the top", 14, -130)
     Label(quests, "Quest dots follow either radar orientation.", 14, -174, 10)
 
+    local mapData = quick.pages["Map Data"]
+    Section(mapData, "CHOOSE ONE MAP-DATA PACK", -3)
+    mapData:EnableMouseWheel(true)
+    local function ScrollPOI(_, delta)
+        local maxOffset = math.max(0, #(quick.poiEntries or {}) - #quick.poiRows)
+        quick.poiOffset = math.max(0, math.min(maxOffset, (quick.poiOffset or 0) - delta))
+        RefreshPOISources()
+    end
+    mapData:SetScript("OnMouseWheel", ScrollPOI)
+    quick.poiRows = {}
+    for index = 1, 5 do
+        local row = Button(mapData, "", 14, -23 - (index - 1) * 27, 244, function(self)
+            if self.sourceID then Changed("vignetteRadarPOISource", self.sourceID) end
+        end)
+        row.optionKey = "vignetteRadarPOISource"
+        row:EnableMouseWheel(true)
+        row:SetScript("OnMouseWheel", ScrollPOI)
+        row:HookScript("OnEnter", function(self)
+            if not (GameTooltip and self.sourceID) then return end
+            GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+            GameTooltip:SetText(self.sourceID == "none" and "Hide map notes" or self.sourceID, 1, 1, 1)
+            GameTooltip:AddLine("Only one map-data pack is shown at a time.", .65, .78, .75, true)
+            GameTooltip:Show()
+        end)
+        row:HookScript("OnLeave", function() if GameTooltip then GameTooltip:Hide() end end)
+        quick.poiRows[index] = row
+    end
+    quick.poiTrack = mapData:CreateTexture(nil, "ARTWORK")
+    quick.poiTrack:SetSize(3, 112)
+    quick.poiTrack:SetPoint("TOPLEFT", mapData, "TOPLEFT", 267, -24)
+    quick.poiTrack:SetColorTexture(1, 1, 1, .1)
+    quick.poiThumb = mapData:CreateTexture(nil, "OVERLAY")
+    quick.poiThumb:SetWidth(3)
+    quick.poiThumb:SetColorTexture(ACCENT[1], ACCENT[2], ACCENT[3], .7)
+    Section(mapData, "SHOW THESE NOTE TYPES", -164)
+    Check(mapData, "vignetteRadarPOITypes", "Treasures", 14, -183, "treasure", 91)
+    Check(mapData, "vignetteRadarPOITypes", "Mobs", 147, -183, "mob", 91)
+    Check(mapData, "vignetteRadarPOITypes", "Items", 14, -212, "item", 91)
+    Check(mapData, "vignetteRadarPOITypes", "Other notes", 147, -212, "note", 91)
+    quick.poiStatus = Label(mapData, "", 14, -253, 9, 260)
+
     local explore = quick.pages.Explore
     Check(explore, "vignetteRadarSmartZoom", "Smart zoom while moving", 14, -3)
     Check(explore, "vignetteRadarUntangle", "Spread overlapping markers", 14, -31)
@@ -590,6 +680,14 @@ function API.Toggle(anchorFrame)
     frame:Show()
     API.Refresh()
     return true
+end
+
+function API.OpenPage(name, anchorFrame)
+    local frame = Build()
+    PositionAt(anchorFrame)
+    SelectPage(name or "Radar")
+    frame:Show()
+    API.Refresh()
 end
 
 function API.Reanchor(anchorFrame)

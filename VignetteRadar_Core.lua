@@ -70,6 +70,13 @@ function addon.GetSettings()
     if type(db.vignetteRadarWorldMap) ~= "boolean" then db.vignetteRadarWorldMap = true end
     if type(db.vignetteRadarQuestDots) ~= "boolean" then db.vignetteRadarQuestDots = false end
     if type(db.vignetteRadarQuestAreas) ~= "boolean" then db.vignetteRadarQuestAreas = false end
+    if type(db.vignetteRadarPOISource) ~= "string" then db.vignetteRadarPOISource = "none" end
+    if type(db.vignetteRadarPOITypes) ~= "table" then db.vignetteRadarPOITypes = {} end
+    for kind, enabled in pairs({ treasure = true, mob = true, item = true, note = true }) do
+        if type(db.vignetteRadarPOITypes[kind]) ~= "boolean" then
+            db.vignetteRadarPOITypes[kind] = enabled
+        end
+    end
     if type(db.vignetteRadarAlerts) ~= "boolean" then db.vignetteRadarAlerts = true end
     if type(db.vignetteRadarAlertSound) ~= "boolean" then db.vignetteRadarAlertSound = false end
     if type(db.vignetteRadarAlertCategories) ~= "table" then db.vignetteRadarAlertCategories = {} end

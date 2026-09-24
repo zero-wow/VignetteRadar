@@ -16,6 +16,7 @@ local HEADING_HALF_WIDTH = 4
 local UPDATE_SECONDS, RESCAN_SECONDS = 0.05, 1
 local MAX_BLIPS = 64
 local MAX_QUEST_DOTS = 64
+local MAX_MAP_NOTES = 48
 local ACCENT = { 0.05, 0.82, 0.62 }
 local RED = { 1, 0.18, 0.14 }
 local CIRCLE_TEXTURE = "Interface\\CharacterFrame\\TempPortraitAlphaMask"
@@ -34,6 +35,8 @@ local preview = false
 local manualPanelState
 local activeTargets = {}
 local activeQuests = {}
+local activeMapNotes = {}
+local mapNotesMapID, mapNotesSource, mapNotesUpdatedAt
 local questMapBasis
 local activeMapID
 local activeWorldMapMode
@@ -779,6 +782,74 @@ end
 local function HideQuestDots()
     if not panel or not panel.questDots then return end
     for _, dot in ipairs(panel.questDots) do dot:Hide() end
+end
+
+local function HideMapNotes()
+    if not panel or not panel.mapNotes then return end
+    for _, dot in ipairs(panel.mapNotes) do dot:Hide() end
+end
+
+local MAP_NOTE_COLOR = { treasure = "treasure", mob = "rare", item = "event", note = "other" }
+local MAP_NOTE_LABEL = { treasure = "Treasure", mob = "Mob", item = "Item", note = "Note" }
+local function RenderMapNotes(player, range)
+    local settings = Settings()
+    if not (player and settings.vignetteRadarPOISource ~= "none") then HideMapNotes(); return 0 end
+    local count = 0
+    for _, note in ipairs(activeMapNotes) do
+        if count >= MAX_MAP_NOTES then break end
+        if settings.vignetteRadarPOITypes[note.kind] ~= false
+            and not (player.instanceID and note.instanceID and player.instanceID ~= note.instanceID) then
+            local dx, dy = note.worldX - player.worldX, note.worldY - player.worldY
+            local distance = math.sqrt(dx * dx + dy * dy)
+            if distance >= 9 and distance <= range then
+                local x, y = Project(dx, dy, distance, ViewFacing(player.facing), panel.plotRadius - 5, range)
+                if x and y then
+                    count = count + 1
+                    local dot = panel.mapNotes[count]
+                    if not dot then
+                        dot = CreateFrame("Button", nil, panel.field)
+                        dot:SetSize(13, 13)
+                        dot:SetFrameLevel(panel.field:GetFrameLevel() + 2)
+                        dot.rim = dot:CreateTexture(nil, "ARTWORK")
+                        dot.rim:SetSize(8, 8)
+                        dot.rim:SetPoint("CENTER")
+                        dot.rim:SetTexture(CIRCLE_TEXTURE)
+                        dot.core = dot:CreateTexture(nil, "OVERLAY")
+                        dot.core:SetSize(3, 3)
+                        dot.core:SetPoint("CENTER")
+                        dot.core:SetTexture(CIRCLE_TEXTURE)
+                        dot.core:SetVertexColor(0.02, 0.03, 0.035, 0.95)
+                        dot:EnableMouseWheel(true)
+                        dot:SetScript("OnMouseWheel", OnZoomWheel)
+                        dot:SetScript("OnEnter", function(self)
+                            if not (GameTooltip and self.note) then return end
+                            local entry = self.note
+                            GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+                            GameTooltip:SetText(entry.name, 1, 1, 1)
+                            GameTooltip:AddLine(MAP_NOTE_LABEL[entry.kind] .. " map note · " .. entry.source,
+                                0.72, 0.8, 0.82)
+                            GameTooltip:AddLine(math.floor(self.distance + 0.5) .. " yd from you", 0.65, 0.7, 0.73)
+                            if entry.note then GameTooltip:AddLine(entry.note, 0.7, 0.76, 0.78, true) end
+                            GameTooltip:AddLine("Saved location, not a live detection.", 0.7, 0.78, 0.72, true)
+                            GameTooltip:Show()
+                        end)
+                        dot:SetScript("OnLeave", function() if GameTooltip then GameTooltip:Hide() end end)
+                        panel.mapNotes[count] = dot
+                    end
+                    local slot = MAP_NOTE_COLOR[note.kind] or "other"
+                    local color = addon.VignetteRadarStyle
+                    if color then dot.rim:SetVertexColor(color.Color(slot))
+                    else dot.rim:SetVertexColor(0.7, 0.75, 0.78, 1) end
+                    dot.note, dot.distance = note, distance
+                    dot:ClearAllPoints()
+                    dot:SetPoint("CENTER", panel.field, "CENTER", x, y)
+                    dot:Show()
+                end
+            end
+        end
+    end
+    for index = count + 1, #panel.mapNotes do panel.mapNotes[index]:Hide() end
+    return count
 end
 
 local function RenderQuestDots(player, range)
@@ -1610,6 +1681,7 @@ Render = function()
     if preview then
         RenderExploration(nil, range)
         HideQuestDots()
+        HideMapNotes()
         HideQuestAreas()
         panel.summary:SetText(FocusedTargetKey() and "PREVIEW FOCUS" or "PREVIEW")
         RenderCardinals(ViewFacing(0.65))
@@ -1631,6 +1703,7 @@ Render = function()
     if not player then
         RenderExploration(nil, range)
         HideQuestDots()
+        HideMapNotes()
         HideQuestAreas()
         panel.summary:SetText("POSITION UNAVAILABLE")
         if panel.layout == "squat" then
@@ -1652,6 +1725,7 @@ Render = function()
     for _, line in ipairs(panel.headingChevron) do line:SetShown(player.headingAvailable) end
     local questAreasShown = RenderQuestAreas(player, mapID, range)
     local questsInRange = RenderQuestDots(player, range)
+    local notesInRange = RenderMapNotes(player, range)
     RenderExploration(player, range)
     local shown, staleShown, totalInRange = 0, 0, 0
     local groups = {}
@@ -1728,6 +1802,8 @@ Render = function()
             or (shown == 0 and questsInRange > 0 and (questsInRange == 1 and "1 QUEST IN RANGE"
                 or questsInRange .. " QUESTS IN RANGE"))
             or (shown == 0 and questAreasShown and "QUEST AREAS")
+            or (shown == 0 and notesInRange > 0 and (notesInRange == 1 and "1 MAP NOTE"
+                or notesInRange .. " MAP NOTES"))
             or (shown == 1 and "1 IN RANGE" or shown .. " IN RANGE"))
     end
     EndBlips()
@@ -2450,6 +2526,7 @@ local function EnsurePanel()
     panel.field.background:SetTexture(CIRCLE_TEXTURE)
     panel.field.background:SetVertexColor(0.015, 0.022, 0.028, 0.94)
     panel.questDots = {}
+    panel.mapNotes = {}
     panel.questClip = CreateFrame("Frame", nil, panel.field)
     panel.questClip:SetAllPoints(panel.field)
     panel.questClip:SetFrameLevel(panel.field:GetFrameLevel() + 1)
@@ -2728,6 +2805,7 @@ local function EnsurePanel()
     panel:SetScript("OnHide", function()
         ReleaseAllBlips()
         HideQuestDots()
+        HideMapNotes()
         HideQuestAreas()
         panel.legend:SetAlpha(0.68)
         UpdateTargetButton()
@@ -2751,6 +2829,27 @@ ScanVignettes = function(mapID)
     activeMapID = mapID
     activeTargets = CollectVignettes(mapID)
     activeQuests = CollectQuests(mapID)
+    local source = Settings().vignetteRadarPOISource
+    local now = Now()
+    if source == "none" or not mapID then
+        activeMapNotes = {}
+        mapNotesMapID, mapNotesSource, mapNotesUpdatedAt = nil, nil, nil
+    elseif mapNotesMapID ~= mapID or mapNotesSource ~= source
+        or not mapNotesUpdatedAt or now - mapNotesUpdatedAt >= 5 then
+        local pois = addon.VignetteRadarPOIs
+        activeMapNotes = pois and pois.Collect(mapID, source, MapToWorld, MapVector) or {}
+        mapNotesMapID, mapNotesSource, mapNotesUpdatedAt = mapID, source, now
+    end
+    if #activeMapNotes > 1 then
+        local player = PlayerSnapshot(mapID)
+        if player then
+            table.sort(activeMapNotes, function(left, right)
+                local ldx, ldy = left.worldX - player.worldX, left.worldY - player.worldY
+                local rdx, rdy = right.worldX - player.worldX, right.worldY - player.worldY
+                return ldx * ldx + ldy * ldy < rdx * rdx + rdy * rdy
+            end)
+        end
+    end
     if addon.VignetteRadarExploration then
         addon.VignetteRadarExploration.ValidateQuestFocus(activeQuests, changedMap)
     end
@@ -2818,6 +2917,24 @@ RefreshRadar = function(rescan)
         launcher:Hide()
     end
     if rescan then ScanVignettes(CurrentMapID()) end
+    local hasMapNotes = false
+    if #activeMapNotes > 0 and settings.vignetteRadarPOISource ~= "none" then
+        local player = PlayerSnapshot(mapID)
+        local range = exploration and exploration.Range(player, nil) or settings.vignetteRadarRange
+        if player and type(range) == "number" then
+            for _, note in ipairs(activeMapNotes) do
+                if settings.vignetteRadarPOITypes[note.kind] ~= false
+                    and not (player.instanceID and note.instanceID and player.instanceID ~= note.instanceID) then
+                    local dx, dy = note.worldX - player.worldX, note.worldY - player.worldY
+                    local distance2 = dx * dx + dy * dy
+                    if distance2 >= 81 and distance2 <= range * range then
+                        hasMapNotes = true
+                        break
+                    end
+                end
+            end
+        end
+    end
     ReconcileFocusedTarget()
     local picker = TargetPickerAPI()
     if picker and type(picker.Refresh) == "function" then pcall(picker.Refresh) end
@@ -2830,7 +2947,7 @@ RefreshRadar = function(rescan)
         if panel then panel:Hide() end
     elseif manualPanelState == true or preview or settings.vignetteRadarKeepVisibleCombat == true
         or settings.vignetteRadarHideWhenEmpty == false
-        or hasExploration or #SelectableTargets() > 0 or (#activeQuests > 0 and (settings.vignetteRadarQuestDots
+        or hasExploration or #SelectableTargets() > 0 or hasMapNotes or (#activeQuests > 0 and (settings.vignetteRadarQuestDots
             or (settings.vignetteRadarQuestAreas and settings.vignetteRadarNorthUp))) then
         EnsurePanel():Show()
         Render()

@@ -97,6 +97,55 @@ function Controls.Button(parent, title, width, height)
     return button
 end
 
+-- The small, unboxed toolbar language used by the radar also fits range
+-- steppers in both settings panels. The hit target stays larger than the glyph.
+function Controls.IconButton(parent, symbol, width, height)
+    local button = CreateFrame("Button", nil, parent)
+    button:SetSize(width, height)
+    button:SetText(symbol)
+    button.glow = button:CreateTexture(nil, "BACKGROUND")
+    button.glow:SetSize(18, 18)
+    button.glow:SetPoint("CENTER")
+    button.glow:SetTexture("Interface\\CharacterFrame\\TempPortraitAlphaMask")
+    button.strokes = {}
+    local horizontal = button:CreateLine(nil, "OVERLAY")
+    horizontal:SetThickness(2)
+    horizontal:SetStartPoint("CENTER", button, -5, 0)
+    horizontal:SetEndPoint("CENTER", button, 5, 0)
+    button.strokes[1] = horizontal
+    if symbol == "+" then
+        local vertical = button:CreateLine(nil, "OVERLAY")
+        vertical:SetThickness(2)
+        vertical:SetStartPoint("CENTER", button, 0, -5)
+        vertical:SetEndPoint("CENTER", button, 0, 5)
+        button.strokes[2] = vertical
+    end
+    button._enabled = true
+    function button:RefreshAppearance()
+        local selected, hovered = self._selected == true, self._hovered == true
+        local r, g, b = .69, .77, .78
+        if selected or hovered then r, g, b = ACCENT[1], ACCENT[2], ACCENT[3] end
+        local opacity = not self._enabled and .32 or (selected or hovered) and 1 or .78
+        self.glow:SetVertexColor(ACCENT[1], ACCENT[2], ACCENT[3],
+            not self._enabled and 0 or hovered and .20 or selected and .12 or 0)
+        for _, stroke in ipairs(self.strokes) do stroke:SetColorTexture(r, g, b, opacity) end
+    end
+    local nativeSetEnabled = button.SetEnabled
+    button.SetEnabled = function(self, enabled)
+        enabled = enabled == true or enabled == 1
+        nativeSetEnabled(self, enabled)
+        self._enabled = enabled
+        if not enabled then self._hovered = false end
+        self:RefreshAppearance()
+    end
+    button:SetScript("OnEnter", function(self) self._hovered = true; self:RefreshAppearance() end)
+    button:SetScript("OnLeave", function(self) self._hovered = false; self:RefreshAppearance() end)
+    button:SetScript("OnHide", function(self) self._hovered = false; self:RefreshAppearance() end)
+    button:RefreshAppearance()
+    controls[#controls + 1] = button
+    return button
+end
+
 function Controls.Checkbox(parent)
     local checkbox = CreateFrame("CheckButton", nil, parent, "BackdropTemplate")
     checkbox:SetSize(26, 26)
@@ -122,7 +171,14 @@ function Controls.Checkbox(parent)
         local checked = self:GetChecked() == true or self:GetChecked() == 1
         local hovered = self._hovered == true
         local pressed = self._pressed == true
-        for _, line in ipairs(self.mark) do line:SetShown(checked) end
+        for _, line in ipairs(self.mark) do line:SetShown(checked and not self.glyph) end
+        if self.glyph then
+            local r, g, b = checked and 0.015 or 0.69, checked and 0.075 or 0.77,
+                checked and 0.06 or 0.78
+            for _, line in ipairs(self.glyph.lines or {}) do line:SetColorTexture(r, g, b, 1) end
+            if self.glyph.label then self.glyph.label:SetTextColor(r, g, b, 1) end
+            if self.glyph.pupil then self.glyph.pupil:SetVertexColor(r, g, b, 1) end
+        end
         if checked then
             self:SetBackdropColor(pressed and ACCENT[1] * .55 or ACCENT[1],
                 hovered and math.min(1, ACCENT[2] * 1.08) or ACCENT[2] * .95,
@@ -140,6 +196,34 @@ function Controls.Checkbox(parent)
                 checked and 1 or (hovered and 1 or 0.88),
                 checked and 0.94 or (hovered and 0.96 or 0.88), 1)
         end
+    end
+    function checkbox:SetGlyph(symbol)
+        if self.glyph then return end
+        self.glyph = { lines = {} }
+        if symbol == "N" then
+            local label = self:CreateFontString(nil, "OVERLAY")
+            label:SetFont(STANDARD_TEXT_FONT or "Fonts\\FRIZQT__.TTF", 14, "")
+            label:SetAllPoints()
+            label:SetJustifyH("CENTER")
+            label:SetText("N")
+            self.glyph.label = label
+        elseif symbol == "eye" then
+            for _, points in ipairs({
+                { -7, 0, 0, 4 }, { 0, 4, 7, 0 }, { -7, 0, 0, -4 }, { 0, -4, 7, 0 },
+            }) do
+                local line = self:CreateLine(nil, "OVERLAY")
+                line:SetThickness(1.7)
+                line:SetStartPoint("CENTER", self, points[1], points[2])
+                line:SetEndPoint("CENTER", self, points[3], points[4])
+                self.glyph.lines[#self.glyph.lines + 1] = line
+            end
+            local pupil = self:CreateTexture(nil, "OVERLAY")
+            pupil:SetSize(3, 3)
+            pupil:SetPoint("CENTER")
+            pupil:SetTexture("Interface\\CharacterFrame\\TempPortraitAlphaMask")
+            self.glyph.pupil = pupil
+        end
+        self:RefreshAppearance()
     end
     local nativeSetChecked = checkbox.SetChecked
     checkbox.SetChecked = function(self, checked)

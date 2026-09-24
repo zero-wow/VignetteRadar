@@ -4,7 +4,9 @@ local objects = {}
 local methods = {}
 function methods:SetSize(width, height) self.width, self.height = width, height end
 function methods:SetWidth(width) self.width = width end
+function methods:SetHeight(height) self.height = height end
 function methods:SetPoint(...) self.points = self.points or {}; self.points[#self.points + 1] = { ... } end
+function methods:SetAllPoints(...) self.allPoints = { ... } end
 function methods:ClearAllPoints() self.points = {} end
 function methods:SetFontString(value) self.fontString = value end
 function methods:SetText(value) self.text = value; if self.fontString then self.fontString:SetText(value) end end
@@ -15,6 +17,8 @@ function methods:SetBackdropColor(...) self.backdropColor = { ... } end
 function methods:SetBackdropBorderColor(...) self.backdropBorderColor = { ... } end
 function methods:SetAlpha(value) self.alpha = value end
 function methods:SetColorTexture(...) self.color = { ... } end
+function methods:SetTexture(value) self.texture = value end
+function methods:SetVertexColor(...) self.vertexColor = { ... } end
 function methods:SetThickness(value) self.thickness = value end
 function methods:SetStartPoint(...)
     assert(select("#", ...) == 4, "line endpoints take anchor, frame, x, y")
@@ -121,6 +125,8 @@ local panel = assert(_G.VignetteRadarOptionsPanel)
 assert(panel.width == 520 and panel.height == 365 and registered,
     "the registered Settings canvas must retain its compact size")
 assert(panel.pages and panel.pageButtons and panel.selectedPage == "Radar")
+assert(panel.backdrop and panel.rail and panel.headerLine and panel.tabLine,
+    "the full settings canvas must use the radar's dark surface and accent details")
 
 -- A page occupies the canvas. Check every clickable bounds and adjacent hit target
 -- while each page is selected, including the separate two-column behavior page.
@@ -204,6 +210,11 @@ assert(byKey["vignetteRadarAlertCategories.rare"].label.text == "Rares and bosse
 assert(byKey.vignetteRadarQuestDots.label.text == "Show quest location dots"
     and byKey.vignetteRadarQuestAreas.label.text == "Shade Blizzard quest areas",
     "quest dots and areas need separate plain-language switches")
+assert(byKey.vignetteRadarNorthUp.glyph.label
+    and #byKey.vignetteRadarKeepVisibleCombat.glyph.lines == 4
+    and choices["-"].backdrop == nil and #choices["-"].strokes == 1
+    and choices["+"].backdrop == nil and #choices["+"].strokes == 2,
+    "settings must reuse the radar's N, eye, and unboxed zoom glyph language")
 local questHelp = {}
 for _, object in ipairs(objects) do
     if object.parent == panel.pages.Quests and object.kind == "FontString" and object.text then
@@ -360,8 +371,8 @@ for _, layout in ipairs({ "Squat", "Compact", "Classic" }) do
         and button.highlightLocked,
         layout .. " must save and refresh its panel layout without a rescan")
 end
-action["Preview layout"].scripts.OnClick(action["Preview layout"])
-action["Reset positions"].scripts.OnClick(action["Reset positions"])
+action["Preview"].scripts.OnClick(action["Preview"])
+action["Reset"].scripts.OnClick(action["Reset"])
 assert(previews == 1 and resets == 1, "existing layout actions must remain available")
 local before = refreshes
 action["Clear ignored vignettes"].scripts.OnClick(action["Clear ignored vignettes"])

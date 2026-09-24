@@ -310,7 +310,9 @@ local function Label(parent, value, x, y, width, size)
     return label
 end
 local function Button(parent, title, x, y, width, callback)
-    local button = addon.VignetteRadarControls.Button(parent, title, width, 23)
+    local controls = addon.VignetteRadarControls
+    local button = (title == "+" or title == "-" or title == "−")
+        and controls.IconButton(parent, title, width, 23) or controls.Button(parent, title, width, 23)
     button:SetPoint("TOPLEFT", x, y)
     button:SetScript("OnClick", callback)
     return button
@@ -367,7 +369,15 @@ local function BuildPanel()
     panel:SetBackdropColor(.035, .043, .049, .98)
     panel:SetBackdropBorderColor(.36, .59, .54, .45)
     panel:SetPoint("CENTER", UIParent, "CENTER", 0, 0)
-    Label(panel, "EXPLORE", 15, -12, 190, 12):SetTextColor(.05, .82, .62, 1)
+    panel.rail = panel:CreateTexture(nil, "ARTWORK")
+    panel.rail:SetPoint("TOPLEFT", 1, -1)
+    panel.rail:SetPoint("BOTTOMLEFT", 1, 1)
+    panel.rail:SetWidth(2)
+    panel.headerLine = panel:CreateTexture(nil, "ARTWORK")
+    panel.headerLine:SetPoint("TOPLEFT", 12, -36)
+    panel.headerLine:SetPoint("TOPRIGHT", -12, -36)
+    panel.headerLine:SetHeight(1)
+    panel.title = Label(panel, "EXPLORE", 15, -12, 190, 12)
     Button(panel, "×", 297, -8, 23, function() panel:Hide() end)
     panel.pages, panel.tabs = {}, {}
     for index, name in ipairs({ "Modes", "Tools", "Pins", "Journal" }) do
@@ -480,6 +490,17 @@ end
 
 function API.RefreshPanel()
     if not panel then return end
+    local style = addon.VignetteRadarStyle
+    if style then
+        local ar, ag, ab = style.Color("accent")
+        local br, bg, bb = style.Color("background")
+        panel:SetBackdropColor(math.min(.14, br * 2.7), math.min(.14, bg * 2.7),
+            math.min(.14, bb * 2.7), .99)
+        panel.title:SetTextColor(ar, ag, ab, 1)
+        panel.rail:SetColorTexture(ar, ag, ab, .8)
+        panel.headerLine:SetColorTexture(ar, ag, ab, .2)
+        addon.VignetteRadarControls.RefreshTheme()
+    end
     for name, content in pairs(panel.pages) do content:SetShown(name == selectedPage) end
     for name, tab in pairs(panel.tabs) do
         if name == selectedPage then tab:LockHighlight() else tab:UnlockHighlight() end

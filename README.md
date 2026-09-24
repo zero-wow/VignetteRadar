@@ -1,10 +1,12 @@
 # Vignette Radar
 
-A compact radar for the rare, treasure, event, and other vignettes that World of Warcraft already exposes on the minimap and world map. It uses Blizzard's current vignette and map data; it does not reveal hidden objects or use a location database.
+A compact radar for the rare, treasure, event, and other vignettes that World of Warcraft already exposes on the minimap and world map. An optional HandyNotes layer can also show saved locations from one chosen map-data pack. Saved notes are clearly marked and never count as live detections.
 
 The small draggable launcher covers 150 yards. Click it to show or tuck away the full radar. The full radar has a category legend and a picker for focusing one current detection. Right-click the launcher for a layout preview.
 
-Click the small colored dot in the radar header to open **Radar Settings** beside the panel. Its nine compact tabs include **Explore** alongside the radar, layout, alert, marker, guide, theme, behavior, and quest settings. The full AddOns settings panel also has an Explore tab. Click a checkbox label as well as its box to toggle it; the settings apply immediately. The Guides tab adjusts ring visibility, chevron and facing-line opacity, chevron distance from the player dot, facing-line length, and an optional animated sweep on the full radar. The Themes tab offers 32 palettes in a two-row scroll area with a slim scrollbar, plus a color picker for each radar element and marker type. Turn off **Use icons** there to display category-colored dots instead. Custom colors are saved; choosing a preset clears the custom colors.
+Click the small colored dot in the radar header to open **Radar Settings** beside the panel. Its ten compact tabs include **Map Data** alongside the radar, layout, Explore, alert, marker, guide, theme, behavior, and quest settings. The full AddOns settings panel has an Explore tab and a **Map data** shortcut. Click a checkbox label as well as its box to toggle it; the settings apply immediately. The Guides tab adjusts ring visibility, chevron and facing-line opacity, chevron distance from the player dot, facing-line length, and an optional animated sweep on the full radar. The Themes tab offers 32 palettes in a two-row scroll area with a slim scrollbar, plus a color picker for each radar element and marker type. Turn off **Use icons** there to display category-colored dots instead. Custom colors are saved; choosing a preset clears the custom colors.
+
+In **Map Data**, choose **Off** or one installed HandyNotes data pack. Only the selected pack is read; a disabled pack must first be enabled in HandyNotes. Filter its treasure, mob, item, and other-note locations independently. These are small hollow dots colored with the current theme's treasure, rare, event, and other colors, respectively. Hover one for its name, source, type, and distance. They show a possible saved location, not a currently detected spawn, and never trigger live alerts or appear in the live target picker. The layer defaults to **Off** and works without HandyNotes installed. RareScanner and Zygor do not currently expose their full location databases through the HandyNotes plugin API, so this picker lists HandyNotes-compatible packs only.
 
 Choose a saved panel style under `/vr config` → Layout, or use `/vr layout` to cycle through them:
 
@@ -39,7 +41,7 @@ World-map detections are included by default and can be disabled on the Radar se
 
 ## Install
 
-Copy the `VignetteRadar` folder to `_retail_/Interface/AddOns/`, then reload the game. Waffle House and EllesmereUI are optional; neither is required for the radar to work. If Waffle House is installed, existing radar settings and positions are copied into Vignette Radar's own SavedVariables on first load.
+Copy the `VignetteRadar` folder to `_retail_/Interface/AddOns/`, then reload the game. Waffle House, EllesmereUI, and HandyNotes are optional; none is required for the radar to work. If Waffle House is installed, existing radar settings and positions are copied into Vignette Radar's own SavedVariables on first load.
 
 ## Commands
 
@@ -65,10 +67,10 @@ The addon also appears under the game's AddOns settings when the current Retail 
 - Optional quest dots use quest positions supplied by the game. Optional translucent quest areas use Blizzard's own shape when the radar is north-up and the map axes align; otherwise the area is hidden rather than shown inaccurately. Map projections retry when initially unavailable, and quest shapes redraw on quest updates and once per second so late data can appear without changing zones or reloading. Hover a shaded area to see its quest name.
 - Combat fading, combat alert muting, and instance quiet mode can be adjusted under Behavior. Instance quiet mode mutes alerts and fades the radar and launcher unless **Stay fully visible** is enabled.
 
-Preview samples support focus without changing favorites, ignores, or navigation. All live information still comes from Blizzard's exposed vignettes; the addon does not discover hidden objects or determine whether a missing detection was killed or looted.
+Preview samples support focus without changing favorites, ignores, or navigation. All live information still comes from Blizzard's exposed vignettes; the optional HandyNotes layer is saved map information and does not determine whether a location is active, killed, or looted.
 
 ## Development validation
 
-Current development build: `0.1.0-dev.28` (base version `0.1.0`).
+Current development build: `0.1.0-dev.29` (base version `0.1.0`).
 
 Run each `tests/*_test.lua` with Lua from the addon root and check Lua files with `luac -p`. The tests cover migration, radar projection, filters, target actions, alert/last-seen state, navigation fallbacks, quiet modes, mouse-wheel/button zoom, world-map visibility guards, and UI layout bounds using mocked game APIs. Layout checks exercise repeated style changes, automatic Squat details, focused and unfocused states, edge and corner resizing, pop-outs, resized rings and markers, and an 800×600 canvas. Orientation checks cover quarter turns, fixed markers/cardinals, the player direction line, both radars, preview, unknown facing, and out-of-range focus. These checks do not replace in-game validation of rendering, navigation, or API availability.

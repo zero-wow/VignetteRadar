@@ -187,6 +187,7 @@ assert(loadfile("VignetteRadar_Style.lua"))("VignetteRadar", addon)
 assert(loadfile("VignetteRadar_Controls.lua"))("VignetteRadar", addon)
 assert(loadfile("VignetteRadar_Features.lua"))("VignetteRadar", addon)
 assert(loadfile("VignetteRadar_Exploration.lua"))("VignetteRadar", addon)
+assert(loadfile("VignetteRadar_POIs.lua"))("VignetteRadar", addon)
 assert(loadfile(legendSourcePath))("VignetteRadar", addon)
 assert(loadfile(targetPickerSourcePath))("VignetteRadar", addon)
 assert(loadfile(sourcePath))("VignetteRadar", addon)
@@ -1232,11 +1233,12 @@ addon.SetVignetteRadarNorthUp(false)
 SlashCmdList.VIGNETTERADAR("preview")
 panel.settingsDot.scripts.OnClick(panel.settingsDot)
 local quick = assert(addon.VignetteRadarQuickConfig.GetPanel())
-assert(quick:IsShown() and quick.width == 288 and quick.height == 389,
+assert(quick:IsShown() and quick.width == 288 and quick.height == 412,
     "the settings dot must open the narrow, self-contained panel")
 local tabCount, exposed, colorSlots = 0, {}, {}
 for _ in pairs(quick.tabs) do tabCount = tabCount + 1 end
-assert(tabCount == 9 and quick.pages.Themes and quick.pages.Guides and quick.pages.Explore,
+assert(tabCount == 10 and quick.pages.Themes and quick.pages.Guides and quick.pages.Explore
+    and quick.pages["Map Data"],
     "compact settings must visibly include exploration controls")
 assert(UISpecialFrames[1] == "VignetteRadarExplorePanel"
     and UISpecialFrames[2] == "VignetteRadarQuickConfigPanel",
@@ -1268,7 +1270,8 @@ for _, key in ipairs({ "vignetteRadarEnabled", "vignetteRadarHideWhenEmpty", "vi
     "vignetteRadarChevronDistance", "vignetteRadarHeadingLength", "vignetteRadarFullSweep",
     "vignetteRadarTheme", "vignetteRadarSmartZoom", "vignetteRadarUntangle",
     "vignetteRadarBreadcrumbs", "vignetteRadarApproachAlerts",
-    "vignetteRadarJournalEnabled", "vignetteRadarApproachDistance" }) do
+    "vignetteRadarJournalEnabled", "vignetteRadarApproachDistance",
+    "vignetteRadarPOISource", "vignetteRadarPOITypes" }) do
     assert(exposed[key], "compact settings missing: " .. key)
 end
 for _, slot in ipairs(addon.VignetteRadarStyle.slots) do
@@ -1284,6 +1287,11 @@ end
 quick.tabs.Explore.scripts.OnClick(quick.tabs.Explore)
 assert(quick.pages.Explore:IsShown() and quickControl("Explore", "vignetteRadarBreadcrumbs"),
     "the compact Explore tab must expose the dotted trail directly")
+assert(quick.rangeMinus.backdrop == nil and #quick.rangeMinus.strokes == 1
+    and quick.rangePlus.backdrop == nil and #quick.rangePlus.strokes == 2
+    and quickControl("Layout", "vignetteRadarNorthUp").glyph.label
+    and #quickControl("Behavior", "vignetteRadarKeepVisibleCombat").glyph.lines == 4,
+    "compact range, north, and visibility controls must match the radar glyphs")
 quick.tabs.Themes.scripts.OnClick(quick.tabs.Themes)
 assert(quick.pages.Themes:IsShown() and not quick.pages.Radar:IsShown())
 local style = addon.VignetteRadarStyle
@@ -1576,5 +1584,62 @@ addon.VignetteRadarAPI.Refresh(false)
 assert(#panel.trailDots == 64 and panel.trailDots[1] == firstTrailDot,
     "redrawing a stationary trail must not allocate more dots")
 C_Map.GetPlayerMapPosition = originalPlayerPosition
+
+-- One chosen HandyNotes pack supplies hollow, typed map notes without entering
+-- the live vignette pool or querying another installed pack.
+local otherPackCalls = 0
+HandyNotes = { plugins = {
+    TestPack = { GetNodes2 = function()
+        local done = false
+        return function()
+            if done then return nil end
+            done = true
+            return 52005000, nil, nil, 1, 1
+        end, { [52005000] = { label = "A map note", group = "misc" } }, nil
+    end },
+    OtherPack = { GetNodes2 = function()
+        otherPackCalls = otherPackCalls + 1
+        return function() return nil end, {}, nil
+    end },
+}, db = { profile = { enabledPlugins = { TestPack = true, OtherPack = true } } } }
+quick.tabs["Map Data"].scripts.OnClick(quick.tabs["Map Data"])
+local testPackRow
+for _, row in ipairs(quick.poiRows) do if row.sourceID == "TestPack" then testPackRow = row end end
+assert(quick.pages["Map Data"]:IsShown() and testPackRow,
+    "the map-data tab must list each available pack for a single-source choice")
+assert(testPackRow.point[4] + testPackRow.width + 8 <= quick.poiTrack.point[4],
+    "the map-data scrollbar must keep a visible gutter from pack buttons")
+testPackRow.scripts.OnClick(testPackRow)
+assert(settings.vignetteRadarPOISource == "TestPack" and otherPackCalls == 0,
+    "choosing a pack must not scan another pack")
+for index = 1, 6 do
+    HandyNotes.plugins["ZPack" .. index] = { GetNodes2 = function() return function() end, {}, nil end }
+end
+addon.VignetteRadarQuickConfig.Refresh()
+assert(quick.poiTrack:IsShown(), "a long pack list must expose a scrollbar")
+quick.poiRows[1].scripts.OnMouseWheel(quick.poiRows[1], -1)
+assert(quick.poiOffset == 1 and quick.poiThumb.point[5] < 0,
+    "the pack list must scroll while the pointer is over a source button")
+quick.poiRows[1].scripts.OnMouseWheel(quick.poiRows[1], 1)
+settings.vignetteRadarBreadcrumbs = false
+settings.vignetteRadarKeepVisibleCombat = false
+now, guids = 1300, {}
+addon.VignetteRadarAPI.Refresh(true)
+assert(panel:IsShown() and panel.mapNotes[1] and panel.mapNotes[1]:IsShown()
+    and panel.mapNotes[1].note.kind == "note" and panel.mapNotes[1].note.source == "TestPack",
+    "the chosen pack must draw its map note")
+for _, target in ipairs(addon.VignetteRadarAPI.GetTargets()) do
+    assert(target.source ~= "TestPack", "map notes must stay outside the live detection pool")
+end
+local noteX, noteY = panel.mapNotes[1].point[4], panel.mapNotes[1].point[5]
+assert(noteX * noteX + noteY * noteY <= (panel.plotRadius - 5)^2,
+    "map-note dots must stay inside the radar's plotting boundary")
+settings.vignetteRadarPOITypes.note = false
+addon.VignetteRadarAPI.Refresh(false)
+assert(not panel.mapNotes[1]:IsShown(), "type filters must hide only that map-note type")
+settings.vignetteRadarPOITypes.note = true
+settings.vignetteRadarPOISource = "none"
+addon.VignetteRadarAPI.Refresh(true)
+assert(not panel.mapNotes[1]:IsShown(), "turning map data off must clear its dots")
 
 io.write("vignette radar UI tests passed\n")

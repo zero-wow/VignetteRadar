@@ -1,9 +1,9 @@
 ## Interface: 120000, 120001, 120005
 ## Title: Vignette Radar
-## Notes: A radar for active vignettes with optional quest dots and area shading.
+## Notes: A radar for live vignettes, quests, and optional HandyNotes map notes.
 ## Author: Zero
-## Version: 0.1.0-dev.28
-## OptionalDeps: WaffleHouse_EllesmereUI, EllesmereUI
+## Version: 0.1.0-dev.29
+## OptionalDeps: WaffleHouse_EllesmereUI, EllesmereUI, HandyNotes
 ## SavedVariables: VignetteRadarDB
 
 VignetteRadar_Core.lua
@@ -11,6 +11,7 @@ VignetteRadar_Style.lua
 VignetteRadar_Controls.lua
 VignetteRadar_Features.lua
 VignetteRadar_Exploration.lua
+VignetteRadar_POIs.lua
 VignetteRadar_Legend.lua
 VignetteRadar_TargetPicker.lua
 VignetteRadar_Radar.lua

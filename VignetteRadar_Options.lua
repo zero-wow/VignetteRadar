@@ -29,6 +29,18 @@ local function Refresh()
         previousRange:SetEnabled(db.vignetteRadarRange ~= ranges[1])
         nextRange:SetEnabled(db.vignetteRadarRange ~= ranges[#ranges])
     end
+    local style = addon.VignetteRadarStyle
+    if style and panel.rail then
+        local ar, ag, ab = style.Color("accent")
+        local br, bg, bb = style.Color("background")
+        panel:SetBackdropColor(math.min(.14, br * 2.7), math.min(.14, bg * 2.7),
+            math.min(.14, bb * 2.7), .99)
+        panel.rail:SetColorTexture(ar, ag, ab, .8)
+        panel.headerLine:SetColorTexture(ar, ag, ab, .24)
+        panel.tabLine:SetColorTexture(ar, ag, ab, .16)
+        panel.title:SetTextColor(ar, ag, ab, 1)
+        addon.VignetteRadarControls.RefreshTheme()
+    end
 end
 
 addon.RefreshVignetteRadarOptions = Refresh
@@ -41,6 +53,8 @@ end
 local function AddLabel(parent, title, x, y)
     local label = parent:CreateFontString(nil, "OVERLAY", "GameFontNormal")
     label:SetPoint("TOPLEFT", parent, "TOPLEFT", x, y)
+    label:SetFont(STANDARD_TEXT_FONT or "Fonts\\FRIZQT__.TTF", 10, "")
+    label:SetTextColor(.68, .87, .81, 1)
     label:SetText(title)
     return label
 end
@@ -49,6 +63,7 @@ local function AddDescription(parent, title, x, y, width)
     local label = AddLabel(parent, title, x, y)
     label:SetWidth(width)
     label:SetWordWrap(true)
+    label:SetTextColor(.65, .73, .73, 1)
     return label
 end
 
@@ -61,6 +76,8 @@ local function AddCheckbox(parent, key, title, x, y, subkey, labelWidth, present
     label:SetWordWrap(false)
     label:SetText(title)
     checkbox.label, checkbox.optionKey, checkbox.subkey = label, key, subkey
+    if key == "vignetteRadarNorthUp" then checkbox:SetGlyph("N")
+    elseif key == "vignetteRadarKeepVisibleCombat" then checkbox:SetGlyph("eye") end
     checkbox:RefreshAppearance()
     checkbox:SetScript("OnClick", function(self)
         local enabled = Checked(self:GetChecked())
@@ -89,7 +106,9 @@ local function AddCheckbox(parent, key, title, x, y, subkey, labelWidth, present
 end
 
 local function AddButton(parent, title, x, y, width, callback)
-    local button = addon.VignetteRadarControls.Button(parent, title, width, 24)
+    local controls = addon.VignetteRadarControls
+    local button = (title == "+" or title == "-" or title == "−")
+        and controls.IconButton(parent, title, width, 24) or controls.Button(parent, title, width, 24)
     button:SetPoint("TOPLEFT", parent, "TOPLEFT", x, y)
     button:SetScript("OnClick", callback)
     return button
@@ -138,17 +157,36 @@ end
 local function AddFooter(parent, title)
     local label = parent:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
     label:SetPoint("TOPLEFT", parent, "TOPLEFT", 24, -326)
+    label:SetFont(STANDARD_TEXT_FONT or "Fonts\\FRIZQT__.TTF", 9, "")
+    label:SetTextColor(.51, .63, .62, 1)
     label:SetText(title)
     return label
 end
 
 local function BuildPanel()
     if panel then return panel end
-    panel = CreateFrame("Frame", "VignetteRadarOptionsPanel", UIParent)
+    panel = CreateFrame("Frame", "VignetteRadarOptionsPanel", UIParent, "BackdropTemplate")
     panel.name = "Vignette Radar"
     panel:SetSize(520, 365)
+    panel:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8X8",
+        edgeFile = "Interface\\Buttons\\WHITE8X8", edgeSize = 1 })
+    panel:SetBackdropColor(.035, .043, .049, .99)
+    panel:SetBackdropBorderColor(1, 1, 1, .22)
     panel:Hide()
     panel.pages, panel.pageButtons = {}, {}
+
+    panel.rail = panel:CreateTexture(nil, "ARTWORK")
+    panel.rail:SetPoint("TOPLEFT", panel, "TOPLEFT", 1, -1)
+    panel.rail:SetPoint("BOTTOMLEFT", panel, "BOTTOMLEFT", 1, 1)
+    panel.rail:SetWidth(2)
+    panel.headerLine = panel:CreateTexture(nil, "ARTWORK")
+    panel.headerLine:SetPoint("TOPLEFT", panel, "TOPLEFT", 18, -65)
+    panel.headerLine:SetPoint("TOPRIGHT", panel, "TOPRIGHT", -18, -65)
+    panel.headerLine:SetHeight(1)
+    panel.tabLine = panel:CreateTexture(nil, "ARTWORK")
+    panel.tabLine:SetPoint("TOPLEFT", panel, "TOPLEFT", 18, -105)
+    panel.tabLine:SetPoint("TOPRIGHT", panel, "TOPRIGHT", -18, -105)
+    panel.tabLine:SetHeight(1)
 
     closeButton = addon.VignetteRadarControls.Button(panel, "×", 24, 24)
     closeButton:SetPoint("TOPRIGHT", panel, "TOPRIGHT", -8, -8)
@@ -157,12 +195,16 @@ local function BuildPanel()
 
     local title = panel:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
     title:SetPoint("TOPLEFT", panel, "TOPLEFT", 24, -22)
-    title:SetText("Vignette Radar")
+    title:SetFont(STANDARD_TEXT_FONT or "Fonts\\FRIZQT__.TTF", 13, "")
+    title:SetText("VIGNETTE RADAR")
+    panel.title = title
 
     local description = panel:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
     description:SetPoint("TOPLEFT", title, "BOTTOMLEFT", 0, -11)
     description:SetPoint("RIGHT", panel, "RIGHT", -24, 0)
     description:SetJustifyH("LEFT")
+    description:SetFont(STANDARD_TEXT_FONT or "Fonts\\FRIZQT__.TTF", 9, "")
+    description:SetTextColor(.68, .77, .76, 1)
     description:SetText("Heading-up positions for Blizzard vignette detections. Hidden locations are never revealed.")
 
     local function SelectPage(name)
@@ -201,14 +243,18 @@ local function BuildPanel()
     rangeValue:SetWidth(118)
     rangeValue:SetJustifyH("CENTER")
     nextRange = AddButton(radar, "+", 359, -247, 48, function() StepRange(1) end)
-    AddButton(radar, "Preview layout", 24, -283, 133, function()
+    AddButton(radar, "Preview", 24, -283, 109, function()
         addon.ToggleVignetteRadarPreview()
     end)
-    AddButton(radar, "Reset positions", 169, -283, 133, function()
+    AddButton(radar, "Reset", 145, -283, 109, function()
         addon.ResetVignetteRadarPositions()
     end)
-    AddButton(radar, "Explore tools", 314, -283, 182, function()
+    AddButton(radar, "Explore", 266, -283, 109, function()
         if addon.VignetteRadarExploration then addon.VignetteRadarExploration.TogglePanel() end
+    end)
+    AddButton(radar, "Map data", 387, -283, 109, function()
+        local quick = addon.VignetteRadarQuickConfig
+        if quick and quick.OpenPage then quick.OpenPage("Map Data") end
     end)
     AddFooter(radar, "Stay fully visible (Behavior) overrides auto-hide.")
 
