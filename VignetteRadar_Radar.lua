@@ -804,6 +804,7 @@ local function HideQuestAreas()
         panel.questBlob.tooltipQuestID = nil
         panel.questBlob:Hide()
         panel.questBlob.drawnKey = nil
+        panel.questBlob.nextDrawAt = nil
     end
 end
 
@@ -867,11 +868,15 @@ local function RenderQuestAreas(player, mapID, range)
     end
     -- Blizzard's quest widget draws in map coordinates. Keep its full-map canvas
     -- aligned with the north-up radar, and clip it to the plotting frame.
-    if not questMapBasis or questMapBasis.mapID ~= mapID then
+    local now = Now()
+    if not questMapBasis or questMapBasis.mapID ~= mapID
+        or (not questMapBasis.horizontal and now >= questMapBasis.retryAt) then
         local originX, originY, originInstance = MapToWorld(mapID, MapVector(0, 0))
         local rightX, rightY, rightInstance = MapToWorld(mapID, MapVector(1, 0))
         local downX, downY, downInstance = MapToWorld(mapID, MapVector(0, 1))
-        questMapBasis = { mapID = mapID }
+        -- A zone's map coordinates can be unavailable on the first attempt.
+        -- Retry a failed projection instead of caching that failure for the zone.
+        questMapBasis = { mapID = mapID, retryAt = now + RESCAN_SECONDS }
         if originX and rightX and downX
             and (not originInstance or not rightInstance or originInstance == rightInstance)
             and (not originInstance or not downInstance or originInstance == downInstance) then
@@ -893,8 +898,12 @@ local function RenderQuestAreas(player, mapID, range)
     blob:SetSize(width, height)
     blob:ClearAllPoints()
     blob:SetPoint("CENTER", panel.field, "CENTER", (0.5 - player.mapX) * width, (player.mapY - 0.5) * height)
-    if blob.drawnKey ~= key then
-        local ok = pcall(blob.SetMapID, blob, mapID)
+    if blob.drawnKey ~= key or now >= (blob.nextDrawAt or 0) then
+        local ok = true
+        if blob.mapContextID ~= mapID then
+            ok = pcall(blob.SetMapID, blob, mapID)
+            if ok then blob.mapContextID = mapID end
+        end
         if ok then ok = pcall(blob.DrawNone, blob) end
         if ok then
             for _, quest in ipairs(activeQuests) do
@@ -903,6 +912,9 @@ local function RenderQuestAreas(player, mapID, range)
         end
         if not ok then HideQuestAreas(); return end
         blob.drawnKey = key
+        -- DrawBlob has no readiness result: a successful call can precede its
+        -- data. Refresh at the scan interval as well as on quest-data events.
+        blob.nextDrawAt = now + RESCAN_SECONDS
     end
     blob:Show()
     return true
@@ -2363,6 +2375,7 @@ local function EnsurePanel()
 end
 
 ScanVignettes = function(mapID)
+    if activeMapID ~= mapID then questMapBasis = nil end
     if activeMapID ~= mapID or preview or Settings().vignetteRadarEnabled ~= true then pulseUntil = 0 end
     activeMapID = mapID
     activeTargets = CollectVignettes(mapID)
@@ -2593,12 +2606,22 @@ local events = CreateFrame("Frame")
 for _, event in ipairs({
     "PLAYER_LOGIN", "PLAYER_ENTERING_WORLD", "ZONE_CHANGED_NEW_AREA",
     "VIGNETTES_UPDATED", "VIGNETTE_MINIMAP_UPDATED",
-    "QUEST_LOG_UPDATE", "QUEST_POI_UPDATE", "SUPER_TRACKING_CHANGED",
+    "QUEST_LOG_UPDATE", "QUEST_POI_UPDATE", "QUEST_WATCH_LIST_CHANGED", "SUPER_TRACKING_CHANGED",
     "PLAYER_REGEN_DISABLED", "PLAYER_REGEN_ENABLED", "ZONE_CHANGED", "ZONE_CHANGED_INDOORS",
 }) do
     events:RegisterEvent(event)
 end
 events:SetScript("OnEvent", function(_, event)
+    local mapChanged = event == "PLAYER_ENTERING_WORLD" or event == "ZONE_CHANGED_NEW_AREA"
+        or event == "ZONE_CHANGED" or event == "ZONE_CHANGED_INDOORS"
+    if mapChanged then questMapBasis = nil end
+    if mapChanged or event == "QUEST_LOG_UPDATE" or event == "QUEST_POI_UPDATE"
+        or event == "QUEST_WATCH_LIST_CHANGED" or event == "SUPER_TRACKING_CHANGED" then
+        if panel and panel.questBlob then
+            panel.questBlob.drawnKey = nil
+            if mapChanged then panel.questBlob.mapContextID = nil end
+        end
+    end
     RefreshRadar(true)
     if event == "PLAYER_LOGIN" and C_Timer and C_Timer.After then
         C_Timer.After(0.5, function() RefreshRadar(true) end)

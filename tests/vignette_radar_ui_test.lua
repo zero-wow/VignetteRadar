@@ -1097,6 +1097,71 @@ C_Map.GetWorldPosFromMapPos = originalWorldPosition
 addon.VignetteRadarAPI.Refresh(true)
 assert(not panel.questBlob:IsShown(),
     "unrotatable native blobs must not appear on maps whose axes disagree with the radar")
+
+-- Map corners can arrive after player and quest positions on the same map.
+-- Missing basis data must be retried without requiring another zone change.
+local missingQuestCorner = true
+C_Map.GetWorldPosFromMapPos = function(_, position)
+    if missingQuestCorner and position.x == 0 and position.y == 0 then return nil end
+    return 42, { x = (0.5 - position.y) * 1000, y = (0.5 - position.x) * 1000 }
+end
+settings.vignetteRadarQuestDots = true
+mapID, now = 783, 600
+addon.VignetteRadarAPI.Refresh(true)
+assert(panel.questDots[1]:IsShown() and not panel.questBlob:IsShown(),
+    "quest dots must survive a temporarily missing map corner while native shading waits")
+missingQuestCorner = false
+now = 602
+addon.VignetteRadarAPI.Refresh(false)
+assert(panel.questBlob:IsShown() and panel.questBlob.mapID == 783,
+    "native shading must recover when map corners become available on the same map")
+
+-- DrawBlob may return successfully before Blizzard has loaded shape data.
+-- Updates and a slow retry must redraw even when map, size, and IDs stay fixed.
+local questEvents
+for _, object in ipairs(objects) do
+    if object.kind == "Frame" and object.events and object.events.QUEST_POI_UPDATE then
+        questEvents = object
+        break
+    end
+end
+assert(questEvents and questEvents.events.QUEST_LOG_UPDATE and questEvents.scripts.OnEvent,
+    "quest update events must be registered on the radar event frame")
+local savedDrawNone, savedDrawBlob = panel.questBlob.DrawNone, panel.questBlob.DrawBlob
+local drawNoneCount, drawBlobCount, shapeReady, shapeVersion = 0, 0, false, 1
+panel.questBlob.DrawNone = function(self)
+    drawNoneCount = drawNoneCount + 1
+    self.renderedShape = nil
+end
+panel.questBlob.DrawBlob = function(self, questID)
+    drawBlobCount = drawBlobCount + 1
+    if shapeReady then self.renderedShape = tostring(questID) .. ":" .. tostring(shapeVersion) end
+end
+mapID, now = 784, 610
+addon.VignetteRadarAPI.Refresh(true)
+assert(panel.questBlob:IsShown() and drawBlobCount == 1 and drawNoneCount == 1
+    and panel.questBlob.renderedShape == nil,
+    "an initially empty native draw may still report success")
+shapeReady = true
+questEvents.scripts.OnEvent(questEvents, "QUEST_POI_UPDATE")
+assert(panel.questBlob.renderedShape == "12345:1" and drawBlobCount == 2 and drawNoneCount == 2,
+    "QUEST_POI_UPDATE must redraw late native shape data with unchanged quest IDs")
+shapeVersion = 2
+questEvents.scripts.OnEvent(questEvents, "QUEST_LOG_UPDATE")
+assert(panel.questBlob.renderedShape == "12345:2" and drawBlobCount == 3 and drawNoneCount == 3,
+    "QUEST_LOG_UPDATE must redraw changed native geometry with unchanged quest IDs")
+local drawCount = drawBlobCount
+for _ = 1, 5 do addon.VignetteRadarAPI.Refresh(false) end
+assert(drawBlobCount == drawCount,
+    "ordinary radar refreshes must not redraw native shapes at frame rate")
+shapeVersion = 3
+now = 612
+addon.VignetteRadarAPI.Refresh(false)
+assert(panel.questBlob.renderedShape == "12345:3" and drawBlobCount == drawCount + 1,
+    "a slow retry must repair native geometry when a quest update event was missed")
+panel.questBlob.DrawNone, panel.questBlob.DrawBlob = savedDrawNone, savedDrawBlob
+settings.vignetteRadarQuestDots = false
+C_Map.GetWorldPosFromMapPos = originalWorldPosition
 settings.vignetteRadarQuestAreas = false
 addon.VignetteRadarAPI.Refresh(false)
 local savedFieldPoint = panel.field.point
