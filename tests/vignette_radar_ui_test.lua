@@ -106,8 +106,8 @@ function methods:GetTop()
     return 380
 end
 function methods:GetBottom() return self.bottom or (self:GetTop() - self:GetHeight() * self:GetScale()) end
-function methods:CreateTexture()
-    local texture = setmetatable({ kind = "Texture", parent = self }, { __index = methods })
+function methods:CreateTexture(_, layer)
+    local texture = setmetatable({ kind = "Texture", parent = self, layer = layer }, { __index = methods })
     objects[#objects + 1] = texture
     return texture
 end
@@ -983,15 +983,18 @@ for _, name in ipairs({ "classic", "compact", "squat" }) do
     local corner = (face[3] - face[1]) * .04
     assert(math.sqrt(2) * (corner - 4) <= corner - 1,
         "every native clip corner must stay at least one unit inside the rounded outline")
-    for index, line in ipairs(panel.squareBorder) do
-        local dx = math.max(0, math.abs(line.startPoint[3]) - (panel.fieldRadius - corner))
-        local dy = math.max(0, math.abs(line.startPoint[4]) - (panel.fieldRadius - corner))
-        local nextLine = panel.squareBorder[index % #panel.squareBorder + 1]
-        assert(line:IsShown() and math.abs(math.sqrt(dx * dx + dy * dy) - corner) < .001
-            and math.abs(line.endPoint[3] - nextLine.startPoint[3]) < .001
-            and math.abs(line.endPoint[4] - nextLine.startPoint[4]) < .001,
-            "the outline must follow the rounded face and join without gaps in each layout")
-    end
+    local border = assert(panel.squareBorder, "square layouts must create one rounded border texture")
+    local borderPoint = assert(border.point, "rounded border texture needs an explicit center anchor")
+    local borderBounds, faceBounds = bounds(border), bounds(panel.field.background)
+    assert(border.kind == "Texture" and border.parent == panel.field and border.layer == "BORDER"
+        and border.texture == "Interface\\AddOns\\VignetteRadar\\Media\\radar-rounded-border.tga"
+        and borderPoint[1] == "CENTER" and borderPoint[2] == panel.field
+        and borderPoint[3] == "CENTER" and (borderPoint[4] or 0) == 0 and (borderPoint[5] or 0) == 0
+        and border.width == panel.field.background.width and border.height == panel.field.background.height
+        and borderBounds[1] == faceBounds[1] and borderBounds[2] == faceBounds[2]
+        and borderBounds[3] == faceBounds[3] and borderBounds[4] == faceBounds[4]
+        and border:IsShown(),
+        "the rounded border texture must cover the square face in the BORDER layer in every layout")
     panel:SetScale(.8)
     checkLayout(false)
     panel:SetScale(1)
@@ -1054,7 +1057,7 @@ panel.field.left, panel.field.top = nil, nil
 panel.questBlob.left, panel.questBlob.top = nil, nil
 panel.frameToggle.scripts.OnClick(panel.frameToggle)
 assert(settings.vignetteRadarCircleOnly and panel.questBlob:IsShown() and questDot:IsShown()
-    and panel.squarePlot and panel.squareBorder[1]:IsShown() and panel.frameToggle:IsShown()
+    and panel.squarePlot and panel.squareBorder:IsShown() and panel.frameToggle:IsShown()
     and panel.backdropColor[4] == 0,
     "radar-only view must keep square shading and its restore control while hiding the outer frame")
 panel.frameToggle.scripts.OnClick(panel.frameToggle)
@@ -1066,7 +1069,7 @@ addon.VignetteRadarAPI.Refresh(true)
 assert(not questDot:IsShown() and not panel.questBlob:IsShown(),
     "each quest overlay must disappear as soon as its option is disabled")
 assert(not panel.squarePlot and panel.field.background.texture == "Interface\\CharacterFrame\\TempPortraitAlphaMask"
-    and panel.field.halo:IsShown() and panel.outerRing[1]:IsShown() and not panel.squareBorder[1]:IsShown()
+    and panel.field.halo:IsShown() and panel.outerRing[1]:IsShown() and not panel.squareBorder:IsShown()
     and panel.frameToggle.width == 16 and panel.questBlob == originalBlob,
     "disabling quest areas must restore the original circular face without replacing the blob renderer")
 settings.vignetteRadarQuestAreas = true

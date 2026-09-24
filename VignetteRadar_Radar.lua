@@ -20,7 +20,7 @@ local ACCENT = { 0.05, 0.82, 0.62 }
 local RED = { 1, 0.18, 0.14 }
 local CIRCLE_TEXTURE = "Interface\\CharacterFrame\\TempPortraitAlphaMask"
 local ROUNDED_SQUARE_TEXTURE = "Interface\\AddOns\\VignetteRadar\\Media\\radar-rounded-square.tga"
-local SQUARE_CORNER_RATIO, SQUARE_CORNER_SEGMENTS = .04, 8
+local ROUNDED_BORDER_TEXTURE = "Interface\\AddOns\\VignetteRadar\\Media\\radar-rounded-border.tga"
 local QUEST_CLIP_INSET = 4
 local SKULL_TEXTURE = "Interface\\TargetingFrame\\UI-TargetingFrame-Skull"
 local LAUNCHER_BEZEL = "Interface\\AddOns\\VignetteRadar\\Media\\vignette-radar-bezel.tga"
@@ -415,27 +415,6 @@ local function ResizeRing(lines, field, radius)
         local first, last = ((index - 1) / #lines) * TWO_PI, (index / #lines) * TWO_PI
         line:SetStartPoint("CENTER", field, math.cos(first) * radius, math.sin(first) * radius)
         line:SetEndPoint("CENTER", field, math.cos(last) * radius, math.sin(last) * radius)
-    end
-end
-
-local function ResizeSquareBorder(lines, field, radius)
-    -- Match the texture's 4%-of-width corners; retain a subtle, themed outline.
-    local corner = radius * 2 * SQUARE_CORNER_RATIO
-    local center = radius - corner
-    local centers = { { center, center }, { -center, center },
-        { -center, -center }, { center, -center } }
-    local points = {}
-    for quadrant = 0, 3 do
-        for step = 0, SQUARE_CORNER_SEGMENTS do
-            local angle = (quadrant + step / SQUARE_CORNER_SEGMENTS) * math.pi / 2
-            points[#points + 1] = { centers[quadrant + 1][1] + math.cos(angle) * corner,
-                centers[quadrant + 1][2] + math.sin(angle) * corner }
-        end
-    end
-    for index, line in ipairs(lines) do
-        local first, last = points[index], points[index % #points + 1]
-        line:SetStartPoint("CENTER", field, first[1], first[2])
-        line:SetEndPoint("CENTER", field, last[1], last[2])
     end
 end
 
@@ -1029,8 +1008,8 @@ local function ApplyPanelLayout(focused)
     panel.questClip:ClearAllPoints()
     panel.questClip:SetPoint("CENTER", panel.field, "CENTER")
     panel.questClip:SetSize((radius - QUEST_CLIP_INSET) * 2, (radius - QUEST_CLIP_INSET) * 2)
-    ResizeSquareBorder(panel.squareBorder, panel.field, radius)
-    for _, line in ipairs(panel.squareBorder) do line:SetShown(square) end
+    panel.squareBorder:SetSize(radius * 2, radius * 2)
+    panel.squareBorder:SetShown(square)
     panel.field.halo:SetShown(not square)
     for _, line in ipairs(panel.outerRing) do line:SetShown(not square) end
     if panel.frameToggle then
@@ -1269,7 +1248,8 @@ ApplyAppearance = function()
         panel.title:SetTextColor(ar, ag, ab, 1)
         panel.field.background:SetVertexColor(br, bg, bb, .94)
         panel.field.halo:SetVertexColor(rr, rg, rb, .18 * db.vignetteRadarRingOpacity)
-        for _, group in ipairs({ { panel.squareBorder, .12 }, { panel.outerRing, .02 }, { panel.rangeRing, .045 },
+        panel.squareBorder:SetVertexColor(rr, rg, rb, .12 * db.vignetteRadarRingOpacity)
+        for _, group in ipairs({ { panel.outerRing, .02 }, { panel.rangeRing, .045 },
             { panel.middleRing, .04 }, { panel.innerRing, .03 } }) do
             for _, line in ipairs(group[1]) do
                 line:SetColorTexture(rr, rg, rb, group[2] * db.vignetteRadarRingOpacity)
@@ -2172,14 +2152,12 @@ local function EnsurePanel()
     panel.field.halo:SetTexture(CIRCLE_TEXTURE)
     panel.field.halo:SetVertexColor(ACCENT[1], ACCENT[2], ACCENT[3], 0.18)
     panel.outerRing = AddRing(panel.field, FIELD_RADIUS, 0.02)
-    panel.squareBorder = {}
-    for index = 1, 4 * (SQUARE_CORNER_SEGMENTS + 1) do
-        local line = panel.field:CreateLine(nil, "BORDER")
-        line:SetThickness(1)
-        line:SetColorTexture(ACCENT[1], ACCENT[2], ACCENT[3], .06)
-        line:Hide()
-        panel.squareBorder[index] = line
-    end
+    -- One continuous outline avoids tiny native Line segments disappearing at corners.
+    panel.squareBorder = panel.field:CreateTexture(nil, "BORDER")
+    panel.squareBorder:SetTexture(ROUNDED_BORDER_TEXTURE)
+    panel.squareBorder:SetPoint("CENTER", panel.field, "CENTER")
+    panel.squareBorder:SetVertexColor(ACCENT[1], ACCENT[2], ACCENT[3], .06)
+    panel.squareBorder:Hide()
     panel.rangeRing = AddRing(panel.field, PLOT_RADIUS, 0.045)
     panel.middleRing = AddRing(panel.field, PLOT_RADIUS * (2 / 3), 0.04)
     panel.innerRing = AddRing(panel.field, PLOT_RADIUS / 3, 0.03)
