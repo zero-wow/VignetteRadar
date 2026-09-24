@@ -1,0 +1,5 @@
+<Bindings>
+    <Binding name="VIGNETTERADAR_RAISE_LAUNCHER" header="VIGNETTERADAR" category="ADDONS" runOnUp="true">
+        VignetteRadar_RaiseLauncher(keystate)
+    </Binding>
+</Bindings>

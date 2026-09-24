@@ -1,6 +1,9 @@
 local _, addon = ...
 if type(addon) ~= "table" then return end
 
+BINDING_HEADER_VIGNETTERADAR = "Vignette Radar"
+BINDING_NAME_VIGNETTERADAR_RAISE_LAUNCHER = "Hold to raise launcher"
+
 addon.VignetteRadarRanges = { 10, 25, 50, 100, 150, 300, 450, 600, 1200, 2400, 4800 }
 addon.VignetteRadarLayouts = { "classic", "squat", "compact" }
 

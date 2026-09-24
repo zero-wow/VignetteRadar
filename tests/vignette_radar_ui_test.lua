@@ -23,6 +23,7 @@ function methods:SetBackdrop(value) self.backdrop = value end
 function methods:SetBackdropColor(...) self.backdropColor = { ... } end
 function methods:SetBackdropBorderColor(...) self.backdropBorderColor = { ... } end
 function methods:SetFrameStrata(value) self.strata = value end
+function methods:GetFrameStrata() return self.strata or "MEDIUM" end
 function methods:SetFrameLevel(value) self.level = value end
 function methods:GetFrameLevel() return self.level or 1 end
 function methods:SetClampedToScreen(value) self.clamped = value end
@@ -2079,6 +2080,32 @@ SlashCmdList.VIGNETTERADAR("recenter")
 assert(panel:IsShown() and settings.vignetteRadarEnabled,
     "recenter command must recover a hidden radar panel")
 assertFaceVisible("recenter command must keep the scaled radar face visible")
+
+VignetteRadar_RaiseLauncher("down")
+assert(launcher.strata == "TOOLTIP" and launcher.level == 1000
+    and not _G.VignetteRadarLauncherPeekWatcher,
+    "key down must raise the launcher without creating a polling frame")
+VignetteRadar_RaiseLauncher("up")
+assert(launcher.strata == "MEDIUM" and launcher.level == 1,
+    "key up must restore the normal launcher layer")
+VignetteRadar_RaiseLauncher("down")
+launcher._dragging = true
+VignetteRadar_RaiseLauncher("up")
+assert(launcher.strata == "TOOLTIP" and launcher._peekReleased,
+    "releasing the key during a drag must keep the launcher raised")
+launcher.scripts.OnDragStop(launcher)
+assert(launcher.strata == "MEDIUM", "the launcher must restore its layer after dragging stops")
+settings.vignetteRadarLauncherPosition = nil
+settings.vignetteRadarLauncherVisible = false
+launcher:Hide()
+VignetteRadar_RaiseLauncher("down")
+assert(launcher:IsShown(), "the binding must reveal a normally hidden launcher")
+addon.VignetteRadarAPI.Refresh(false)
+assert(launcher:IsShown(), "normal radar refreshes must not hide the launcher during a held binding")
+VignetteRadar_RaiseLauncher("up")
+assert(not launcher:IsShown(), "the launcher must return to its visibility preference on release")
+settings.vignetteRadarLauncherVisible = true
+launcher:Show()
 
 local profileClock, performanceWarning = 0, nil
 debugprofilestop = function() profileClock = profileClock + 300; return profileClock end

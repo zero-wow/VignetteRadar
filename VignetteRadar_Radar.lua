@@ -46,6 +46,8 @@ local atan2 = math.atan2 or function(y, x) return math.atan(y, x) end
 local Unpack = unpack or table.unpack
 
 local panel, launcher
+local launcherPeekActive = false
+local EndLauncherPeek
 local trailPopup, HideTrailPopup, ToggleTrailPopup, RefreshTrailPopup
 local preview = false
 local manualPanelState
@@ -2866,6 +2868,7 @@ EnsureLauncher = function()
         self:StopMovingOrSizing()
         self._dragging = false
         SaveLauncherPosition()
+        if self._peekReleased and EndLauncherPeek then EndLauncherPeek() end
         if C_Timer and C_Timer.After then
             C_Timer.After(0, function() self._suppressClick = false end)
         else
@@ -2905,6 +2908,33 @@ EnsureLauncher = function()
     end)
     UpdateLauncher(0, true)
     return launcher
+end
+
+EndLauncherPeek = function()
+    if not launcherPeekActive then return end
+    launcherPeekActive = false
+    if not launcher then return end
+    launcher:SetFrameStrata(launcher._peekStrata or "MEDIUM")
+    if launcher._peekLevel ~= nil then launcher:SetFrameLevel(launcher._peekLevel) end
+    launcher._peekStrata, launcher._peekLevel, launcher._peekReleased = nil, nil, nil
+    if Settings().vignetteRadarLauncherVisible == false then launcher:Hide() end
+end
+
+function VignetteRadar_RaiseLauncher(keystate)
+    if keystate == "up" then
+        if launcher and launcher._dragging then launcher._peekReleased = true
+        else EndLauncherPeek() end
+        return
+    end
+    if keystate ~= "down" then return end
+    if launcherPeekActive then return end
+    launcherPeekActive = true
+    local button = EnsureLauncher()
+    button._peekStrata = button:GetFrameStrata()
+    button._peekLevel = button:GetFrameLevel()
+    button:SetFrameStrata("TOOLTIP")
+    button:SetFrameLevel(1000)
+    button:Show()
 end
 
 local function EnsurePanel()
@@ -3668,6 +3698,8 @@ RefreshRadar = function(rescan)
         addon.VignetteRadarQuickConfig.Refresh()
     end
     if settings.vignetteRadarLauncherVisible ~= false then
+        EnsureLauncher():Show()
+    elseif launcherPeekActive then
         EnsureLauncher():Show()
     elseif launcher then
         launcher:Hide()
