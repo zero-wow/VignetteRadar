@@ -954,7 +954,7 @@ local questDot = assert(panel.questDots[1], "quest locations must create a disti
 assert(questDot:IsShown() and questDot.quest.questID == 12345 and questDot.point[4] > 0
     and panel.summary.text == "1 QUEST IN RANGE", "quest dots should show live positions and a readable count")
 assert(panel.questBlob and not panel.questBlob:IsShown(), "exact blobs must wait for north-up mode")
-assert(panel.squarePlot and panel.field.background.texture == "Interface\\Buttons\\WHITE8X8",
+assert(panel.squarePlot and panel.field.background.texture == "Interface\\AddOns\\VignetteRadar\\Media\\radar-rounded-square.tga",
     "enabling quest areas must select a stable square surface even before blobs are available")
 GetPlayerFacing = function() return math.pi / 2 end
 addon.VignetteRadarAPI.Refresh(false)
@@ -975,15 +975,22 @@ for _, name in ipairs({ "classic", "compact", "squat" }) do
         and panel.questBlob.parent == panel.questClip and panel.questClip.clipsChildren,
         "every square layout must preserve the single working native blob renderer")
     assert(face[3] - face[1] == panel.fieldRadius * 2 and face[4] - face[2] == panel.fieldRadius * 2
-        and clip[1] == face[1] + 1 and clip[2] == face[2] + 1
-        and clip[3] == face[3] - 1 and clip[4] == face[4] - 1,
-        "native shading must clip inside the visible square with a one-pixel border inset")
+        and clip[1] == face[1] + 4 and clip[2] == face[2] + 4
+        and clip[3] == face[3] - 4 and clip[4] == face[4] - 4,
+        "native shading must retain the safe inset inside the rounded face")
     assert(toggle[1] >= face[3] + 3 and not panel.field.halo:IsShown() and not panel.outerRing[1]:IsShown(),
         "square mode must leave a clear restore-control gutter and remove the old circular outer rim")
-    for _, line in ipairs(panel.squareBorder) do
-        assert(line:IsShown() and math.abs(line.startPoint[3]) == panel.fieldRadius
-            and math.abs(line.startPoint[4]) == panel.fieldRadius,
-            "the square border must follow the face in each layout")
+    local corner = (face[3] - face[1]) * .04
+    assert(math.sqrt(2) * (corner - 4) <= corner - 1,
+        "every native clip corner must stay at least one unit inside the rounded outline")
+    for index, line in ipairs(panel.squareBorder) do
+        local dx = math.max(0, math.abs(line.startPoint[3]) - (panel.fieldRadius - corner))
+        local dy = math.max(0, math.abs(line.startPoint[4]) - (panel.fieldRadius - corner))
+        local nextLine = panel.squareBorder[index % #panel.squareBorder + 1]
+        assert(line:IsShown() and math.abs(math.sqrt(dx * dx + dy * dy) - corner) < .001
+            and math.abs(line.endPoint[3] - nextLine.startPoint[3]) < .001
+            and math.abs(line.endPoint[4] - nextLine.startPoint[4]) < .001,
+            "the outline must follow the rounded face and join without gaps in each layout")
     end
     panel:SetScale(.8)
     checkLayout(false)
@@ -1001,7 +1008,7 @@ for _, name in ipairs({ "classic", "compact", "squat" }) do
     panel:SetScale(.8)
     checkLayout(true)
     inside(panel.field.background, panel, 4)
-    inside(panel.questClip, panel.field.background, 1)
+    inside(panel.questClip, panel.field.background, 4)
     separate(panel.frameToggle, panel.field.background, 3, "square surface/restore control")
     assert(panel.squarePlot and not panel.questBlob:IsShown(),
         "focused previews must keep square geometry without inventing quest blobs")
@@ -1028,8 +1035,8 @@ for _, sign in ipairs({ -1, 1 }) do
         -- This point is in the square's corner, beyond the old circular hit area.
         panel.questBlob:SetSize(panel.field:GetWidth(), panel.field:GetHeight())
         GetCursorPosition = function()
-            return panel.field:GetWidth() / 2 + sign * (panel.fieldRadius - 3),
-                panel.field:GetHeight() / 2 + otherSign * (panel.fieldRadius - 3)
+            return panel.field:GetWidth() / 2 + sign * (panel.fieldRadius - 5),
+                panel.field:GetHeight() / 2 + otherSign * (panel.fieldRadius - 5)
         end
         panel.scripts.OnUpdate(panel, .11)
         assert(GameTooltip:IsShown() and GameTooltip:GetOwner() == panel.questBlob,
@@ -1037,7 +1044,7 @@ for _, sign in ipairs({ -1, 1 }) do
     end
 end
 GetCursorPosition = function()
-    return panel.field:GetWidth() / 2 + panel.fieldRadius, panel.field:GetHeight() / 2
+    return panel.field:GetWidth() / 2 + panel.fieldRadius - 3, panel.field:GetHeight() / 2
 end
 panel.scripts.OnUpdate(panel, .11)
 assert(not GameTooltip:IsShown(), "quest tooltip hit testing must stop at the same square edge as shading")

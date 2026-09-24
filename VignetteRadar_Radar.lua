@@ -19,6 +19,9 @@ local MAX_QUEST_DOTS = 64
 local ACCENT = { 0.05, 0.82, 0.62 }
 local RED = { 1, 0.18, 0.14 }
 local CIRCLE_TEXTURE = "Interface\\CharacterFrame\\TempPortraitAlphaMask"
+local ROUNDED_SQUARE_TEXTURE = "Interface\\AddOns\\VignetteRadar\\Media\\radar-rounded-square.tga"
+local SQUARE_CORNER_RATIO, SQUARE_CORNER_SEGMENTS = .04, 8
+local QUEST_CLIP_INSET = 4
 local SKULL_TEXTURE = "Interface\\TargetingFrame\\UI-TargetingFrame-Skull"
 local LAUNCHER_BEZEL = "Interface\\AddOns\\VignetteRadar\\Media\\vignette-radar-bezel.tga"
 local LAUNCHER_CLOSED = "Interface\\AddOns\\VignetteRadar\\Media\\vignette-radar-closed.tga"
@@ -412,6 +415,27 @@ local function ResizeRing(lines, field, radius)
         local first, last = ((index - 1) / #lines) * TWO_PI, (index / #lines) * TWO_PI
         line:SetStartPoint("CENTER", field, math.cos(first) * radius, math.sin(first) * radius)
         line:SetEndPoint("CENTER", field, math.cos(last) * radius, math.sin(last) * radius)
+    end
+end
+
+local function ResizeSquareBorder(lines, field, radius)
+    -- Match the texture's 4%-of-width corners; retain a subtle, themed outline.
+    local corner = radius * 2 * SQUARE_CORNER_RATIO
+    local center = radius - corner
+    local centers = { { center, center }, { -center, center },
+        { -center, -center }, { center, -center } }
+    local points = {}
+    for quadrant = 0, 3 do
+        for step = 0, SQUARE_CORNER_SEGMENTS do
+            local angle = (quadrant + step / SQUARE_CORNER_SEGMENTS) * math.pi / 2
+            points[#points + 1] = { centers[quadrant + 1][1] + math.cos(angle) * corner,
+                centers[quadrant + 1][2] + math.sin(angle) * corner }
+        end
+    end
+    for index, line in ipairs(lines) do
+        local first, last = points[index], points[index % #points + 1]
+        line:SetStartPoint("CENTER", field, first[1], first[2])
+        line:SetEndPoint("CENTER", field, last[1], last[2])
     end
 end
 
@@ -824,8 +848,8 @@ local function UpdateQuestAreaTooltip()
         local fromCenterY = cursorY - fieldTop + field:GetHeight() / 2
         local inside
         if panel.squarePlot then
-            inside = math.abs(fromCenterX) <= panel.fieldRadius - 1
-                and math.abs(fromCenterY) <= panel.fieldRadius - 1
+            inside = math.abs(fromCenterX) <= panel.fieldRadius - QUEST_CLIP_INSET
+                and math.abs(fromCenterY) <= panel.fieldRadius - QUEST_CLIP_INSET
         else
             inside = fromCenterX * fromCenterX + fromCenterY * fromCenterY <= panel.fieldRadius * panel.fieldRadius
         end
@@ -990,12 +1014,12 @@ local function ApplyPanelLayout(focused)
     panel:SetSize(layout.width, layout.height + (focused and layout.focus or 0))
     if left and top then PlacePanel(left, top, Settings().vignetteRadarScale or 1) end
     panel.field:SetSize(layout.field, layout.field)
-    -- QuestPOIFrame supports rectangular child clipping. Match the visible surface
-    -- to that clip instead of letting native quest shading escape a circular face.
+    -- Keep one native rectangular clip, inset far enough that its corners stay
+    -- inside the rounded face, including the anti-aliased outline's inner edge.
     local radius = panel.fieldRadius
     panel.field.background:ClearAllPoints()
     if square then
-        panel.field.background:SetTexture("Interface\\Buttons\\WHITE8X8")
+        panel.field.background:SetTexture(ROUNDED_SQUARE_TEXTURE)
         panel.field.background:SetPoint("CENTER", panel.field, "CENTER")
         panel.field.background:SetSize(radius * 2, radius * 2)
     else
@@ -1004,15 +1028,9 @@ local function ApplyPanelLayout(focused)
     end
     panel.questClip:ClearAllPoints()
     panel.questClip:SetPoint("CENTER", panel.field, "CENTER")
-    panel.questClip:SetSize((radius - 1) * 2, (radius - 1) * 2)
-    local corners = { { -radius, radius }, { radius, radius },
-        { radius, -radius }, { -radius, -radius } }
-    for index, line in ipairs(panel.squareBorder) do
-        local first, last = corners[index], corners[index % 4 + 1]
-        line:SetStartPoint("CENTER", panel.field, first[1], first[2])
-        line:SetEndPoint("CENTER", panel.field, last[1], last[2])
-        line:SetShown(square)
-    end
+    panel.questClip:SetSize((radius - QUEST_CLIP_INSET) * 2, (radius - QUEST_CLIP_INSET) * 2)
+    ResizeSquareBorder(panel.squareBorder, panel.field, radius)
+    for _, line in ipairs(panel.squareBorder) do line:SetShown(square) end
     panel.field.halo:SetShown(not square)
     for _, line in ipairs(panel.outerRing) do line:SetShown(not square) end
     if panel.frameToggle then
@@ -2155,7 +2173,7 @@ local function EnsurePanel()
     panel.field.halo:SetVertexColor(ACCENT[1], ACCENT[2], ACCENT[3], 0.18)
     panel.outerRing = AddRing(panel.field, FIELD_RADIUS, 0.02)
     panel.squareBorder = {}
-    for index = 1, 4 do
+    for index = 1, 4 * (SQUARE_CORNER_SEGMENTS + 1) do
         local line = panel.field:CreateLine(nil, "BORDER")
         line:SetThickness(1)
         line:SetColorTexture(ACCENT[1], ACCENT[2], ACCENT[3], .06)
