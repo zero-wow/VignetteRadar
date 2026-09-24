@@ -97,14 +97,14 @@ function API.UpdateTrail(player, mapID, now)
     if not x or not y then return trail end
     local last = trail[#trail]
     local distance = last and math.sqrt((x-last.x)^2 + (y-last.y)^2) or math.huge
-    if now-lastTrailAt >= 3 and distance >= 8 then
+    if now-lastTrailAt >= 2 and distance >= 6 then
         trail[#trail+1] = { x=x, y=y, at=now, instanceID=player.instanceID }
         if #trail > MAX_TRAIL then table.remove(trail, 1) end
         lastTrailAt = now
     end
     return trail
 end
-function API.GetTrail() return trail end
+function API.GetTrail() return trail, trailMap end
 
 function API.AddPin(player, name)
     if not player then return false, "Position unavailable" end
@@ -352,6 +352,9 @@ end
 local function BuildPanel()
     if panel then return panel end
     panel = CreateFrame("Frame", "VignetteRadarExplorePanel", UIParent, "BackdropTemplate")
+    if type(UISpecialFrames) == "table" then
+        UISpecialFrames[#UISpecialFrames + 1] = "VignetteRadarExplorePanel"
+    end
     panel:SetSize(330, 425)
     panel:SetFrameStrata("DIALOG")
     panel:SetClampedToScreen(true)
@@ -419,7 +422,7 @@ local function BuildPanel()
     panel.checks = {
         smart = Checkbox(tools, "vignetteRadarSmartZoom", "Smart zoom (manual zoom pauses 30 sec)", -3),
         untangle = Checkbox(tools, "vignetteRadarUntangle", "Spread crowded markers on hover", -34),
-        trail = Checkbox(tools, "vignetteRadarBreadcrumbs", "Show fading travel trail", -65),
+        trail = Checkbox(tools, "vignetteRadarBreadcrumbs", "Show dotted travel trail", -65),
         approach = Checkbox(tools, "vignetteRadarApproachAlerts", "Alert near watched detections", -96),
         journal = Checkbox(tools, "vignetteRadarJournalEnabled", "Keep a sightings journal", -127),
     }

@@ -1007,13 +1007,18 @@ local function RenderExploration(player, range)
     if not exploration or not panel then return end
     panel.exploreLines = panel.exploreLines or {}
     panel.exploreDots = panel.exploreDots or {}
+    panel.trailDots = panel.trailDots or {}
     for _, line in ipairs(panel.exploreLines) do line:Hide() end
     for _, dot in ipairs(panel.exploreDots) do dot:Hide() end
+    for _, dot in ipairs(panel.trailDots) do dot:Hide() end
     if not player then return end
     local lineCount, dotCount = 0, 0
     local function Position(item, clamp)
         if player.instanceID and item.instanceID and player.instanceID ~= item.instanceID then return nil end
-        local dx, dy = item.worldX - player.worldX, item.worldY - player.worldY
+        local worldX = SafeNumber(item.worldX) or SafeNumber(item.x)
+        local worldY = SafeNumber(item.worldY) or SafeNumber(item.y)
+        if not worldX or not worldY then return nil end
+        local dx, dy = worldX - player.worldX, worldY - player.worldY
         local distance = math.sqrt(dx * dx + dy * dy)
         if distance > range and not clamp then return nil end
         local x, y = Project(dx, dy, distance, ViewFacing(player.facing), panel.plotRadius, range)
@@ -1076,17 +1081,51 @@ local function RenderExploration(player, range)
         dot:SetPoint("CENTER", panel.field, "CENTER", x, y)
         dot:Show()
     end
-    local trail = exploration.UpdateTrail(player, player.mapID, Now())
-    if Settings().vignetteRadarBreadcrumbs then
-        local priorX, priorY
-        for index, point in ipairs(trail) do
+    local trail, trailMap = exploration.GetTrail()
+    if Settings().vignetteRadarBreadcrumbs and trailMap == player.mapID then
+        local trailDotCount, nextDot = 0, 0
+        local spacing, limit = 9, 64
+        local edge = panel.plotRadius - 3
+        local now = Now()
+        local r, g, b = .25, .91, .7
+        if addon.VignetteRadarStyle then r, g, b = addon.VignetteRadarStyle.Color("accent") end
+        local function TrailSegment(x1, y1, x2, y2, alpha)
+            local dx, dy = x2 - x1, y2 - y1
+            local length = math.sqrt(dx*dx + dy*dy)
+            if length < .01 then return end
+            local offset = nextDot
+            while offset <= length and trailDotCount < limit do
+                local x, y = x1 + dx * offset / length, y1 + dy * offset / length
+                local radiusSquared = x*x + y*y
+                if radiusSquared >= 49 and radiusSquared <= edge*edge then
+                    trailDotCount = trailDotCount + 1
+                    local dot = panel.trailDots[trailDotCount]
+                    if not dot then
+                        dot = panel.field:CreateTexture(nil, "ARTWORK")
+                        dot:SetSize(5, 5)
+                        dot:SetTexture(CIRCLE_TEXTURE)
+                        panel.trailDots[trailDotCount] = dot
+                    end
+                    dot:SetVertexColor(r, g, b, alpha)
+                    dot:ClearAllPoints()
+                    dot:SetPoint("CENTER", panel.field, "CENTER", x, y)
+                    dot:Show()
+                end
+                offset = offset + spacing
+            end
+            nextDot = offset - length
+        end
+        local priorX, priorY = 0, 0
+        for index = #trail, 1, -1 do
+            local point = trail[index]
             local x, y = Position(point, false)
-            if x and priorX then
-                local age = math.max(0, Now() - point.at)
-                Line(priorX, priorY, x, y, .36, .68, .65,
-                    (index / #trail) * math.max(0, 1 - age / 180) * .32, 1.5)
+            if x and priorX and trailDotCount < limit then
+                local age = math.max(0, now - point.at)
+                local alpha = (.3 + .65 * index / #trail) * math.max(0, 1 - age / 180)
+                TrailSegment(priorX, priorY, x, y, alpha)
             end
             priorX, priorY = x, y
+            if not x then nextDot = 0 end
         end
     end
     for _, pin in ipairs(exploration.GetPins(player.mapID)) do
@@ -2669,8 +2708,11 @@ RefreshRadar = function(rescan)
     local settings = Settings()
     local exploration = addon.VignetteRadarExploration
     local mapID = CurrentMapID()
+    local trail, trailMap
+    if exploration and settings.vignetteRadarBreadcrumbs then trail, trailMap = exploration.GetTrail() end
     local hasExploration = exploration and mapID and
-        (#exploration.GetPins(mapID) > 0 or #exploration.GetRoute(mapID) > 0)
+        (#exploration.GetPins(mapID) > 0 or #exploration.GetRoute(mapID) > 0
+            or (trailMap == mapID and #trail > 1))
     if addon.VignetteRadarQuickConfig and addon.VignetteRadarQuickConfig.Refresh then
         addon.VignetteRadarQuickConfig.Refresh()
     end
@@ -2815,8 +2857,6 @@ end
 function addon.SetVignetteRadarCircleOnly(enabled)
     Settings().vignetteRadarCircleOnly = enabled == true
     if enabled then
-        local quick = addon.VignetteRadarQuickConfig
-        if quick and quick.Hide then quick.Hide() end
         local legend, picker = LegendAPI(), TargetPickerAPI()
         if legend and legend.Hide then legend.Hide() end
         if picker and picker.Hide then picker.Hide() end

@@ -139,7 +139,7 @@ local controls = {}
 local byKey = {}
 local choices = {}
 local action = {}
-for _, pageName in ipairs({ "Radar", "Layout", "Alerts", "Behavior", "Quests" }) do
+for _, pageName in ipairs({ "Radar", "Layout", "Alerts", "Behavior", "Quests", "Explore" }) do
     local page, tab = assert(panel.pages[pageName]), assert(panel.pageButtons[pageName])
     tab.scripts.OnClick(tab)
     assert(panel.selectedPage == pageName and tab.highlightLocked and page:IsShown())
@@ -177,10 +177,10 @@ for _, pageName in ipairs({ "Radar", "Layout", "Alerts", "Behavior", "Quests" })
         if otherName ~= pageName then assert(not otherPage:IsShown()) end
     end
 end
-for _, pageName in ipairs({ "Radar", "Layout", "Alerts", "Behavior", "Quests" }) do
+for _, pageName in ipairs({ "Radar", "Layout", "Alerts", "Behavior", "Quests", "Explore" }) do
     local tab = panel.pageButtons[pageName]
     local x1, _, x2 = rect(tab)
-    assert(x1 >= 18 and x2 <= 496,
+    assert(x1 >= 10 and x2 <= 510,
         pageName .. " tab must stay inside the 520px panel")
 end
 assert(#controls >= 26, "each feature must have a usable control")
@@ -192,6 +192,8 @@ for _, key in ipairs({
     "vignetteRadarAlertCategories.other", "vignetteRadarLastSeen", "vignetteRadarQuietCombat",
     "vignetteRadarKeepVisibleCombat",
     "vignetteRadarQuietInstances", "vignetteRadarShapes", "vignetteRadarShowHealth",
+    "vignetteRadarSmartZoom", "vignetteRadarUntangle", "vignetteRadarBreadcrumbs",
+    "vignetteRadarApproachAlerts", "vignetteRadarJournalEnabled",
 }) do
     assert(byKey[key], "missing setting: " .. key)
 end

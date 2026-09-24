@@ -138,6 +138,7 @@ end
 UIParent = CreateFrame("Frame", "UIParent")
 UIParent:SetSize(1600, 900)
 UIParent:Show()
+UISpecialFrames = {}
 STANDARD_TEXT_FONT = "default.ttf"
 SlashCmdList = {}
 GameTooltip = {
@@ -1212,12 +1213,15 @@ addon.SetVignetteRadarNorthUp(false)
 SlashCmdList.VIGNETTERADAR("preview")
 panel.settingsDot.scripts.OnClick(panel.settingsDot)
 local quick = assert(addon.VignetteRadarQuickConfig.GetPanel())
-assert(quick:IsShown() and quick.width == 288 and quick.height == 365,
+assert(quick:IsShown() and quick.width == 288 and quick.height == 389,
     "the settings dot must open the narrow, self-contained panel")
 local tabCount, exposed, colorSlots = 0, {}, {}
 for _ in pairs(quick.tabs) do tabCount = tabCount + 1 end
-assert(tabCount == 8 and quick.pages.Themes and quick.pages.Guides,
-    "compact settings must include dedicated theme and guide controls")
+assert(tabCount == 9 and quick.pages.Themes and quick.pages.Guides and quick.pages.Explore,
+    "compact settings must visibly include exploration controls")
+assert(UISpecialFrames[1] == "VignetteRadarExplorePanel"
+    and UISpecialFrames[2] == "VignetteRadarQuickConfigPanel",
+    "Escape must close the exploration and compact settings panels")
 for _, object in ipairs(objects) do
     if object.optionKey then exposed[object.optionKey] = true end
     if object.colorSlot then colorSlots[object.colorSlot] = true end
@@ -1243,7 +1247,9 @@ for _, key in ipairs({ "vignetteRadarEnabled", "vignetteRadarHideWhenEmpty", "vi
     "vignetteRadarQuietInstances", "vignetteRadarQuestDots", "vignetteRadarQuestAreas",
     "vignetteRadarRingOpacity", "vignetteRadarChevronOpacity", "vignetteRadarHeadingOpacity",
     "vignetteRadarChevronDistance", "vignetteRadarHeadingLength", "vignetteRadarFullSweep",
-    "vignetteRadarTheme" }) do
+    "vignetteRadarTheme", "vignetteRadarSmartZoom", "vignetteRadarUntangle",
+    "vignetteRadarBreadcrumbs", "vignetteRadarApproachAlerts",
+    "vignetteRadarJournalEnabled", "vignetteRadarApproachDistance" }) do
     assert(exposed[key], "compact settings missing: " .. key)
 end
 for _, slot in ipairs(addon.VignetteRadarStyle.slots) do
@@ -1256,6 +1262,9 @@ local function quickControl(page, key, value)
             and (value == nil or object.optionValue == value) then return object end
     end
 end
+quick.tabs.Explore.scripts.OnClick(quick.tabs.Explore)
+assert(quick.pages.Explore:IsShown() and quickControl("Explore", "vignetteRadarBreadcrumbs"),
+    "the compact Explore tab must expose the dotted trail directly")
 quick.tabs.Themes.scripts.OnClick(quick.tabs.Themes)
 assert(quick.pages.Themes:IsShown() and not quick.pages.Radar:IsShown())
 local style = addon.VignetteRadarStyle
@@ -1407,11 +1416,13 @@ quick.tabs.Layout.scripts.OnClick(quick.tabs.Layout)
 local circleCheck = quickControl("Layout", "vignetteRadarCircleOnly")
 circleCheck:SetChecked(true)
 circleCheck.scripts.OnClick(circleCheck)
-assert(settings.vignetteRadarCircleOnly and not quick:IsShown() and not panel.title:IsShown(),
-    "the compact layout setting must enter circle-only view and close the covered settings panel")
+assert(settings.vignetteRadarCircleOnly and quick:IsShown() and not panel.title:IsShown(),
+    "radar-only view must keep the settings panel open until the user closes it")
 panel.frameToggle.scripts.OnClick(panel.frameToggle)
 assert(not settings.vignetteRadarCircleOnly and circleCheck:GetChecked() == false,
     "the on-circle restore control must synchronize the compact layout setting")
+assert(quick:IsShown(), "restoring the frame must not close settings")
+quick.close.scripts.OnClick(quick.close)
 UIParent:SetSize(800, 600)
 addon.SetVignetteRadarLayout("squat")
 panel:SetScale(1)
@@ -1508,5 +1519,33 @@ assert(panel.blipByKey.rare and panel.blipByKey.treasure,
     "hovering a count badge must spread individual targets for selection")
 assert(panel.blipByKey.rare.target.groupMin == 3 and panel.blipByKey.rare.target.groupMax == 5,
     "Blizzard's available group-size recommendation must reach the marker")
+
+-- Trail samples use x/y internally; rendering must accept them without Lua errors.
+local originalPlayerPosition = C_Map.GetPlayerMapPosition
+local movingX = .5
+C_Map.GetPlayerMapPosition = function() return { x=movingX, y=.5 } end
+settings.vignetteRadarBreadcrumbs = true
+now = 1200
+addon.VignetteRadarAPI.Refresh(true)
+movingX, now = .51, 1203
+addon.VignetteRadarAPI.Refresh(true)
+assert(panel.trailDots[1] and panel.trailDots[1]:IsShown()
+    and panel.trailDots[1].kind == "Texture" and panel.trailDots[1].width == 5
+    and #panel.trailDots <= 64 and not panel.exploreLines[1]:IsShown(),
+    "walking must draw a capped dotted trail without allocating clickable markers or straight lines")
+local firstTrailDot = panel.trailDots[1]
+local trail = exploration.GetTrail()
+local currentPlayer = addon.VignetteRadarAPI.GetPlayerSnapshot()
+for index = 1, 16 do
+    trail[#trail + 1] = { x = currentPlayer.worldX + (index % 2 == 0 and 180 or -180),
+        y = currentPlayer.worldY, at = now, instanceID = currentPlayer.instanceID }
+end
+addon.VignetteRadarAPI.Refresh(false)
+assert(#panel.trailDots == 64 and panel.trailDots[1] == firstTrailDot,
+    "a long trail must stop at 64 reusable textures")
+addon.VignetteRadarAPI.Refresh(false)
+assert(#panel.trailDots == 64 and panel.trailDots[1] == firstTrailDot,
+    "redrawing a stationary trail must not allocate more dots")
+C_Map.GetPlayerMapPosition = originalPlayerPosition
 
 io.write("vignette radar UI tests passed\n")

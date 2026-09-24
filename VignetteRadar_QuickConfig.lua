@@ -1,7 +1,7 @@
 local _, addon = ...
 if type(addon) ~= "table" then return end
 
-local WIDTH, HEIGHT = 288, 365
+local WIDTH, HEIGHT = 288, 389
 local THEME_COLUMNS, THEME_ROW, THEME_VIEW_HEIGHT = 4, 24, 46
 local THEME_VIEW_WIDTH = 244
 local ACCENT = { 0.05, 0.82, 0.62 }
@@ -273,6 +273,9 @@ end
 local function Build()
     if quick then return quick end
     quick = CreateFrame("Frame", "VignetteRadarQuickConfigPanel", UIParent, "BackdropTemplate")
+    if type(UISpecialFrames) == "table" then
+        UISpecialFrames[#UISpecialFrames + 1] = "VignetteRadarQuickConfigPanel"
+    end
     quick:SetSize(WIDTH, HEIGHT)
     quick:SetFrameStrata("DIALOG")
     quick:SetClampedToScreen(true)
@@ -301,16 +304,16 @@ local function Build()
     close:SetScript("OnClick", function() quick:Hide() end)
     quick.close = close
 
-    local order = { "Radar", "Layout", "Alerts", "Markers", "Guides", "Themes", "Behavior", "Quests" }
+    local order = { "Radar", "Layout", "Explore", "Alerts", "Markers", "Guides", "Themes", "Behavior", "Quests" }
     for index, name in ipairs(order) do
-        local row, column = math.floor((index - 1) / 4), (index - 1) % 4
-        local tab = addon.VignetteRadarControls.Button(quick, name, 64, 20)
-        tab:SetPoint("TOPLEFT", quick, "TOPLEFT", 12 + column * 66, -40 - row * 23)
+        local row, column = math.floor((index - 1) / 3), (index - 1) % 3
+        local tab = addon.VignetteRadarControls.Button(quick, name, 84, 20)
+        tab:SetPoint("TOPLEFT", quick, "TOPLEFT", 12 + column * 89, -40 - row * 23)
         tab:SetScript("OnClick", function() SelectPage(name) end)
         quick.tabs[name] = tab
         local page = CreateFrame("Frame", nil, quick)
-        page:SetSize(WIDTH, HEIGHT - 91)
-        page:SetPoint("TOPLEFT", quick, "TOPLEFT", 0, -91)
+        page:SetSize(WIDTH, HEIGHT - 114)
+        page:SetPoint("TOPLEFT", quick, "TOPLEFT", 0, -114)
         page:Hide()
         quick.pages[name] = page
     end
@@ -517,6 +520,26 @@ local function Build()
     Label(quests, "The exact area shape needs north-up mode.", 14, -98, 10)
     Check(quests, "vignetteRadarNorthUp", "Keep north at the top", 14, -130)
     Label(quests, "Quest dots follow either radar orientation.", 14, -174, 10)
+
+    local explore = quick.pages.Explore
+    Check(explore, "vignetteRadarSmartZoom", "Smart zoom while moving", 14, -3)
+    Check(explore, "vignetteRadarUntangle", "Spread overlapping markers", 14, -31)
+    Check(explore, "vignetteRadarBreadcrumbs", "Show dotted travel trail", 14, -59)
+    Check(explore, "vignetteRadarApproachAlerts", "Alert near watched targets", 14, -87)
+    Check(explore, "vignetteRadarJournalEnabled", "Save sighting history", 14, -115)
+    Stepper(explore, "vignetteRadarApproachDistance", "Approach distance", -148,
+        { 25, 50, 75, 100, 150, 200, 300, 400, 600 }, function(value) return value .. " yd" end)
+    Section(explore, "HUNTING PRESETS", -170)
+    for index, name in ipairs({ "Treasure", "Rare", "Questing", "Exploring" }) do
+        local column, row = (index - 1) % 2, math.floor((index - 1) / 2)
+        Button(explore, name, 14 + column * 136, -188 - row * 26, 124, function()
+            addon.VignetteRadarExploration.ApplyPreset(name)
+            API.Refresh()
+        end)
+    end
+    Button(explore, "Saved presets, pins & journal", 14, -244, 260, function()
+        addon.VignetteRadarExploration.TogglePanel()
+    end)
 
     SelectPage("Radar")
     quick:SetScript("OnShow", API.Refresh)
