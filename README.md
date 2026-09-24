@@ -18,7 +18,7 @@ Choose a saved panel style under `/vr config` → Layout, or use `/vr layout` to
 
 Styles preserve your range, filters, focus, and saved position. Switching closes open legend/target pickers; reopen them against the new panel edges. Enabling quest areas switches the radar surface to a square in every style; disabling them restores the circle. Distance rings remain circular. Drag any edge or corner of the full panel to scale it uniformly; the small bottom-right grip shows where to start. The size is saved and stays inside the screen. Use **Preview layout** on the Layout tab to try a style without enabling tracking.
 
-Click the small, borderless chevron in the empty margin to the right of the radar to hide the outer frame. The chevron reverses direction so you can restore it. In the square quest-area view, hovering the radar reveals image-based zoom, focus, legend, settings, orientation, trail, visibility, help, close, and restore controls in the four corner margins beyond the plotting ring. The icons use distinct normal, hover, and active artwork. Drag the radar surface to move it while in this view, including down to the screen edge with the hidden frame below it. Showing the full UI brings that frame into view; returning to radar-only restores the separately saved square position. Open settings stay open when you switch views; close them with × or Escape. Blizzard's rectangular quest-area clip sits four pixels inside the rounded surface.
+Click the small, borderless chevron in the empty margin to the right of the radar to hide the outer frame. The chevron reverses direction so you can restore it. In the square quest-area view, hovering the radar reveals image-based zoom, focus, legend, settings, orientation, trail, visibility, help, close, and restore controls in the four corner margins beyond the plotting ring. The icons use distinct normal, hover, and active artwork; active controls show a small underline instead of a square tile. Drag the radar surface to move it while in this view, including down to the screen edge with the hidden frame below it. Showing the full UI brings that frame into view; returning to radar-only restores the separately saved square position. Open settings stay open when you switch views; close them with × or Escape. Blizzard's rectangular quest-area clip sits four pixels inside the rounded surface.
 
 Squat automatically fills its right side with the nearest visible detection's name, type, distance, and available health. Click that readout to focus it; when tracking a specific target, the readout and action label change. When no detection is available, the panel shows a clear empty state.
 
@@ -78,7 +78,7 @@ Preview samples support focus without changing favorites, ignores, or navigation
 
 ## Development validation
 
-Current development build: `0.1.0-dev.48` (base version `0.1.0`).
+Current development build: `0.1.0-dev.49` (base version `0.1.0`).
 
 Repeating launcher, radar, and idle updates have a session-only CPU guard. A stalled update, or three consecutive slow updates, pauses that repeating work and prints a chat warning. `/reload` retries it.
 

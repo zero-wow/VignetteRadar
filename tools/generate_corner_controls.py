@@ -15,11 +15,12 @@ WIDTH, HEIGHT = 1024, 256
 ICONS = ("config", "target", "legend", "minus", "plus", "north",
          "trail", "eye", "help", "close")
 STATES = (
-    # Tile fill, tile edge, icon.
-    (0.00, 0.00, 0.76),
-    (0.09, 0.32, 1.00),
-    (0.14, 0.52, 1.00),
-    (0.20, 0.74, 1.00),
+    # Circular hover wash, edge, icon, active underline. Active art never
+    # acquires a separate square tile: it belongs to the same icon family.
+    (0.00, 0.00, 0.76, 0.00),
+    (0.06, 0.20, 1.00, 0.00),
+    (0.00, 0.00, 1.00, 0.92),
+    (0.08, 0.26, 1.00, 1.00),
 )
 
 
@@ -62,15 +63,20 @@ def icon_distance(icon, x, y):
                    segment(x, y, -8, -9, 8, 9, 1.9),
                    segment(x, y, 8, 9, 8, -9, 1.9))
     if icon == "trail":
-        return min(segment(x, y, -11, 0, -7, 0, 2),
-                   segment(x, y, -2, 0, 2, 0, 2),
-                   segment(x, y, 7, 0, 11, 0, 2))
+        return min(segment(x, y, -11, 7, -8, 6, 1.8),
+                   segment(x, y, -5, 5, -2, 3, 1.8),
+                   segment(x, y, 1, 1, 4, -1, 1.8),
+                   segment(x, y, 7, -4, 10, -6, 1.8))
     if icon == "eye":
-        return min(segment(x, y, -11, 0, 0, -6, 1.7),
-                   segment(x, y, 0, -6, 11, 0, 1.7),
-                   segment(x, y, -11, 0, 0, 6, 1.7),
-                   segment(x, y, 0, 6, 11, 0, 1.7),
-                   disk(x, y, 0, 0, 3))
+        return min(segment(x, y, -11, 0, -6, -4, 1.7),
+                   segment(x, y, -6, -4, 0, -6, 1.7),
+                   segment(x, y, 0, -6, 6, -4, 1.7),
+                   segment(x, y, 6, -4, 11, 0, 1.7),
+                   segment(x, y, -11, 0, -6, 4, 1.7),
+                   segment(x, y, -6, 4, 0, 6, 1.7),
+                   segment(x, y, 0, 6, 6, 4, 1.7),
+                   segment(x, y, 6, 4, 11, 0, 1.7),
+                   disk(x, y, 0, 0, 3.3))
     if icon == "help":
         return min(segment(x, y, -7, -5, -3, -9, 1.8),
                    segment(x, y, -3, -9, 4, -9, 1.8),
@@ -83,30 +89,30 @@ def icon_distance(icon, x, y):
                segment(x, y, -8, 8, 8, -8, 2))
 
 
-tile_fill, tile_edge = [], []
+hover_fill, hover_edge, active_mark = [], [], []
 glyphs = {icon: [] for icon in ICONS}
 for py in range(CELL):
     for px in range(CELL):
         x, y = px + 0.5 - CELL / 2, py + 0.5 - CELL / 2
-        radius = 12
-        dx, dy = abs(x) - (28 - radius), abs(y) - (28 - radius)
-        distance = math.hypot(max(dx, 0), max(dy, 0)) + min(max(dx, dy), 0) - radius
+        distance = disk(x, y, 0, 0, 25)
         outer = coverage(distance)
         inner = coverage(distance + 1.5)
-        tile_fill.append(outer)
-        tile_edge.append(max(0, outer - inner))
+        hover_fill.append(outer)
+        hover_edge.append(max(0, outer - inner))
+        active_mark.append(coverage(segment(x, y, -4, 15, 4, 15, 1.3)))
         for icon in ICONS:
             glyphs[icon].append(coverage(icon_distance(icon, x, y)))
 
 
 pixels = bytearray(WIDTH * HEIGHT * 4)
-for state, (fill_alpha, edge_alpha, glyph_alpha) in enumerate(STATES):
+for state, (fill_alpha, edge_alpha, glyph_alpha, active_alpha) in enumerate(STATES):
     for column, icon in enumerate(ICONS):
         for index in range(CELL * CELL):
             px, py = index % CELL, index // CELL
-            alpha = max(tile_fill[index] * fill_alpha,
-                        tile_edge[index] * edge_alpha,
-                        glyphs[icon][index] * glyph_alpha)
+            alpha = max(hover_fill[index] * fill_alpha,
+                        hover_edge[index] * edge_alpha,
+                        glyphs[icon][index] * glyph_alpha,
+                        active_mark[index] * active_alpha)
             target = ((state * CELL + py) * WIDTH + column * CELL + px) * 4
             pixels[target:target + 4] = (255, 255, 255, round(255 * alpha))
 
