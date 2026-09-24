@@ -180,6 +180,42 @@ local function Name(node, kind)
             item = "Item location", note = "Map note" })[kind]
 end
 
+local function Finite(value)
+    return Safe(value) and type(value) == "number" and value == value
+        and value ~= math.huge and value ~= -math.huge and value or nil
+end
+
+local function IconDescriptor(iconpath, scale, alpha)
+    if not Safe(iconpath) then return nil end
+    local descriptor = {}
+    local texture = type(iconpath) == "table" and Field(iconpath, "icon") or iconpath
+    if not ((type(texture) == "number" and Finite(texture) and texture > 0)
+        or String(texture)) then return nil end
+    descriptor.texture = texture
+    if type(iconpath) == "table" then
+        local left = Finite(Field(iconpath, "tCoordLeft"))
+        local right = Finite(Field(iconpath, "tCoordRight"))
+        local top = Finite(Field(iconpath, "tCoordTop"))
+        local bottom = Finite(Field(iconpath, "tCoordBottom"))
+        if left and right and top and bottom and left >= 0 and right <= 1
+            and top >= 0 and bottom <= 1 and left < right and top < bottom then
+            descriptor.texCoord = { left, right, top, bottom }
+        end
+        local r = Finite(Field(iconpath, "r"))
+        local g = Finite(Field(iconpath, "g"))
+        local b = Finite(Field(iconpath, "b"))
+        local a = Finite(Field(iconpath, "a"))
+        if r and g and b then
+            descriptor.color = { math.max(0, math.min(1, r)),
+                math.max(0, math.min(1, g)), math.max(0, math.min(1, b)),
+                a and math.max(0, math.min(1, a)) or 1 }
+        end
+    end
+    descriptor.scale = math.max(.6, math.min(1.5, Finite(scale) or 1))
+    descriptor.alpha = math.max(0, math.min(1, Finite(alpha) or 1))
+    return descriptor
+end
+
 function POIs.Collect(mapID, source, mapToWorld, mapVector)
     local results, notes = {}, HandyNotes()
     if not (notes and type(mapID) == "number" and type(source) == "string"
@@ -190,7 +226,7 @@ function POIs.Collect(mapID, source, mapToWorld, mapVector)
     local ok, iterator, state, key = pcall(handler.GetNodes2, handler, mapID, true)
     if not ok or type(iterator) ~= "function" then return results end
     for _ = 1, MAX_NODES do
-        local yielded, coord, nodeMapID, _, _, alpha = pcall(iterator, state, key)
+        local yielded, coord, nodeMapID, iconpath, iconScale, alpha = pcall(iterator, state, key)
         if not yielded or not Safe(coord) or type(coord) ~= "number" then break end
         if coord == nil then break end
         key = coord
@@ -210,6 +246,7 @@ function POIs.Collect(mapID, source, mapToWorld, mapVector)
                     worldX = worldX, worldY = worldY, instanceID = instanceID,
                     source = source, kind = kind, name = Name(node, kind),
                     note = DisplayText(Field(node, "note")),
+                    icon = IconDescriptor(iconpath, iconScale, alpha),
                 }
             end
         end

@@ -63,6 +63,7 @@ function methods:UnlockHighlight() self.highlightLocked = false end
 function methods:SetHighlightTexture(texture) self.highlight = setmetatable({ texture = texture }, { __index = methods }) end
 function methods:GetHighlightTexture() return self.highlight end
 function methods:SetTexture(value) self.texture = value end
+function methods:SetTexCoord(...) self.texCoord = { ... } end
 function methods:SetAtlas(value) self.atlas = value end
 function methods:SetColorTexture(...) self.color = { ... } end
 function methods:SetVertexColor(...) self.vertexColor = { ... } end
@@ -1275,7 +1276,7 @@ for _, key in ipairs({ "vignetteRadarEnabled", "vignetteRadarHideWhenEmpty", "vi
     "vignetteRadarTheme", "vignetteRadarSmartZoom", "vignetteRadarUntangle",
     "vignetteRadarBreadcrumbs", "vignetteRadarTrailStyle", "vignetteRadarApproachAlerts",
     "vignetteRadarJournalEnabled", "vignetteRadarApproachDistance",
-    "vignetteRadarPOISource", "vignetteRadarPOITypes" }) do
+    "vignetteRadarPOISource", "vignetteRadarPOITypes", "vignetteRadarPOIIcons" }) do
     assert(exposed[key], "compact settings missing: " .. key)
 end
 for _, slot in ipairs(addon.VignetteRadarStyle.slots) do
@@ -1762,7 +1763,9 @@ HandyNotes = { plugins = {
         return function()
             if done then return nil end
             done = true
-            return 52005000, nil, nil, 1, 1
+            return 52005000, nil, { icon = 134400,
+                tCoordLeft = .1, tCoordRight = .9, tCoordTop = .2, tCoordBottom = .8,
+                r = .8, g = .6, b = .4, a = .75 }, 1.25, .8
         end, { [52005000] = { label = "A map note", group = "misc" } }, nil
     end },
     OtherPack = { GetNodes2 = function(_, requestedMap)
@@ -1816,6 +1819,27 @@ end
 local noteX, noteY = panel.mapNotes[1].point[4], panel.mapNotes[1].point[5]
 assert(noteX * noteX + noteY * noteY <= (panel.plotRadius - 5)^2,
     "map-note dots must stay inside the radar's plotting boundary")
+local packIconToggle = assert(quickControl("Map Data", "vignetteRadarPOIIcons"))
+packIconToggle:SetChecked(true)
+packIconToggle.scripts.OnClick(packIconToggle)
+local mapNote = panel.mapNotes[1]
+assert(settings.vignetteRadarPOIIcons and mapNote.icon:IsShown()
+    and not mapNote.rim:IsShown() and not mapNote.core:IsShown()
+    and mapNote.icon.texture == 134400
+    and mapNote.icon.texCoord[1] == .1 and mapNote.icon.texCoord[4] == .8
+    and mapNote.icon.vertexColor[1] == .8 and math.abs(mapNote.icon.vertexColor[4] - .6) < .0001
+    and mapNote.icon.width == 15,
+    "pack-icon mode must show the pack's cropped, tinted, scaled artwork")
+noteX, noteY = mapNote.point[4], mapNote.point[5]
+assert(noteX * noteX + noteY * noteY <= (panel.plotRadius - 11)^2,
+    "pack artwork must remain inside the radar's plotting boundary")
+packIconToggle:SetChecked(false)
+packIconToggle.scripts.OnClick(packIconToggle)
+assert(not settings.vignetteRadarPOIIcons and not mapNote.icon:IsShown()
+    and mapNote.rim:IsShown() and mapNote.core:IsShown(),
+    "turning pack icons off must restore the original typed dots")
+packIconToggle:SetChecked(true)
+packIconToggle.scripts.OnClick(packIconToggle)
 settings.vignetteRadarPOITypes.note = false
 addon.VignetteRadarAPI.Refresh(false)
 assert(not panel.mapNotes[1]:IsShown(), "type filters must hide only that map-note type")
@@ -1829,6 +1853,9 @@ addon.VignetteRadarAPI.Refresh(true)
 assert(panel.mapNotes[1]:IsShown() and panel.mapNotes[1].note.source == "OtherPack"
     and quick.poiMapID == 903 and quick.poiOffset == 0,
     "Auto must switch to one matching pack and reset the source list on a zone change")
+assert(not panel.mapNotes[1].icon:IsShown() and panel.mapNotes[1].rim:IsShown()
+    and panel.mapNotes[1].core:IsShown(),
+    "nodes without pack artwork must fall back to the typed dot in icon mode")
 for _, entry in ipairs(quick.poiEntries) do
     assert(entry.id ~= "TestPack", "the picker must omit packs with no notes for this zone")
 end

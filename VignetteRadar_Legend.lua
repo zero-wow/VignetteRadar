@@ -559,8 +559,9 @@ function API.Refresh()
         row:SetAlpha(enabled and 1 or .6)
         row.label:SetText(definition.label .. (enabled and "" or " off"))
     end
-    panel.mapCaption:SetText(mapEnabled and "Saved in one pack; not live detections"
-        or "Map notes off · enable in Map Data")
+    panel.mapCaption:SetText(not mapEnabled and "Map notes off · enable in Map Data"
+        or settings.vignetteRadarPOIIcons and "Pack icons vary · saved, not live"
+        or "Saved in one pack; not live detections")
     local questRed, questGreen, questBlue = Color("quest", { 1, .74, .27 })
     panel.guides.quest.fill:SetVertexColor(questRed, questGreen, questBlue, 1)
     panel.guides.area.fill:SetVertexColor(questRed, questGreen, questBlue, .3)

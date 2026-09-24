@@ -46,6 +46,14 @@ assert(defaults.vignetteRadarEnabled == true and defaults.vignetteRadarHideWhenE
     "the radar must work without either optional addon installed")
 assert(defaults.vignetteRadarPOISource == "auto",
     "new installations should follow the current zone when a data pack is available")
+assert(defaults.vignetteRadarPOIIcons == false,
+    "existing map notes should remain dots until pack icons are enabled")
+defaults.vignetteRadarPOIIcons = true
+fresh.GetSettings()
+assert(defaults.vignetteRadarPOIIcons == true, "the pack-icon choice must persist")
+defaults.vignetteRadarPOIIcons = "bad"
+fresh.GetSettings()
+assert(defaults.vignetteRadarPOIIcons == false, "invalid pack-icon settings must reset safely")
 assert(defaults.vignetteRadarTrailStyle == "dashes",
     "new and migrated installations should use trail marks distinct from quest dots")
 assert(defaults.vignetteRadarTrailSpacing == 1 and defaults.vignetteRadarTrailSpeed == 1

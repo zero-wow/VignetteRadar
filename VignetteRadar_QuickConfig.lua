@@ -60,6 +60,9 @@ local function Changed(key, value, subkey)
         addon.SetVignetteRadarTrailEnabled(value)
     elseif key == "vignetteRadarTrailStyle" then
         addon.SetVignetteRadarTrailStyle(value)
+    elseif key == "vignetteRadarPOIIcons" then
+        db[key] = value == true
+        addon.VignetteRadarAPI.Refresh(false)
     elseif key == "vignetteRadarCategories" and legend then
         legend.SetCategoryEnabled(subkey, value)
     elseif key == "vignetteRadarHighlight" and legend then
@@ -237,7 +240,7 @@ local function RefreshPOISources()
             if entry.id == selected then row:LockHighlight() else row:UnlockHighlight() end
         end
     end
-    local track = 112
+    local track = 85
     quick.poiThumb:SetHeight(math.max(16, track * math.min(1, #quick.poiRows / #entries)))
     quick.poiThumb:ClearAllPoints()
     quick.poiThumb:SetPoint("TOP", quick.poiTrack, "TOP", 0,
@@ -252,7 +255,8 @@ local function RefreshPOISources()
     elseif not selectedEntry then
         quick.poiStatus:SetText("This pack has no notes here. Choose Auto.")
     else
-        quick.poiStatus:SetText("One pack here · hollow dots are saved notes.")
+        quick.poiStatus:SetText(Settings().vignetteRadarPOIIcons
+            and "Pack icons · dots where unavailable." or "One pack here · hollow dots are saved notes.")
     end
 end
 
@@ -588,7 +592,7 @@ local function Build()
     end
     mapData:SetScript("OnMouseWheel", ScrollPOI)
     quick.poiRows = {}
-    for index = 1, 5 do
+    for index = 1, 4 do
         local row = Button(mapData, "", 14, -23 - (index - 1) * 27, 244, function(self)
             if self.sourceID then Changed("vignetteRadarPOISource", self.sourceID) end
         end)
@@ -609,17 +613,18 @@ local function Build()
         quick.poiRows[index] = row
     end
     quick.poiTrack = mapData:CreateTexture(nil, "ARTWORK")
-    quick.poiTrack:SetSize(3, 112)
+    quick.poiTrack:SetSize(3, 85)
     quick.poiTrack:SetPoint("TOPLEFT", mapData, "TOPLEFT", 267, -24)
     quick.poiTrack:SetColorTexture(1, 1, 1, .1)
     quick.poiThumb = mapData:CreateTexture(nil, "OVERLAY")
     quick.poiThumb:SetWidth(3)
     quick.poiThumb:SetColorTexture(ACCENT[1], ACCENT[2], ACCENT[3], .7)
-    Section(mapData, "SHOW THESE NOTE TYPES", -164)
-    Check(mapData, "vignetteRadarPOITypes", "Treasures", 14, -183, "treasure", 91)
-    Check(mapData, "vignetteRadarPOITypes", "Mobs", 147, -183, "mob", 91)
-    Check(mapData, "vignetteRadarPOITypes", "Items", 14, -212, "item", 91)
-    Check(mapData, "vignetteRadarPOITypes", "Other notes", 147, -212, "note", 91)
+    Section(mapData, "SHOW THESE NOTE TYPES", -137)
+    Check(mapData, "vignetteRadarPOITypes", "Treasures", 14, -156, "treasure", 91)
+    Check(mapData, "vignetteRadarPOITypes", "Mobs", 147, -156, "mob", 91)
+    Check(mapData, "vignetteRadarPOITypes", "Items", 14, -185, "item", 91)
+    Check(mapData, "vignetteRadarPOITypes", "Other notes", 147, -185, "note", 91)
+    Check(mapData, "vignetteRadarPOIIcons", "Use pack icons (otherwise dots)", 14, -218)
     quick.poiStatus = Label(mapData, "", 14, -253, 9, 260)
 
     local explore = quick.pages.Explore

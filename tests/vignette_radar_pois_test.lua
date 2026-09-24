@@ -20,7 +20,13 @@ HandyNotes = { plugins = {
         return function()
             index = index + 1 -- simulate plugin hiding the first, completed chest
             local coord = keys[index]
-            return coord, nil, nil, 1, 1
+            local icons = {
+                [51005000] = { icon = 134400, tCoordLeft = .1, tCoordRight = .9,
+                    tCoordTop = .2, tCoordBottom = .8, r = .8, g = .6, b = .4, a = .75 },
+                [52005000] = 123456,
+                [53005000] = "Interface\\Icons\\INV_Misc_QuestionMark",
+            }
+            return coord, nil, icons[coord], 1.3, .6
         end, nodes, nil
     end },
     Disabled = { GetNodes2 = function() error("disabled source queried") end },
@@ -38,6 +44,13 @@ assert(results[1].kind == "treasure" and results[1].name == "Ancient chest"
 assert(results[2].kind == "mob" and results[3].kind == "item"
     and results[4].kind == "note" and results[4].name == "Travel point"
     and results[4].note == "On the ridge")
+assert(results[1].icon.texture == 134400 and results[1].icon.texCoord[1] == .1
+    and results[1].icon.texCoord[4] == .8 and results[1].icon.color[1] == .8
+    and results[1].icon.color[4] == .75 and results[1].icon.scale == 1.3
+    and results[1].icon.alpha == .6 and results[2].icon.texture == 123456
+    and results[3].icon.texture == "Interface\\Icons\\INV_Misc_QuestionMark"
+    and results[4].icon == nil,
+    "the pack's own file ID, path, crop, tint, and opacity must survive collection")
 assert(#pois.Collect(123, "Disabled", function() error("converted disabled source") end,
     function() end) == 0)
 assert(pois.Kind(nil, "MidnightTreasures") == "treasure"

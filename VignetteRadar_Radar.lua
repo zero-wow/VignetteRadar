@@ -830,7 +830,9 @@ local function RenderMapNotes(player, range)
             local dx, dy = note.worldX - player.worldX, note.worldY - player.worldY
             local distance = math.sqrt(dx * dx + dy * dy)
             if distance >= 9 and distance <= range then
-                local x, y = Project(dx, dy, distance, ViewFacing(player.facing), panel.plotRadius - 5, range)
+                local usePackIcon = settings.vignetteRadarPOIIcons == true and note.icon ~= nil
+                local x, y = Project(dx, dy, distance, ViewFacing(player.facing),
+                    panel.plotRadius - (usePackIcon and 11 or 5), range)
                 if x and y then
                     count = count + 1
                     local dot = panel.mapNotes[count]
@@ -847,6 +849,9 @@ local function RenderMapNotes(player, range)
                         dot.core:SetPoint("CENTER")
                         dot.core:SetTexture(CIRCLE_TEXTURE)
                         dot.core:SetVertexColor(0.02, 0.03, 0.035, 0.95)
+                        dot.icon = dot:CreateTexture(nil, "OVERLAY")
+                        dot.icon:SetPoint("CENTER")
+                        dot.icon:Hide()
                         dot:EnableMouseWheel(true)
                         dot:SetScript("OnMouseWheel", OnZoomWheel)
                         dot:SetScript("OnEnter", function(self)
@@ -868,6 +873,29 @@ local function RenderMapNotes(player, range)
                     local color = addon.VignetteRadarStyle
                     if color then dot.rim:SetVertexColor(color.Color(slot))
                     else dot.rim:SetVertexColor(0.7, 0.75, 0.78, 1) end
+                    if usePackIcon then
+                        local icon = note.icon
+                        if dot._iconNote ~= note then
+                            dot.icon:SetTexture(icon.texture)
+                            if icon.texCoord then dot.icon:SetTexCoord(Unpack(icon.texCoord))
+                            else dot.icon:SetTexCoord(0, 1, 0, 1) end
+                            local tint = icon.color
+                            dot.icon:SetVertexColor(tint and tint[1] or 1, tint and tint[2] or 1,
+                                tint and tint[3] or 1, icon.alpha * (tint and tint[4] or 1))
+                            dot.icon:SetSize(math.max(10, math.min(18, 12 * icon.scale)),
+                                math.max(10, math.min(18, 12 * icon.scale)))
+                            dot._iconNote = note
+                        end
+                        dot:SetSize(18, 18)
+                        dot.rim:Hide()
+                        dot.core:Hide()
+                        dot.icon:Show()
+                    else
+                        dot:SetSize(13, 13)
+                        dot.icon:Hide()
+                        dot.rim:Show()
+                        dot.core:Show()
+                    end
                     dot.note, dot.distance = note, distance
                     dot:ClearAllPoints()
                     dot:SetPoint("CENTER", panel.field, "CENTER", x, y)
