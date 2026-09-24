@@ -555,9 +555,8 @@ function API.Refresh()
     panel.guides.route.fill:SetVertexColor(.16, .7, .54, .9)
     local rareRed, rareGreen, rareBlue = Color("rare", CATEGORIES.rare.color)
     for _, line in ipairs(panel.guides.stale.lines) do
-        line:SetColorTexture(rareRed, rareGreen, rareBlue, 1)
+        line:SetColorTexture(rareRed, rareGreen, rareBlue, .4)
     end
-    panel.guides.stale:SetAlpha(.4)
     for _, dot in ipairs(panel.guides.trail.dots) do
         dot:SetVertexColor(accentRed, accentGreen, accentBlue, .85)
     end

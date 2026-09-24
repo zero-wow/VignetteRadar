@@ -202,6 +202,8 @@ settings.vignetteRadarShapes = true
 legend.Refresh()
 assert(panel.mapNotes.mob.rim.vertexColor[1] == .2
     and panel.guides.quest.fill.vertexColor[1] == .7
+    and panel.guides.stale.lines[1].color[4] == .4
+    and panel.guides.stale.alpha ~= .4
     and panel.rows.rare.swatch.texture == "Interface\\TargetingFrame\\UI-TargetingFrame-Skull"
     and panel.rows.treasure.swatch.atlas == "VignetteLoot",
     "legend symbols must follow theme colors and restore icon artwork when re-enabled")
