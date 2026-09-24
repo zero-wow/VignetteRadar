@@ -237,9 +237,11 @@ for _, object in ipairs(objects) do
     end
 end
 assert(#toggles == 5 and lowerRange, "standalone options must expose visibility, data scope, clearing, and range controls")
-lowerRange.scripts.OnClick(lowerRange)
-lowerRange.scripts.OnClick(lowerRange)
-assert(settings.vignetteRadarRange == 150 and lowerRange.enabled == false,
+for _, expected in ipairs({ 300, 150, 100, 50, 25, 10 }) do
+    lowerRange.scripts.OnClick(lowerRange)
+    assert(settings.vignetteRadarRange == expected, "range controls must include close zoom steps")
+end
+assert(lowerRange.enabled == false,
     "range controls must update saved settings and stop at the smallest range")
 settings.vignetteRadarRange = 450
 SlashCmdList.VIGNETTERADAR("config")
@@ -568,7 +570,7 @@ assert(panel.blipByKey.far and #sounds == soundCount, "enabling wider data scope
 assert(not addon.SetVignetteRadarRange(999999) and settings.vignetteRadarRange == 4800,
     "unsupported zoom ranges must not corrupt saved settings")
 for _ = 1, 10 do panel.zoomIn.scripts.OnClick(panel.zoomIn) end
-assert(settings.vignetteRadarRange == 150, "zoom-in must clamp at the minimum")
+assert(settings.vignetteRadarRange == 10, "zoom-in must clamp at the minimum")
 assert(panel.zoomOut.backdrop == nil and panel.zoomIn.backdrop == nil
     and #panel.zoomOut.strokes == 1 and #panel.zoomIn.strokes == 2
     and panel.zoomOut.glow and panel.zoomIn.glow,
@@ -1972,6 +1974,18 @@ addon.VignetteRadarAPI.Refresh(true)
 assert(panel:IsShown() and panel.mapNotes[1] and panel.mapNotes[1]:IsShown()
     and panel.mapNotes[1].note.kind == "note" and panel.mapNotes[1].note.source == "TestPack",
     "the chosen pack must draw its map note")
+local closeNote = panel.mapNotes[1].note
+local savedNoteX, savedNoteY = closeNote.worldX, closeNote.worldY
+local savedRange = settings.vignetteRadarRange
+local closePlayer = addon.VignetteRadarAPI.GetPlayerSnapshot()
+closeNote.worldX, closeNote.worldY = closePlayer.worldX + 5, closePlayer.worldY
+settings.vignetteRadarRange = 10
+addon.VignetteRadarAPI.Refresh(false)
+assert(panel.mapNotes[1]:IsShown() and panel.mapNotes[1].note == closeNote,
+    "a map note five yards away must remain visible at ten-yard zoom")
+closeNote.worldX, closeNote.worldY = savedNoteX, savedNoteY
+settings.vignetteRadarRange = savedRange
+addon.VignetteRadarAPI.Refresh(false)
 for _, target in ipairs(addon.VignetteRadarAPI.GetTargets()) do
     assert(target.source ~= "TestPack", "map notes must stay outside the live detection pool")
 end

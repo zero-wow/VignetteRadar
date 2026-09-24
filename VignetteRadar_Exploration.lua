@@ -45,7 +45,7 @@ function API.Range(player, focused)
     local speed = GetUnitSpeed and Number(GetUnitSpeed("player")) or 0
     local desired = speed and speed > 4 and math.max(1200, base) or base
     if focused and not focused.stale and Number(focused.distance) and focused.distance > 0 then
-        desired = math.max(150, focused.distance * 1.25)
+        desired = math.max(addon.VignetteRadarRanges[1], focused.distance * 1.25)
     end
     local ranges = addon.VignetteRadarRanges
     autoRange = ranges[#ranges]

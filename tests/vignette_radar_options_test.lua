@@ -97,7 +97,7 @@ local db = {
 local refreshes, layoutRefreshes, previews, resets, clears = 0, 0, 0, 0, 0
 local trailPickerAnchor
 local addon = {
-    VignetteRadarRanges = { 150, 300, 450, 600, 1200, 2400, 4800 },
+    VignetteRadarRanges = { 10, 25, 50, 100, 150, 300, 450, 600, 1200, 2400, 4800 },
     GetSettings = function() return db end,
     SetVignetteRadarEnabled = function(value) db.vignetteRadarEnabled = value end,
     SetVignetteRadarCircleOnly = function(value) db.vignetteRadarCircleOnly = value end,
@@ -357,14 +357,14 @@ local endpointRefreshes = refreshes
 choices["+"].scripts.OnClick(choices["+"])
 assert(db.vignetteRadarRange == 4800 and refreshes == endpointRefreshes,
     "the upper endpoint must not save an invalid range")
-for _, range in ipairs({ 2400, 1200, 600, 450, 300, 150 }) do
+for _, range in ipairs({ 2400, 1200, 600, 450, 300, 150, 100, 50, 25, 10 }) do
     stepRange(choices["-"], range)
 end
 assert(choices["-"].enabled == false and choices["+"].enabled == true,
     "the lower range endpoint must disable the previous step")
 endpointRefreshes = refreshes
 choices["-"].scripts.OnClick(choices["-"])
-assert(db.vignetteRadarRange == 150 and refreshes == endpointRefreshes,
+assert(db.vignetteRadarRange == 10 and refreshes == endpointRefreshes,
     "the lower endpoint must not save an invalid range")
 db.vignetteRadarRange = 450
 addon.RefreshVignetteRadarOptions()

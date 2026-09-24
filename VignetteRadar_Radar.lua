@@ -136,7 +136,7 @@ local function HeadingGeometry(radius)
 end
 
 local function Ranges()
-    return addon.VignetteRadarRanges or { 150, 300, 450, 600, 1200, 2400, 4800 }
+    return addon.VignetteRadarRanges or { 10, 25, 50, 100, 150, 300, 450, 600, 1200, 2400, 4800 }
 end
 
 local function StepRange(step)
@@ -854,6 +854,9 @@ end
 
 local MAP_NOTE_COLOR = { treasure = "treasure", mob = "rare", item = "event", note = "other" }
 local MAP_NOTE_LABEL = { treasure = "Treasure", mob = "Mob", item = "Item", note = "Note" }
+local function MapNoteMinimumDistance(range)
+    return math.min(9, range * 0.1)
+end
 local function RenderMapNotes(player, range)
     local settings = Settings()
     if not (player and settings.vignetteRadarPOISource ~= "none") then HideMapNotes(); return 0 end
@@ -865,7 +868,7 @@ local function RenderMapNotes(player, range)
             and not (player.instanceID and note.instanceID and player.instanceID ~= note.instanceID) then
             local dx, dy = note.worldX - player.worldX, note.worldY - player.worldY
             local distance = math.sqrt(dx * dx + dy * dy)
-            if distance >= 9 and distance <= range then
+            if distance >= MapNoteMinimumDistance(range) and distance <= range then
                 local usePackIcon = settings.vignetteRadarPOIIcons == true and note.icon ~= nil
                 local x, y = Project(dx, dy, distance, ViewFacing(player.facing),
                     panel.plotRadius - (usePackIcon and 11 or 5), range)
@@ -3643,7 +3646,8 @@ RefreshRadar = function(rescan)
                     and not (player.instanceID and note.instanceID and player.instanceID ~= note.instanceID) then
                     local dx, dy = note.worldX - player.worldX, note.worldY - player.worldY
                     local distance2 = dx * dx + dy * dy
-                    if distance2 >= 81 and distance2 <= range * range then
+                    local minimumDistance = MapNoteMinimumDistance(range)
+                    if distance2 >= minimumDistance * minimumDistance and distance2 <= range * range then
                         hasMapNotes = true
                         break
                     end

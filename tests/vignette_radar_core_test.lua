@@ -95,7 +95,7 @@ assert(defaults.vignetteRadarTrailStyle == "dashes" and defaults.vignetteRadarTr
 defaults.vignetteRadarPOISource = "none"
 fresh.GetSettings()
 assert(defaults.vignetteRadarPOISource == "none", "an existing Off choice must remain Off")
-local expectedRanges = { 150, 300, 450, 600, 1200, 2400, 4800 }
+local expectedRanges = { 10, 25, 50, 100, 150, 300, 450, 600, 1200, 2400, 4800 }
 assert(#fresh.VignetteRadarRanges == #expectedRanges, "all selectable ranges must be published")
 for index, range in ipairs(expectedRanges) do
     assert(fresh.VignetteRadarRanges[index] == range, "range order must stay stable")

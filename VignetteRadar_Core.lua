@@ -1,7 +1,7 @@
 local _, addon = ...
 if type(addon) ~= "table" then return end
 
-addon.VignetteRadarRanges = { 150, 300, 450, 600, 1200, 2400, 4800 }
+addon.VignetteRadarRanges = { 10, 25, 50, 100, 150, 300, 450, 600, 1200, 2400, 4800 }
 addon.VignetteRadarLayouts = { "classic", "squat", "compact" }
 
 local MIGRATED_KEYS = {

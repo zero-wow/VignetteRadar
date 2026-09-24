@@ -15,6 +15,7 @@ db.vignetteRadarSmartZoom = true
 GetUnitSpeed = function() return 7 end
 assert(E.Range(player, nil) == 1200, "travel speed should widen the radar")
 assert(E.Range(player, { distance=180 }) == 300, "focus should select the nearest covering range")
+assert(E.Range(player, { distance=4 }) == 10, "smart zoom should use the new close range for a nearby focus")
 E.ManualZoom()
 assert(E.Range(player, nil) == db.vignetteRadarRange, "manual zoom should temporarily override auto zoom")
 current = 31
