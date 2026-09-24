@@ -27,8 +27,13 @@ assert(E.GetFocusedQuest() == nil)
 E.FocusQuest(900)
 for _=1,3 do E.ValidateQuestFocus({ { questID=901 } }, false) end
 assert(E.GetFocusedQuest() == nil, "stale quest focus must not hide unrelated blobs")
-C_QuestLog = { GetQuestObjectives=function() return { {finished=true}, {finished=false} } end }
+C_QuestLog = { GetQuestObjectives=function() return {
+    { finished=true, text="Collected 3/3" },
+    { finished=false, text="Defeat rare: 0/1" },
+} end }
 assert(E.ObjectiveProgress(900) == "1/2 objectives")
+assert(#E.ObjectiveLines(900) == 1 and E.ObjectiveLines(900)[1] == "Defeat rare: 0/1",
+    "quest tooltips should surface the unfinished objective text")
 
 db.vignetteRadarBreadcrumbs = true
 assert(#E.UpdateTrail(player, 10, 0) == 0)

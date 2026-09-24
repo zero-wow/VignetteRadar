@@ -11,6 +11,7 @@ local PROBE_NODES = 96
 local SOURCE_CACHE_SECONDS = 10
 local sourceCache, cacheOrder = {}, {}
 local autoChoice
+local npcNames = {}
 local function Safe(value)
     return not (type(issecretvalue) == "function" and issecretvalue(value))
 end
@@ -19,18 +20,34 @@ local function String(value)
     return Safe(value) and type(value) == "string" and value ~= "" and value or nil
 end
 
-local function DisplayText(value)
-    value = String(value)
-    if not value then return nil end
-    -- Some data packs store labels as lightweight {kind:id:label} tokens.
-    return value:gsub("{[^{}:]+:[^{}:]+:([^{}]+)}", "%1")
-        :gsub("|c%x%x%x%x%x%x%x%x", ""):gsub("|r", "")
-end
-
 local function Field(object, key)
     if not Safe(object) or type(object) ~= "table" then return nil end
     local ok, value = pcall(function() return object[key] end)
     return ok and Safe(value) and value or nil
+end
+
+local function NPCName(id)
+    id = tonumber(id)
+    if not id or not (C_TooltipInfo and type(C_TooltipInfo.GetHyperlink) == "function") then return nil end
+    if npcNames[id] then return npcNames[id] end
+    local ok, info = pcall(C_TooltipInfo.GetHyperlink, "unit:Creature-0-0-0-0-" .. id)
+    local lines = ok and Field(info, "lines")
+    local name = lines and String(Field(Field(lines, 1), "leftText"))
+    if name then npcNames[id] = name end
+    return name
+end
+
+local function DisplayText(value)
+    value = String(value)
+    if not value then return nil end
+    -- Some data packs store labels as lightweight {kind:id:label} tokens.
+    value = value:gsub("{npc:(%d+):([^{}]+)}", function(id, label)
+        return NPCName(id) or label
+    end):gsub("{npc:(%d+)}", function(id)
+        return NPCName(id) or "Creature"
+    end):gsub("{[^{}:]+:[^{}:]+:([^{}]+)}", "%1")
+        :gsub("{[^{}]+}", ""):gsub("|c%x%x%x%x%x%x%x%x", ""):gsub("|r", "")
+    return String(value:match("^%s*(.-)%s*$"))
 end
 
 local function HandyNotes()
@@ -174,8 +191,10 @@ function POIs.Kind(node, source)
 end
 
 local function Name(node, kind)
-    return DisplayText(Field(node, "label")) or DisplayText(Field(node, "name"))
+    local name = DisplayText(Field(node, "label")) or DisplayText(Field(node, "name"))
         or DisplayText(Field(node, "title"))
+    if name == "Creature" then name = NPCName(Field(node, "npc")) end
+    return name or NPCName(Field(node, "npc"))
         or ({ treasure = "Treasure location", mob = "Mob location",
             item = "Item location", note = "Map note" })[kind]
 end
@@ -245,6 +264,9 @@ function POIs.Collect(mapID, source, mapToWorld, mapVector)
                     mapID = pointMapID, mapX = x, mapY = y,
                     worldX = worldX, worldY = worldY, instanceID = instanceID,
                     source = source, kind = kind, name = Name(node, kind),
+                    npcID = tonumber(Field(node, "npc")),
+                    objectID = tonumber(Field(node, "object")) or tonumber(Field(node, "objectID")),
+                    questID = tonumber(Field(node, "quest")),
                     note = DisplayText(Field(node, "note")),
                     icon = IconDescriptor(iconpath, iconScale, alpha),
                 }

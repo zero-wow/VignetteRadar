@@ -145,8 +145,12 @@ SlashCmdList = {}
 GameTooltip = {
     SetOwner = function(self, owner) self.owner = owner end,
     GetOwner = function(self) return self.owner end,
-    SetText = function(self, value) self.text = value end,
-    AddLine = function(self, value) self.line = value end,
+    SetText = function(self, value) self.text = value; self.lines = {} end,
+    AddLine = function(self, value)
+        self.line = value
+        self.lines = self.lines or {}
+        self.lines[#self.lines + 1] = value
+    end,
     Show = function(self) self.shown = true end,
     Hide = function(self) self.shown = false end,
     IsShown = function(self) return self.shown == true end,
@@ -187,6 +191,7 @@ assert(loadfile("VignetteRadar_Core.lua"))("VignetteRadar", addon)
 assert(loadfile("VignetteRadar_Style.lua"))("VignetteRadar", addon)
 assert(loadfile("VignetteRadar_Controls.lua"))("VignetteRadar", addon)
 assert(loadfile("VignetteRadar_Features.lua"))("VignetteRadar", addon)
+assert(loadfile("VignetteRadar_Recent.lua"))("VignetteRadar", addon)
 assert(loadfile("VignetteRadar_Exploration.lua"))("VignetteRadar", addon)
 assert(loadfile("VignetteRadar_POIs.lua"))("VignetteRadar", addon)
 assert(loadfile(legendSourcePath))("VignetteRadar", addon)
@@ -213,7 +218,7 @@ for _, object in ipairs(objects) do
         lowerRange = object
     end
 end
-assert(#toggles == 4 and lowerRange, "standalone options must expose visibility, data scope, and range controls")
+assert(#toggles == 5 and lowerRange, "standalone options must expose visibility, data scope, clearing, and range controls")
 lowerRange.scripts.OnClick(lowerRange)
 lowerRange.scripts.OnClick(lowerRange)
 assert(settings.vignetteRadarRange == 150 and lowerRange.enabled == false,
@@ -551,6 +556,7 @@ assert(panel.zoomOut.backdrop == nil and panel.zoomIn.backdrop == nil
     and panel.zoomOut.glow and panel.zoomIn.glow,
     "zoom controls must use borderless minus and plus icons with the radar's circular glow")
 assert(panel.trailToggle.backdrop == nil and #panel.trailToggle.strokes == 12
+    and panel.compass.ignoreParentAlpha and panel.trailToggle.ignoreParentAlpha
     and panel.trailToggle.glow and panel.trailToggle.clickButtons[2] == "RightButtonUp",
     "the trail shortcut must match the toolbar and accept a style-changing right click")
 assert(not panel.zoomIn._enabled and panel.zoomIn.strokes[1].color[4] < .4,
@@ -1009,6 +1015,10 @@ end
 C_QuestLog = {
     GetQuestsOnMap = function() return { { questID = 12345, x = 0.52, y = 0.5, name = "Nearby quest" } } end,
     GetTitleForQuestID = function() return "Nearby quest" end,
+    GetQuestObjectives = function() return {
+        { finished = false, text = "Collect supplies: 1/3" },
+        { finished = true, text = "Find the camp: 1/1" },
+    } end,
 }
 settings.vignetteRadarQuestDots = true
 settings.vignetteRadarQuestAreas = true
@@ -1016,6 +1026,12 @@ settings.vignetteRadarNorthUp = false
 GetPlayerFacing = function() return 0 end
 addon.VignetteRadarAPI.Refresh(true)
 local questDot = assert(panel.questDots[1], "quest locations must create a distinct dot")
+questDot.scripts.OnEnter(questDot)
+assert(GameTooltip.text == "Nearby quest"
+    and table.concat(GameTooltip.lines, " | "):find("Collect supplies: 1/3", 1, true)
+    and not table.concat(GameTooltip.lines, " | "):find("Find the camp", 1, true),
+    "quest dots must name the quest and list only unfinished objectives")
+questDot.scripts.OnLeave(questDot)
 assert(questDot:IsShown() and questDot.quest.questID == 12345 and questDot.point[4] > 0
     and panel.summary.text == "1 QUEST IN RANGE", "quest dots should show live positions and a readable count")
 assert(panel.questBlob and not panel.questBlob:IsShown(), "exact blobs must wait for north-up mode")
@@ -1092,8 +1108,9 @@ panel.questBlob.hoverQuestID = 12345
 GetCursorPosition = function() return panel.field:GetWidth() / 2, panel.field:GetHeight() / 2 end
 panel.scripts.OnUpdate(panel, .11)
 assert(GameTooltip:IsShown() and GameTooltip:GetOwner() == panel.questBlob
-    and GameTooltip.text == "Nearby quest" and GameTooltip.line:find("Click to spotlight", 1, true),
-    "hovering a native quest shape must identify the quest without a clickable blob layer")
+    and GameTooltip.text == "Nearby quest" and GameTooltip.line:find("Click to spotlight", 1, true)
+    and table.concat(GameTooltip.lines, " | "):find("Collect supplies: 1/3", 1, true),
+    "hovering a native quest shape must identify the quest and its unfinished objectives")
 panel.field.scripts.OnMouseUp(panel.field, "LeftButton")
 assert(addon.VignetteRadarExploration.GetFocusedQuest() == 12345,
     "clicking a hovered native blob must spotlight its quest")
@@ -1232,6 +1249,32 @@ assert(settings.vignetteRadarCircleOnly == false and panel.backdropColor[4] == .
     and panel.frameToggle.chevron[1].endPoint[3] < panel.frameToggle.chevron[1].startPoint[3],
     "the circle control must restore full panel chrome and resize grips")
 
+local originalLayout = panel.layout
+for _, layout in ipairs({ "classic", "squat", "compact" }) do
+    addon.SetVignetteRadarLayout(layout)
+    local framedY = panel.point[5]
+    addon.SetVignetteRadarCircleOnly(true)
+    assert(panel.clamped == false,
+        "radar-only mode must allow its invisible frame to cross the screen edge")
+    panel:ClearAllPoints()
+    panel:SetPoint("TOPLEFT", UIParent, "TOPLEFT", 30, -1200)
+    panel.field.scripts.OnDragStop(panel.field)
+    local circleY = panel.point[5]
+    local fieldBottom = layout == "squat" and 38 or layout == "compact" and 59 or 35
+    local visibleBottom = UIParent:GetHeight() + circleY - (panel.height - fieldBottom) * panel:GetScale()
+    assert(visibleBottom >= 4 and visibleBottom < 5
+        and panel:GetBottom() < 0 and settings.vignetteRadarCirclePosition,
+        "radar-only dragging must stop at the visible face, with the hidden frame below the screen")
+    addon.SetVignetteRadarCircleOnly(false)
+    assert(panel.clamped == true and panel.point[5] == framedY and panel:GetBottom() >= 4,
+        "showing the full UI must restore its earlier, fully visible position")
+    addon.SetVignetteRadarCircleOnly(true)
+    assert(panel.point[5] == circleY,
+        "returning to radar-only mode must restore the separately saved lower position")
+    addon.SetVignetteRadarCircleOnly(false)
+end
+addon.SetVignetteRadarLayout(originalLayout)
+
 -- The compact panel owns every user-facing setting and remains usable at its
 -- smallest page bounds. Theme edits must affect the actual radar textures.
 addon.SetVignetteRadarNorthUp(false)
@@ -1276,7 +1319,8 @@ for _, key in ipairs({ "vignetteRadarEnabled", "vignetteRadarHideWhenEmpty", "vi
     "vignetteRadarTheme", "vignetteRadarSmartZoom", "vignetteRadarUntangle",
     "vignetteRadarBreadcrumbs", "vignetteRadarTrailStyle", "vignetteRadarApproachAlerts",
     "vignetteRadarJournalEnabled", "vignetteRadarApproachDistance",
-    "vignetteRadarPOISource", "vignetteRadarPOITypes", "vignetteRadarPOIIcons" }) do
+    "vignetteRadarPOISource", "vignetteRadarPOITypes", "vignetteRadarPOIIcons",
+    "vignetteRadarHideCleared" }) do
     assert(exposed[key], "compact settings missing: " .. key)
 end
 for _, slot in ipairs(addon.VignetteRadarStyle.slots) do
@@ -1594,7 +1638,7 @@ local dashX = firstTrailMark.endPoint[3] - firstTrailMark.startPoint[3]
 local dashY = firstTrailMark.endPoint[4] - firstTrailMark.startPoint[4]
 panel.trailToggle.scripts.OnClick(panel.trailToggle, "RightButton")
 local trailPopup = assert(_G.VignetteRadarTrailStylePopup)
-assert(trailPopup:IsShown() and trailPopup.width == 244 and trailPopup.height == 292
+assert(trailPopup:IsShown() and trailPopup.width == 244 and trailPopup.height == 360
     and trailPopup.clamped and settings.vignetteRadarTrailStyle == "dashes"
     and trailPopup.point[1] == "BOTTOMLEFT" and trailPopup.point[2] == panel
     and trailPopup.point[3] == "BOTTOMRIGHT" and trailPopup.point[4] == 8
@@ -1612,7 +1656,7 @@ for _, row in ipairs(trailPopup.rows) do
     assert(row.width == 202 and row.height == 24 and row.parent == trailPopup.content
         and row.point[4] >= 0 and row.point[4] + row.width <= trailPopup.scroll.width
         and -row.point[5] + row.height <= trailPopup.content.height
-        and #row.marks == 9,
+        and #row.marks == 13,
         "every scrollable choice needs a bounded animated example beside its label")
 end
 local previewStart = trailPopup.rows[1].marks[1].startPoint[3]
@@ -1646,12 +1690,14 @@ assert(settings.vignetteRadarTrailStyle == "dots" and panel.trailDots[1]
     and #panel.trailDots <= 64,
     "the optional dot style must reuse a capped texture pool")
 panel.trailToggle.scripts.OnClick(panel.trailToggle, "RightButton")
-assert(#trailPopup.controls == 3 and trailPopup.controls[1].value.text == "100%"
+assert(#trailPopup.controls == 5 and trailPopup.controls[1].value.text == "100%"
     and trailPopup.controls[2].value.text == "1×"
-    and trailPopup.controls[3].value.text == "180"
-    and trailPopup.controls[3].value.kind == "EditBox"
+    and trailPopup.controls[3].value.text == "100%"
+    and trailPopup.controls[4].value.text == "180"
+    and trailPopup.controls[4].value.kind == "EditBox"
+    and trailPopup.controls[5].value.text == "50%"
     and not trailPopup.scrollButtons and trailPopup.scrollGrip,
-    "spacing, flow speed, and fade time must be visible in the picker")
+    "spacing, flow, size, fade time, and tail fade must be visible in the picker")
 for _, control in ipairs(trailPopup.controls) do
     for _, button in ipairs({ control.minus, control.plus }) do
         assert(button.point[4] >= 8 and button.point[4] + button.width <= trailPopup.width - 8
@@ -1663,21 +1709,39 @@ end
 local previewDots = trailPopup.rows[3]
 local oldGap = previewDots.marks[2].point[4] - previewDots.marks[1].point[4]
 local oldFade = previewDots.marks[1].vertexColor[4]
+local oldTailAlpha = previewDots.marks[1].vertexColor[4]
+trailPopup.controls[5].plus.scripts.OnClick(trailPopup.controls[5].plus)
+assert(settings.vignetteRadarTrailTailFade == .75
+    and previewDots.marks[1].vertexColor[4] < oldTailAlpha,
+    "tail fade must dim the old end of every animated preview")
+trailPopup.controls[5].minus.scripts.OnClick(trailPopup.controls[5].minus)
 trailPopup.controls[1].plus.scripts.OnClick(trailPopup.controls[1].plus)
 assert(previewDots.marks[2].point[4] - previewDots.marks[1].point[4] > oldGap,
     "spacing must update the animated style examples immediately")
 trailPopup.controls[2].minus.scripts.OnClick(trailPopup.controls[2].minus)
 local halfSpeedPhase = trailPopup._phase
 trailPopup.scripts.OnUpdate(trailPopup, .06)
-assert(trailPopup._phase > halfSpeedPhase and trailPopup._phase - halfSpeedPhase < 2,
-    "preview flow must follow the selected half-speed setting")
-trailPopup.controls[2].minus.scripts.OnClick(trailPopup.controls[2].minus)
+assert(trailPopup._phase > halfSpeedPhase and trailPopup._phase - halfSpeedPhase < 2
+    and trailPopup.controls[2].value.text == "0.75×",
+    "preview flow must follow the selected fractional-speed setting")
+for index = 1, 3 do
+    trailPopup.controls[2].minus.scripts.OnClick(trailPopup.controls[2].minus)
+end
 local stillPhase = trailPopup._phase
 trailPopup.scripts.OnUpdate(trailPopup, .2)
 assert(trailPopup._phase == stillPhase and trailPopup.controls[2].value.text == "Still",
     "Still flow must freeze the preview marks")
-trailPopup.controls[2].plus.scripts.OnClick(trailPopup.controls[2].plus)
-local fadeField = trailPopup.controls[3].value
+for index = 1, 2 do
+    trailPopup.controls[2].plus.scripts.OnClick(trailPopup.controls[2].plus)
+end
+local initialMarkWidth = previewDots.marks[1].width
+trailPopup.controls[3].plus.scripts.OnClick(trailPopup.controls[3].plus)
+addon.VignetteRadarAPI.Refresh(false)
+assert(settings.vignetteRadarTrailSize == 1.25 and previewDots.marks[1].width > initialMarkWidth
+    and panel.trailDots[1].width == 6.25,
+    "Size must enlarge both preview and live trail marks")
+trailPopup.controls[3].minus.scripts.OnClick(trailPopup.controls[3].minus)
+local fadeField = trailPopup.controls[4].value
 fadeField.scripts.OnEditFocusGained(fadeField)
 fadeField:SetText("300")
 fadeField.scripts.OnEnterPressed(fadeField)
@@ -1695,10 +1759,10 @@ fadeField.scripts.OnEditFocusGained(fadeField)
 fadeField:SetText("1")
 fadeField.scripts.OnEnterPressed(fadeField)
 assert(settings.vignetteRadarTrailLifetime == 1 and fadeField.text == "1"
-    and not trailPopup.controls[3].minus.enabled
+    and not trailPopup.controls[4].minus.enabled
     and previewDots.marks[1].vertexColor[4] < longFade,
     "fade duration must accept one second and change the previews")
-trailPopup.controls[3].plus.scripts.OnClick(trailPopup.controls[3].plus)
+trailPopup.controls[4].plus.scripts.OnClick(trailPopup.controls[4].plus)
 assert(settings.vignetteRadarTrailLifetime == 2 and fadeField.text == "2",
     "the skinned fade stepper must advance one second at a time")
 fadeField.scripts.OnEditFocusGained(fadeField)
@@ -1706,6 +1770,19 @@ fadeField:SetText("0")
 fadeField.scripts.OnEnterPressed(fadeField)
 assert(settings.vignetteRadarTrailLifetime == 2 and fadeField.text == "2",
     "an invalid fade entry must restore the saved value")
+assert(addon.SetVignetteRadarTrailOption("vignetteRadarTrailSpacing", .5)
+    and addon.SetVignetteRadarTrailOption("vignetteRadarTrailSpeed", 4),
+    "the densest spacing and fastest flow must be available")
+trailPopup._phase = 0
+trailPopup:DrawPreviews()
+assert(previewDots.marks[13]:IsShown()
+    and math.abs(previewDots.marks[2].point[4] - previewDots.marks[1].point[4] - 4.5) < .001,
+    "a 50% dot trail must preview as a dense, nearly continuous line")
+addon.VignetteRadarAPI.Refresh(false)
+assert(#panel.trailDots <= 64 and #panel.trailMarks <= 64,
+    "dense live trails must retain their bounded mark pools")
+addon.SetVignetteRadarTrailOption("vignetteRadarTrailSpacing", 1.25)
+addon.SetVignetteRadarTrailOption("vignetteRadarTrailSpeed", .5)
 fadeField.scripts.OnEditFocusGained(fadeField)
 fadeField:SetText("300")
 fadeField.scripts.OnEnterPressed(fadeField)
@@ -1881,6 +1958,21 @@ local noteX, noteY = panel.mapNotes[1].point[4], panel.mapNotes[1].point[5]
 assert(noteX * noteX + noteY * noteY <= (panel.plotRadius - 5)^2,
     "map-note dots must stay inside the radar's plotting boundary")
 local packIconToggle = assert(quickControl("Map Data", "vignetteRadarPOIIcons"))
+local clearedToggle = assert(quickControl("Map Data", "vignetteRadarHideCleared"))
+local radarEvents
+for _, object in ipairs(objects) do
+    if object.events and object.events.VIGNETTES_UPDATED then radarEvents = object end
+end
+assert(radarEvents and not radarEvents.events.COMBAT_LOG_EVENT_UNFILTERED,
+    "combat-log listening must stay off until the cleared-target filter is enabled")
+clearedToggle:SetChecked(true)
+clearedToggle.scripts.OnClick(clearedToggle)
+assert(settings.vignetteRadarHideCleared and radarEvents.events.COMBAT_LOG_EVENT_UNFILTERED,
+    "enabling cleared-target filtering must start kill observation")
+clearedToggle:SetChecked(false)
+clearedToggle.scripts.OnClick(clearedToggle)
+assert(not settings.vignetteRadarHideCleared and not radarEvents.events.COMBAT_LOG_EVENT_UNFILTERED,
+    "disabling cleared-target filtering must stop combat-log observation")
 packIconToggle:SetChecked(true)
 packIconToggle.scripts.OnClick(packIconToggle)
 local mapNote = panel.mapNotes[1]

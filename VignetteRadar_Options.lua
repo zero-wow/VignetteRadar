@@ -238,7 +238,8 @@ local function BuildPanel()
     end
 
     local radar = AddPage("Radar", 1)
-    AddCheckbox(radar, "vignetteRadarEnabled", "Enable radar", 18, -114)
+    AddCheckbox(radar, "vignetteRadarEnabled", "Enable radar", 18, -114, nil, 185)
+    AddCheckbox(radar, "vignetteRadarHideCleared", "Hide cleared targets", 258, -114, nil, 205)
     AddCheckbox(radar, "vignetteRadarHideWhenEmpty", "Hide full radar when there are no detections", 18, -146)
     AddCheckbox(radar, "vignetteRadarLauncherVisible", "Show draggable 150-yard launcher", 18, -178)
     AddCheckbox(radar, "vignetteRadarWorldMap", "Include world-map detections", 18, -210)

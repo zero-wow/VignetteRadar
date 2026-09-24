@@ -59,6 +59,14 @@ assert(defaults.vignetteRadarTrailStyle == "dashes",
 assert(defaults.vignetteRadarTrailSpacing == 1 and defaults.vignetteRadarTrailSpeed == 1
     and defaults.vignetteRadarTrailLifetime == 180,
     "new installations should have readable animated marks and a three-minute fade")
+for key, values in pairs(fresh.VignetteRadarTrailSettingValues) do
+    for _, value in ipairs(values) do
+        defaults[key] = value
+        fresh.GetSettings()
+        assert(defaults[key] == value, "every trail control choice must persist: " .. key .. "=" .. value)
+    end
+end
+defaults.vignetteRadarTrailSpacing, defaults.vignetteRadarTrailSpeed = 1, 1
 defaults.vignetteRadarTrailStyle = "ticks"
 fresh.GetSettings()
 assert(defaults.vignetteRadarTrailStyle == "ticks", "the chosen trail style must persist")

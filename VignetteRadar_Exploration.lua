@@ -88,6 +88,29 @@ function API.ObjectiveProgress(questID)
     return total > 0 and (completed .. "/" .. total .. " objectives") or nil
 end
 
+function API.ObjectiveLines(questID)
+    local lines = {}
+    if not (C_QuestLog and type(C_QuestLog.GetQuestObjectives) == "function") then return lines end
+    local ok, objectives = pcall(C_QuestLog.GetQuestObjectives, questID)
+    if not ok or type(objectives) ~= "table" or (issecretvalue and issecretvalue(objectives)) then
+        return lines
+    end
+    for index = 1, math.min(#objectives, 30) do
+        local objective = objectives[index]
+        if type(objective) == "table" and not (issecretvalue and issecretvalue(objective)) then
+            local read, finished, label = pcall(function()
+                return objective.finished, objective.text
+            end)
+            if read and not (issecretvalue and (issecretvalue(finished) or issecretvalue(label)))
+                and finished ~= true and type(label) == "string" and label ~= "" then
+                lines[#lines + 1] = label
+                if #lines >= 5 then break end
+            end
+        end
+    end
+    return lines
+end
+
 function API.UpdateTrail(player, mapID, now)
     if trailMap ~= mapID then trail, trailMap, lastTrailAt = {}, mapID, 0 end
     if Settings().vignetteRadarBreadcrumbs ~= true or not player then return trail end

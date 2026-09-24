@@ -121,4 +121,27 @@ end }
 chosen = pois.ResolveSource(123, "auto")
 assert(chosen == "Midnight", "Auto should not change packs mid-zone as note counts update")
 assert(#pois.ZoneSources(999) == 0, "unrelated zones must show no data packs")
+local tooltipCalls = 0
+C_TooltipInfo = { GetHyperlink = function(link)
+    tooltipCalls = tooltipCalls + 1
+    assert(link == "unit:Creature-0-0-0-0-245699")
+    return { lines = { { leftText = "Ancient Watcher" } } }
+end }
+HandyNotes.plugins.TokenPack = { GetNodes2 = function()
+    local done = false
+    return function()
+        if done then return nil end
+        done = true
+        return 55005500, nil, nil, 1, 1
+    end, { [55005500] = { label = "{npc:245699}", npc = 245699,
+        group = "rares", quest = 12345, note = "Find {npc:245699} here." } }, nil
+end }
+local tokenNotes = pois.Collect(123, "TokenPack", function(_, vector)
+    return vector.x * 1000, vector.y * 1000, 42
+end, function(x, y) return { x=x, y=y } end)
+assert(#tokenNotes == 1 and tokenNotes[1].name == "Ancient Watcher"
+    and tokenNotes[1].note == "Find Ancient Watcher here."
+    and tokenNotes[1].npcID == 245699 and tokenNotes[1].questID == 12345
+    and tooltipCalls == 1,
+    "numeric NPC tokens must resolve to the real name and cache repeat lookups")
 io.write("vignette radar map-note tests passed\n")

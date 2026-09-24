@@ -38,9 +38,12 @@ for _, definition in ipairs(TRAIL_STYLES) do TRAIL_STYLE_KEYS[definition.id] = d
 addon.VignetteRadarTrailStyles = TRAIL_STYLES
 addon.VignetteRadarTrailStyleByID = TRAIL_STYLE_KEYS
 local TRAIL_SETTING_VALUES = {
-    vignetteRadarTrailSpacing = { .75, 1, 1.25, 1.5, 2 },
-    vignetteRadarTrailSpeed = { 0, .5, 1, 2 },
+    vignetteRadarTrailSpacing = { .5, .65, .75, 1, 1.25, 1.5, 2 },
+    vignetteRadarTrailSpeed = { 0, .25, .5, .75, 1, 1.25, 1.5, 2, 3, 4 },
+    vignetteRadarTrailSize = { .5, .75, 1, 1.25, 1.5, 2 },
+    vignetteRadarTrailTailFade = { 0, .25, .5, .75, 1 },
 }
+addon.VignetteRadarTrailSettingValues = TRAIL_SETTING_VALUES
 local function TrailSetting(db, key, default)
     for _, value in ipairs(TRAIL_SETTING_VALUES[key]) do
         if db[key] == value then return end
@@ -105,6 +108,8 @@ function addon.GetSettings()
     if type(db.vignetteRadarQuestAreas) ~= "boolean" then db.vignetteRadarQuestAreas = false end
     if type(db.vignetteRadarPOISource) ~= "string" then db.vignetteRadarPOISource = "auto" end
     if type(db.vignetteRadarPOIIcons) ~= "boolean" then db.vignetteRadarPOIIcons = false end
+    if type(db.vignetteRadarHideCleared) ~= "boolean" then db.vignetteRadarHideCleared = false end
+    if type(db.vignetteRadarRecentKills) ~= "table" then db.vignetteRadarRecentKills = {} end
     if type(db.vignetteRadarPOITypes) ~= "table" then db.vignetteRadarPOITypes = {} end
     for kind, enabled in pairs({ treasure = true, mob = true, item = true, note = true }) do
         if type(db.vignetteRadarPOITypes[kind]) ~= "boolean" then
@@ -154,6 +159,8 @@ function addon.GetSettings()
     if not TRAIL_STYLE_KEYS[db.vignetteRadarTrailStyle] then db.vignetteRadarTrailStyle = "dashes" end
     TrailSetting(db, "vignetteRadarTrailSpacing", 1)
     TrailSetting(db, "vignetteRadarTrailSpeed", 1)
+    TrailSetting(db, "vignetteRadarTrailSize", 1)
+    TrailSetting(db, "vignetteRadarTrailTailFade", .5)
     if type(db.vignetteRadarTrailLifetime) ~= "number"
         or db.vignetteRadarTrailLifetime ~= math.floor(db.vignetteRadarTrailLifetime)
         or db.vignetteRadarTrailLifetime < 1 or db.vignetteRadarTrailLifetime > 300 then

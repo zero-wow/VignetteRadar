@@ -161,6 +161,7 @@ end
 local SNAPSHOT_FIELDS = {
     "key", "vignetteID", "name", "category", "mapID", "mapX", "mapY",
     "worldX", "worldY", "instanceID", "atlasName", "vignetteType", "isWorldBoss", "source",
+    "objectGUID", "rewardQuestID",
 }
 
 local function Snapshot(target, mapID, now)
@@ -245,7 +246,8 @@ function API.Update(targets, mapID, now, context)
         for index = 1, math.min(#targets, 512) do
             local target = targets[index]
             local key = String(Field(target, "key"))
-            if #output < MAX_TARGETS and key and not seen[key] and not API.IsIgnored(target) then
+            if #output < MAX_TARGETS and key and not seen[key] and not API.IsIgnored(target)
+                and not (addon.VignetteRadarRecent and addon.VignetteRadarRecent.IsHidden(target, settings)) then
                 seen[key] = true
                 local previous = live[key]
                 local identity = Identity(target)
@@ -270,7 +272,8 @@ function API.Update(targets, mapID, now, context)
     for key, entry in pairs(live) do
         if not nextLive[key] and not seenIdentities[entry.identity]
             and not stale[key] and settings.vignetteRadarLastSeen == true
-            and not API.IsIgnored(entry.snapshot) then
+            and not API.IsIgnored(entry.snapshot)
+            and not (addon.VignetteRadarRecent and addon.VignetteRadarRecent.IsHidden(entry.snapshot, settings)) then
             local snapshot = entry.snapshot
             snapshot.stale = true
             snapshot.expiresAt = now + fadeSeconds
@@ -282,7 +285,8 @@ function API.Update(targets, mapID, now, context)
     live = nextLive
     if settings.vignetteRadarLastSeen == true then
         for key, snapshot in pairs(stale) do
-            if snapshot.expiresAt <= now or API.IsIgnored(snapshot) or seenIdentities[Identity(snapshot)] then
+            if snapshot.expiresAt <= now or API.IsIgnored(snapshot) or seenIdentities[Identity(snapshot)]
+                or (addon.VignetteRadarRecent and addon.VignetteRadarRecent.IsHidden(snapshot, settings)) then
                 stale[key] = nil
             end
         end
