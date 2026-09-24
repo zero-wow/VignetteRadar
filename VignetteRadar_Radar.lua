@@ -595,8 +595,9 @@ local function UpdateTargetButton()
         end
     end
     panel.target.dot:SetVertexColor(red, green, blue, 1)
-    panel.target.glow:SetVertexColor(red, green, blue, focusedKey and 0.20 or 0.05)
-    panel.target:SetAlpha(focusedKey and 1 or 0.68)
+    panel.target.glow:SetVertexColor(red, green, blue,
+        panel.target._hovered and .25 or focusedKey and .20 or .05)
+    panel.target:SetAlpha((focusedKey or panel.target._hovered) and 1 or .68)
 end
 
 local function Tooltip(owner)
@@ -1492,6 +1493,12 @@ ApplyAppearance = function()
         panel.settingsDot.dot:SetVertexColor(ar, ag, ab, 1)
         panel.settingsDot.rim:SetVertexColor(ar, ag, ab, .20)
         panel.settingsDot.inner:SetVertexColor(br, bg, bb, 1)
+        panel.legend.glow:SetVertexColor(ar, ag, ab,
+            panel.legend._hovered and .18 or panel.legend._open and .12 or 0)
+        panel.close.glow:SetVertexColor(ar, ag, ab, panel.close._hovered and .18 or 0)
+        for _, button in ipairs({ panel.zoomOut, panel.zoomIn, panel.compass }) do
+            if button and button.RefreshAppearance then button:RefreshAppearance() end
+        end
         if panel.legend and panel.legend.dots then
             for index, slot in ipairs({ "rare", "treasure", "event" }) do
                 panel.legend.dots[index]:SetVertexColor(style.Color(slot))
@@ -1574,8 +1581,8 @@ Render = function()
     panel.zoomOut:SetEnabled(range ~= ranges[#ranges])
     local northUp = Settings().vignetteRadarNorthUp == true
     if panel.compass._northUp ~= northUp then
-        panel.compass._northUp = northUp
-        if northUp then panel.compass:LockHighlight() else panel.compass:UnlockHighlight() end
+        panel.compass._northUp, panel.compass._selected = northUp, northUp
+        panel.compass:RefreshAppearance()
     end
     panel:SetAlpha(VisuallyQuiet() and 0.35 or 1)
     local sidebarTarget = focusedTarget
@@ -2236,8 +2243,6 @@ local function EnsurePanel()
     panel.target:SetPoint("TOPRIGHT", -57, -5)
     panel.target:SetAlpha(0.68)
     panel.target:RegisterForClicks("LeftButtonUp", "RightButtonUp")
-    panel.target:SetHighlightTexture("Interface\\Buttons\\WHITE8X8")
-    panel.target:GetHighlightTexture():SetVertexColor(1, 1, 1, 0.07)
     panel.target.glow = panel.target:CreateTexture(nil, "BACKGROUND")
     panel.target.glow:SetSize(18, 18)
     panel.target.glow:SetPoint("CENTER")
@@ -2271,6 +2276,8 @@ local function EnsurePanel()
         UpdateTargetButton()
     end)
     panel.target:SetScript("OnEnter", function(self)
+        self._hovered = true
+        UpdateTargetButton()
         if not GameTooltip then return end
         GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
         GameTooltip:SetText("Focus a specific vignette", 1, 1, 1)
@@ -2279,14 +2286,21 @@ local function EnsurePanel()
         GameTooltip:AddLine("Right-click to show all again.", 0.55, 0.86, 0.76, true)
         GameTooltip:Show()
     end)
-    panel.target:SetScript("OnLeave", function() if GameTooltip then GameTooltip:Hide() end end)
+    panel.target:SetScript("OnLeave", function(self)
+        self._hovered = false
+        UpdateTargetButton()
+        if GameTooltip then GameTooltip:Hide() end
+    end)
 
     panel.legend = CreateFrame("Button", nil, panel)
     panel.legend:SetSize(24, 24)
     panel.legend:SetPoint("TOPRIGHT", -31, -5)
     panel.legend:SetAlpha(0.68)
-    panel.legend:SetHighlightTexture("Interface\\Buttons\\WHITE8X8")
-    panel.legend:GetHighlightTexture():SetVertexColor(1, 1, 1, 0.07)
+    panel.legend.glow = panel.legend:CreateTexture(nil, "BACKGROUND")
+    panel.legend.glow:SetSize(18, 18)
+    panel.legend.glow:SetPoint("CENTER")
+    panel.legend.glow:SetTexture(CIRCLE_TEXTURE)
+    panel.legend.glow:SetVertexColor(ACCENT[1], ACCENT[2], ACCENT[3], 0)
     local legendColors = {
         { 0.78, 0.88, 1.00 },
         { 1.00, 0.68, 0.16 },
@@ -2312,9 +2326,16 @@ local function EnsurePanel()
         local picker = TargetPickerAPI()
         if picker and type(picker.Hide) == "function" then pcall(picker.Hide) end
         local ok, shown = pcall(legend.Toggle, panel)
-        if ok then self:SetAlpha(shown and 1 or 0.68) end
+        if ok then
+            self._open = shown
+            self:SetAlpha(shown and 1 or 0.68)
+            self.glow:SetVertexColor(ACCENT[1], ACCENT[2], ACCENT[3],
+                self._hovered and .18 or shown and .12 or 0)
+        end
     end)
     panel.legend:SetScript("OnEnter", function(self)
+        self._hovered = true
+        self.glow:SetVertexColor(ACCENT[1], ACCENT[2], ACCENT[3], .18)
         if not GameTooltip then return end
         GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
         GameTooltip:SetText("Radar legend and spotlight", 1, 1, 1)
@@ -2322,7 +2343,11 @@ local function EnsurePanel()
             0.65, 0.80, 0.77, true)
         GameTooltip:Show()
     end)
-    panel.legend:SetScript("OnLeave", function() if GameTooltip then GameTooltip:Hide() end end)
+    panel.legend:SetScript("OnLeave", function(self)
+        self._hovered = false
+        self.glow:SetVertexColor(ACCENT[1], ACCENT[2], ACCENT[3], self._open and .12 or 0)
+        if GameTooltip then GameTooltip:Hide() end
+    end)
 
     panel.close = CreateFrame("Button", nil, panel)
     panel.close:SetSize(24, 24)
@@ -2330,8 +2355,11 @@ local function EnsurePanel()
     panel.close.label = Text(panel.close, 16, "×")
     panel.close.label:SetAllPoints()
     panel.close.label:SetJustifyH("CENTER")
-    panel.close:SetHighlightTexture("Interface\\Buttons\\WHITE8X8")
-    panel.close:GetHighlightTexture():SetVertexColor(1, 1, 1, 0.07)
+    panel.close.glow = panel.close:CreateTexture(nil, "BACKGROUND")
+    panel.close.glow:SetSize(18, 18)
+    panel.close.glow:SetPoint("CENTER")
+    panel.close.glow:SetTexture(CIRCLE_TEXTURE)
+    panel.close.glow:SetVertexColor(ACCENT[1], ACCENT[2], ACCENT[3], 0)
     panel.close:SetScript("OnClick", function()
         if addon.VignetteRadarQuickConfig then addon.VignetteRadarQuickConfig.Hide() end
         manualPanelState = false
@@ -2344,6 +2372,8 @@ local function EnsurePanel()
         if UpdateLauncher then UpdateLauncher(0, true) end
     end)
     panel.close:SetScript("OnEnter", function(self)
+        self._hovered = true
+        self.glow:SetVertexColor(ACCENT[1], ACCENT[2], ACCENT[3], .18)
         if not GameTooltip then return end
         GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
         GameTooltip:SetText("Tuck away radar", 1, 1, 1)
@@ -2351,7 +2381,11 @@ local function EnsurePanel()
             0.72, 0.76, 0.78, true)
         GameTooltip:Show()
     end)
-    panel.close:SetScript("OnLeave", function() if GameTooltip then GameTooltip:Hide() end end)
+    panel.close:SetScript("OnLeave", function(self)
+        self._hovered = false
+        self.glow:SetVertexColor(ACCENT[1], ACCENT[2], ACCENT[3], 0)
+        if GameTooltip then GameTooltip:Hide() end
+    end)
 
     panel.field = CreateFrame("Frame", nil, panel)
     panel.field:SetSize(FIELD_SIZE, FIELD_SIZE)
@@ -2535,8 +2569,63 @@ local function EnsurePanel()
     panel.zoomLabel:SetPoint("BOTTOM", 0, 10)
     panel.zoomLabel:SetSize(110, 12)
     panel.zoomLabel:SetJustifyH("CENTER")
-    local function ZoomButton(label, right, step, title)
-        local button = addon.VignetteRadarControls.Button(panel, label, 22, 20)
+    local function ToolbarIcon(symbol, width)
+        local button = CreateFrame("Button", nil, panel)
+        button:SetSize(width, 20)
+        button.glow = button:CreateTexture(nil, "BACKGROUND")
+        button.glow:SetSize(18, 18)
+        button.glow:SetPoint("CENTER")
+        button.glow:SetTexture(CIRCLE_TEXTURE)
+        button.strokes = {}
+        if symbol == "N" then
+            button.label = Text(button, 13, "N")
+            button.label:SetAllPoints()
+            button.label:SetJustifyH("CENTER")
+            button:SetFontString(button.label)
+            button:SetText("N")
+        else
+            local horizontal = button:CreateLine(nil, "OVERLAY")
+            horizontal:SetThickness(2)
+            horizontal:SetStartPoint("CENTER", button, -5, 0)
+            horizontal:SetEndPoint("CENTER", button, 5, 0)
+            button.strokes[1] = horizontal
+            if symbol == "+" then
+                local vertical = button:CreateLine(nil, "OVERLAY")
+                vertical:SetThickness(2)
+                vertical:SetStartPoint("CENTER", button, 0, -5)
+                vertical:SetEndPoint("CENTER", button, 0, 5)
+                button.strokes[2] = vertical
+            end
+        end
+        button._enabled = true
+        function button:RefreshAppearance()
+            local enabled, hovered = self._enabled, self._hovered
+            local selected = self._selected == true
+            local r, g, b = .69, .77, .78
+            if selected or hovered then r, g, b = ACCENT[1], ACCENT[2], ACCENT[3] end
+            local opacity = not enabled and .32 or (hovered or selected) and 1 or .78
+            self.glow:SetVertexColor(ACCENT[1], ACCENT[2], ACCENT[3],
+                not enabled and 0 or hovered and .20 or selected and .12 or 0)
+            for _, stroke in ipairs(self.strokes) do stroke:SetColorTexture(r, g, b, opacity) end
+            if self.label then self.label:SetTextColor(r, g, b, opacity) end
+        end
+        local nativeSetEnabled = button.SetEnabled
+        button.SetEnabled = function(self, enabled)
+            enabled = enabled == true or enabled == 1
+            if self._enabled == enabled then return end
+            nativeSetEnabled(self, enabled)
+            self._enabled = enabled
+            if not enabled then self._hovered = false end
+            self:RefreshAppearance()
+        end
+        button:SetScript("OnEnter", function(self) self._hovered = true; self:RefreshAppearance() end)
+        button:SetScript("OnLeave", function(self) self._hovered = false; self:RefreshAppearance() end)
+        button:SetScript("OnHide", function(self) self._hovered = false; self:RefreshAppearance() end)
+        button:RefreshAppearance()
+        return button
+    end
+    local function ZoomButton(symbol, right, step, title)
+        local button = ToolbarIcon(symbol, 22)
         button:SetPoint(right and "BOTTOMRIGHT" or "BOTTOMLEFT", panel, right and "BOTTOMRIGHT" or "BOTTOMLEFT", right and -12 or 12, 6)
         button:SetScript("OnClick", function() StepRange(step) end)
         button:HookScript("OnEnter", function(self)
@@ -2551,7 +2640,7 @@ local function EnsurePanel()
     end
     panel.zoomOut = ZoomButton("-", false, 1, "Zoom out: show a wider area")
     panel.zoomIn = ZoomButton("+", true, -1, "Zoom in: show nearby detail")
-    panel.compass = addon.VignetteRadarControls.Button(panel, "N", 24, 20)
+    panel.compass = ToolbarIcon("N", 24)
     panel.compass:SetScript("OnClick", function()
         addon.SetVignetteRadarNorthUp(Settings().vignetteRadarNorthUp ~= true)
     end)

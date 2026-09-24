@@ -22,7 +22,7 @@ Click the small **N** compass button to switch orientation. A small chevron tuck
 
 The small eye icon in the footer controls automatic fading and hiding. When it is bright, the radar and launcher stay fully visible both in combat and inside instances, and an empty radar stays open through zone or phase changes. It overrides **Hide when empty**, including while map data is temporarily unavailable. Click it again to allow automatic fading and hiding. The setting is saved and also appears as **Stay fully visible** under Behavior. You can still close the radar yourself or disable tracking. Alert muting remains a separate choice.
 
-The full radar supports 150, 300, 450, 600, 1,200, 2,400, and 4,800-yard radii. Scroll down over it or click `-` to zoom out; scroll up or click `+` to zoom in. The range readout is the distance from you to the outer range ring. The launcher stays at 150 yards. Optional **Smart zoom** widens the view while moving quickly and chooses a close range around a focused target. Manual zoom takes control for 30 seconds.
+The full radar supports 150, 300, 450, 600, 1,200, 2,400, and 4,800-yard radii. Scroll down over it or click the borderless `−` icon to zoom out; scroll up or click `+` to zoom in. The `N` icon toggles north-up and glows when locked. Zoom, compass, focus, legend, and close controls use the same circular hover cue as the eye and settings dot. The range readout is the distance from you to the outer range ring. The launcher stays at 150 yards. Optional **Smart zoom** widens the view while moving quickly and chooses a close range around a focused target. Manual zoom takes control for 30 seconds.
 
 Open the **Explore** tab in either settings panel for smart zoom, marker spreading, the travel trail, approach alerts, journal recording, distance, and hunting presets. **Saved presets, pins & journal** opens the management panel for named presets, pins, routes, and history. `/vr explore` remains an optional shortcut to that panel. Its four pages keep optional hunting tools off the radar face:
 
@@ -69,6 +69,6 @@ Preview samples support focus without changing favorites, ignores, or navigation
 
 ## Development validation
 
-Current development build: `0.1.0-dev.27` (base version `0.1.0`).
+Current development build: `0.1.0-dev.28` (base version `0.1.0`).
 
 Run each `tests/*_test.lua` with Lua from the addon root and check Lua files with `luac -p`. The tests cover migration, radar projection, filters, target actions, alert/last-seen state, navigation fallbacks, quiet modes, mouse-wheel/button zoom, world-map visibility guards, and UI layout bounds using mocked game APIs. Layout checks exercise repeated style changes, automatic Squat details, focused and unfocused states, edge and corner resizing, pop-outs, resized rings and markers, and an 800×600 canvas. Orientation checks cover quarter turns, fixed markers/cardinals, the player direction line, both radars, preview, unknown facing, and out-of-range focus. These checks do not replace in-game validation of rendering, navigation, or API availability.

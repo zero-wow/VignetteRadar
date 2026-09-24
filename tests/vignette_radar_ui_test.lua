@@ -544,6 +544,23 @@ assert(not addon.SetVignetteRadarRange(999999) and settings.vignetteRadarRange =
     "unsupported zoom ranges must not corrupt saved settings")
 for _ = 1, 10 do panel.zoomIn.scripts.OnClick(panel.zoomIn) end
 assert(settings.vignetteRadarRange == 150, "zoom-in must clamp at the minimum")
+assert(panel.zoomOut.backdrop == nil and panel.zoomIn.backdrop == nil
+    and #panel.zoomOut.strokes == 1 and #panel.zoomIn.strokes == 2
+    and panel.zoomOut.glow and panel.zoomIn.glow,
+    "zoom controls must use borderless minus and plus icons with the radar's circular glow")
+assert(not panel.zoomIn._enabled and panel.zoomIn.strokes[1].color[4] < .4,
+    "the zoom-in icon must visibly dim at the closest range")
+panel.zoomOut.scripts.OnEnter(panel.zoomOut)
+assert(panel.zoomOut.glow.vertexColor[4] >= .2 and panel.zoomOut.strokes[1].color[4] == 1,
+    "hovering zoom-out must brighten its icon without adding a square")
+panel.zoomOut.scripts.OnLeave(panel.zoomOut)
+assert(panel.target.highlight == nil and panel.legend.highlight == nil
+    and panel.close.highlight == nil and panel.legend.glow and panel.close.glow,
+    "the other radar toolbar icons must also avoid square hover highlights")
+panel.close.scripts.OnEnter(panel.close)
+assert(panel.close.glow.vertexColor[4] >= .18,
+    "the close icon must use the same circular hover cue")
+panel.close.scripts.OnLeave(panel.close)
 
 -- Resolve frame anchors, rather than assuming each layout uses the same origin.
 local anchors = {
@@ -805,7 +822,8 @@ for _, name in ipairs({ "classic", "squat", "compact" }) do
         and panel.headingChevron[1].thickness >= 2
         and panel.headingChevron[1].color[4] < 0.8,
         "the player heading must show a compact, translucent chevron and line in every panel layout")
-    assert(panel.compass.text == "N" and not panel.compass._selected,
+    assert(panel.compass.text == "N" and not panel.compass._selected
+        and panel.compass.backdrop == nil and panel.compass.glow,
         "the compass must clearly show whether north is locked")
     playerFacing = 0
     addon.VignetteRadarAPI.RefreshPresentation()
@@ -824,6 +842,7 @@ for _, name in ipairs({ "classic", "squat", "compact" }) do
     local before = scanCount
     panel.compass.scripts.OnClick(panel.compass)
     assert(settings.vignetteRadarNorthUp and panel.compass._selected and northOption.checked
+        and panel.compass.glow.vertexColor[4] >= .12
         and scanCount == before, "compass click must save north-up and sync options without rescanning")
     local miniX, miniY = launcher.miniBlips[1].point[4], launcher.miniBlips[1].point[5]
     for _, angle in ipairs({ 0, math.pi / 2, math.pi, 3 * math.pi / 2 }) do
@@ -1343,6 +1362,14 @@ assert(math.abs(panel.player.vertexColor[1] - .2) < .001 and quick.customLabel.t
 quickControl("Themes", "vignetteRadarTheme", "frost").scripts.OnClick()
 assert(settings.vignetteRadarTheme == "frost" and not addon.VignetteRadarStyle.IsCustomized(),
     "choosing a preset must replace the prior custom palette")
+panel.zoomOut.scripts.OnEnter(panel.zoomOut)
+local themedRed, themedGreen, themedBlue = addon.VignetteRadarStyle.Color("accent")
+assert(panel.zoomOut.strokes[1].color[1] == themedRed
+    and panel.zoomOut.strokes[1].color[2] == themedGreen
+    and panel.zoomOut.strokes[1].color[3] == themedBlue
+    and panel.compass.glow.vertexColor[1] == themedRed,
+    "borderless footer icons must follow the selected color theme")
+panel.zoomOut.scripts.OnLeave(panel.zoomOut)
 local iconToggle = quickControl("Themes", "vignetteRadarShapes")
 iconToggle:SetChecked(false)
 iconToggle.scripts.OnClick(iconToggle)
