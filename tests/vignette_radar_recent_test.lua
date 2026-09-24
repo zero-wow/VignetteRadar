@@ -18,16 +18,12 @@ completed[900], completed[901] = false, false
 recent.InvalidateQuests()
 assert(not recent.IsHidden(rare) and not recent.IsHidden(treasure),
     "repeatable quest flags must let markers return after a reset")
-CombatLogGetCurrentEventInfo = function()
-    return 0, "PARTY_KILL", false, "Player-1", "Me", 0, 0,
-        "Creature-0-1-2-3-123-000001"
-end
-assert(recent.RecordCombatLog() and recent.IsHidden(rare),
-    "a witnessed party kill must hide the matching live rare and map-pack NPC")
+assert(recent.RecordNPCGuid("Creature-0-1-2-3-123-000001") and recent.IsHidden(rare),
+    "a dead vignette must hide the matching live rare and map-pack NPC")
 epoch = epoch + 3599
-assert(recent.IsHidden(rare), "recent kills must survive until the chosen fallback hour ends")
+assert(recent.IsHidden(rare), "observed dead vignettes must remain hidden for an hour")
 epoch = epoch + 1
-assert(not recent.IsHidden(rare), "unflagged kills must expire instead of hiding forever")
+assert(not recent.IsHidden(rare), "unflagged dead vignettes must expire instead of hiding forever")
 assert(recent.RecordNPCGuid("GameObject-0-1-2-3-456-000001") and recent.IsHidden(treasure),
     "a cleared treasure object must match a pack's object ID")
 epoch = epoch + 3600

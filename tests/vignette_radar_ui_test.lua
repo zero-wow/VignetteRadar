@@ -47,6 +47,8 @@ function methods:SetEnabled(value) self.enabled = value end
 function methods:RegisterForClicks(...) self.clickButtons = { ... } end
 function methods:RegisterForDrag(...) self.dragButtons = { ... } end
 function methods:RegisterEvent(event)
+    assert(event ~= "COMBAT_LOG_EVENT_UNFILTERED",
+        "Midnight forbids addons from registering combat-log events")
     self.events = self.events or {}
     self.events[event] = true
     self.eventRegistrationCalls = (self.eventRegistrationCalls or 0) + 1
@@ -1970,34 +1972,20 @@ local radarEvents
 for _, object in ipairs(objects) do
     if object.events and object.events.VIGNETTES_UPDATED then radarEvents = object end
 end
-assert(radarEvents and radarEvents.events.COMBAT_LOG_EVENT_UNFILTERED,
-    "combat-log event must be registered during addon load")
+assert(radarEvents and not radarEvents.events.COMBAT_LOG_EVENT_UNFILTERED,
+    "radar must not register the forbidden combat-log event")
 local eventRegistrationCalls = radarEvents.eventRegistrationCalls
-local combatLogReads = 0
-local previousCombatLogInfo = CombatLogGetCurrentEventInfo
-CombatLogGetCurrentEventInfo = function()
-    combatLogReads = combatLogReads + 1
-    return 0, "SWING_DAMAGE"
-end
-radarEvents.scripts.OnEvent(radarEvents, "COMBAT_LOG_EVENT_UNFILTERED")
-assert(combatLogReads == 0,
-    "disabled cleared-target filtering must skip combat-log processing")
 clearedToggle:SetChecked(true)
 clearedToggle.scripts.OnClick(clearedToggle)
-assert(settings.vignetteRadarHideCleared and radarEvents.events.COMBAT_LOG_EVENT_UNFILTERED,
-    "enabling cleared-target filtering must keep kill observation available")
-radarEvents.scripts.OnEvent(radarEvents, "COMBAT_LOG_EVENT_UNFILTERED")
-assert(combatLogReads == 1,
-    "enabled cleared-target filtering must process combat-log events")
+assert(settings.vignetteRadarHideCleared,
+    "enabling cleared-target filtering must save the setting")
 clearedToggle:SetChecked(false)
 clearedToggle.scripts.OnClick(clearedToggle)
-radarEvents.scripts.OnEvent(radarEvents, "COMBAT_LOG_EVENT_UNFILTERED")
-assert(not settings.vignetteRadarHideCleared and combatLogReads == 1,
-    "disabling cleared-target filtering must skip combat-log processing")
+assert(not settings.vignetteRadarHideCleared,
+    "disabling cleared-target filtering must save the setting")
 assert(radarEvents.eventRegistrationCalls == eventRegistrationCalls
     and not radarEvents.eventUnregistrationCalls,
-    "filter toggles must not change event registration during combat")
-CombatLogGetCurrentEventInfo = previousCombatLogInfo
+    "filter toggles must not change event registration")
 packIconToggle:SetChecked(true)
 packIconToggle.scripts.OnClick(packIconToggle)
 local mapNote = panel.mapNotes[1]

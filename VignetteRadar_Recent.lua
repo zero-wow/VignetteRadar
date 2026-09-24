@@ -70,18 +70,6 @@ function API.RecordNPCGuid(guid)
     return true
 end
 
-function API.RecordCombatLog(relevant)
-    if type(CombatLogGetCurrentEventInfo) ~= "function" then return false end
-    local ok, _, eventType, _, _, _, _, _, destGUID = pcall(CombatLogGetCurrentEventInfo)
-    if not ok or not Safe(eventType) or eventType ~= "PARTY_KILL" then return false end
-    if not addon.GetSettings().vignetteRadarHideCleared then return false end
-    local identity = GUIDIdentity(destGUID)
-    if not identity or (type(relevant) == "function" and not relevant(identity, destGUID)) then
-        return false
-    end
-    return API.RecordNPCGuid(destGUID)
-end
-
 function API.HideNote(note)
     local key, now = Field(note, "key"), Epoch()
     if not (type(key) == "string" and now) then return false end

@@ -45,7 +45,6 @@ local atan2 = math.atan2 or function(y, x) return math.atan(y, x) end
 local Unpack = unpack or table.unpack
 
 local panel, launcher
-local observeKills = false
 local trailPopup, HideTrailPopup, ToggleTrailPopup, RefreshTrailPopup
 local preview = false
 local manualPanelState
@@ -3596,7 +3595,6 @@ end
 
 RefreshRadar = function(rescan)
     local settings = Settings()
-    observeKills = settings.vignetteRadarHideCleared == true
     local exploration = addon.VignetteRadarExploration
     local mapID = CurrentMapID()
     local trail, trailMap
@@ -3888,39 +3886,16 @@ SlashCmdList.VIGNETTERADAR = function(message)
     RefreshRadar(true)
 end
 
-local function RelevantKill(identity, guid)
-    for _, target in ipairs(activeTargets) do
-        if (target.category == "rare" or target.category == "treasure")
-            and target.objectGUID == guid then return true end
-    end
-    for _, note in ipairs(activeMapNotes) do
-        if note.kind == "mob" or note.kind == "treasure" then
-            if note.npcID and identity == "npc:" .. note.npcID then return true end
-            if note.objectID and identity == "object:" .. note.objectID then return true end
-        end
-    end
-    return false
-end
-
 local events = CreateFrame("Frame")
 for _, event in ipairs({
     "PLAYER_LOGIN", "PLAYER_ENTERING_WORLD", "ZONE_CHANGED_NEW_AREA",
     "VIGNETTES_UPDATED", "VIGNETTE_MINIMAP_UPDATED",
     "QUEST_LOG_UPDATE", "QUEST_POI_UPDATE", "QUEST_WATCH_LIST_CHANGED", "SUPER_TRACKING_CHANGED",
     "PLAYER_REGEN_DISABLED", "PLAYER_REGEN_ENABLED", "ZONE_CHANGED", "ZONE_CHANGED_INDOORS",
-    "COMBAT_LOG_EVENT_UNFILTERED",
 }) do
     events:RegisterEvent(event)
 end
 events:SetScript("OnEvent", function(_, event)
-    if event == "COMBAT_LOG_EVENT_UNFILTERED" then
-        if not observeKills then return end
-        local recent = addon.VignetteRadarRecent
-        if recent and recent.RecordCombatLog(RelevantKill) then
-            RefreshRadar(true)
-        end
-        return
-    end
     if event == "QUEST_LOG_UPDATE" and addon.VignetteRadarRecent then
         addon.VignetteRadarRecent.InvalidateQuests()
     end
