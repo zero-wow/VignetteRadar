@@ -1332,4 +1332,54 @@ assert(quick:IsShown() and quick.point[1] == "TOPLEFT" and quick.point[2] == pan
 panel.settingsDot.scripts.OnClick(panel.settingsDot)
 UIParent:SetSize(1600, 900)
 
+-- A map transition can briefly yield no map, position, vignettes, or quests.
+-- The stay-visible choice keeps the instrument present without stale markers.
+local savedQuestLog = C_QuestLog
+C_QuestLog = { GetQuestsOnMap = function() return {} end }
+settings.vignetteRadarHideWhenEmpty = true
+settings.vignetteRadarKeepVisibleCombat = true
+guids, mapID, now = {}, nil, 1000
+addon.SetVignetteRadarEnabled(true) -- Reset the temporary manual open/closed choice.
+for _, circleOnly in ipairs({ false, true }) do
+    addon.SetVignetteRadarCircleOnly(circleOnly)
+    addon.VignetteRadarAPI.Refresh(true)
+    assert(panel:IsShown() and panel.summary.text == "POSITION UNAVAILABLE"
+        and next(panel.blipByKey) == nil,
+        "stay visible must keep an empty radar open through a missing map without old markers")
+    mapID = 901
+    addon.VignetteRadarAPI.Refresh(true)
+    assert(panel:IsShown() and #addon.VignetteRadarAPI.GetTargets() == 0
+        and next(panel.blipByKey) == nil,
+        "stay visible must survive a new map whose vignette and quest scans are empty")
+    mapID = nil
+end
+
+-- Explicit close and disable still take priority over automatic visibility.
+panel.close.scripts.OnClick(panel.close)
+addon.VignetteRadarAPI.Refresh(true)
+assert(not panel:IsShown() and settings.vignetteRadarEnabled,
+    "closing the panel must win over stay visible during later scans")
+launcher.scripts.OnClick(launcher, "LeftButton")
+assert(panel:IsShown(), "the launcher must reopen a manually closed radar")
+addon.SetVignetteRadarEnabled(false)
+addon.VignetteRadarAPI.Refresh(true)
+assert(not panel:IsShown(), "disabled tracking must keep the panel closed even with stay visible enabled")
+
+-- With the setting off, the original hide-when-empty behavior still applies.
+settings.vignetteRadarKeepVisibleCombat = false
+addon.SetVignetteRadarEnabled(true)
+assert(not panel:IsShown(), "hide when empty must still work when stay visible is off")
+settings.vignetteRadarKeepVisibleCombat = true
+addon.VignetteRadarAPI.Refresh(true)
+assert(panel:IsShown(), "turning stay visible back on must reopen the automatically hidden radar")
+
+local savedTreasurePosition = livePositions.treasure
+livePositions.treasure = { x = 0.51, y = 0.5 }
+mapID, guids = 902, { "treasure" }
+addon.VignetteRadarAPI.Refresh(true)
+assert(panel:IsShown() and panel.blipByKey.treasure and panel.blipByKey.treasure.target.stale ~= true,
+    "live detections returning after a map transition must render normally")
+livePositions.treasure = savedTreasurePosition
+C_QuestLog = savedQuestLog
+
 io.write("vignette radar UI tests passed\n")

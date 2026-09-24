@@ -2310,8 +2310,9 @@ local function EnsurePanel()
         local enabled = Settings().vignetteRadarKeepVisibleCombat == true
         GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
         GameTooltip:SetText(enabled and "Stay fully visible: ON" or "Stay fully visible: OFF", 1, 1, 1)
-        GameTooltip:AddLine(enabled and "Click to allow automatic fading again."
-            or "Click to prevent fading in combat and instances.", .7, .8, .8, true)
+        GameTooltip:AddLine(enabled and "Click to allow automatic fading and hiding again."
+            or "Click to prevent automatic fading and hiding.", .7, .8, .8, true)
+        GameTooltip:AddLine("Keeps the radar open when zone data is empty or unavailable.", .7, .8, .8, true)
         GameTooltip:AddLine("Alert muting stays separate.", .55, .7, .68, true)
         GameTooltip:Show()
     end)
@@ -2413,7 +2414,8 @@ RefreshRadar = function(rescan)
     end
     if manualPanelState == false then
         if panel then panel:Hide() end
-    elseif manualPanelState == true or preview or settings.vignetteRadarHideWhenEmpty == false
+    elseif manualPanelState == true or preview or settings.vignetteRadarKeepVisibleCombat == true
+        or settings.vignetteRadarHideWhenEmpty == false
         or #SelectableTargets() > 0 or (#activeQuests > 0 and (settings.vignetteRadarQuestDots
             or (settings.vignetteRadarQuestAreas and settings.vignetteRadarNorthUp))) then
         EnsurePanel():Show()

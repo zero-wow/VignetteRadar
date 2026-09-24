@@ -207,7 +207,7 @@ local function BuildPanel()
     AddButton(radar, "Reset positions", 169, -283, 133, function()
         addon.ResetVignetteRadarPositions()
     end)
-    AddFooter(radar, "/vr toggles the full panel. Right-click the launcher for a layout preview.")
+    AddFooter(radar, "Stay fully visible (Behavior) overrides auto-hide.")
 
     local layout = AddPage("Layout", 2)
     AddLabel(layout, "Choose the panel arrangement that fits your screen.", 24, -118)
