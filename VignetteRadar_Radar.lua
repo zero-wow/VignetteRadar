@@ -822,7 +822,14 @@ local function UpdateQuestAreaTooltip()
     if fieldLeft and fieldTop and blobLeft and blobTop and width and height and width > 0 and height > 0 then
         local fromCenterX = cursorX - fieldLeft - field:GetWidth() / 2
         local fromCenterY = cursorY - fieldTop + field:GetHeight() / 2
-        if fromCenterX * fromCenterX + fromCenterY * fromCenterY <= panel.fieldRadius * panel.fieldRadius then
+        local inside
+        if panel.squarePlot then
+            inside = math.abs(fromCenterX) <= panel.fieldRadius - 1
+                and math.abs(fromCenterY) <= panel.fieldRadius - 1
+        else
+            inside = fromCenterX * fromCenterX + fromCenterY * fromCenterY <= panel.fieldRadius * panel.fieldRadius
+        end
+        if inside then
             local x, y = (cursorX - blobLeft) / width, (blobTop - cursorY) / height
             if x >= 0 and x <= 1 and y >= 0 and y <= 1 then
                 questID = SafeNumber(Call(blob.UpdateMouseOverTooltip, blob, x, y))
@@ -929,12 +936,13 @@ local CARDINALS = {
 }
 
 local function RenderCardinals(facing)
+    local radius = panel.fieldRadius - (panel.squarePlot and 8 or 5)
     for index, definition in ipairs(CARDINALS) do
         local relative = NormalizeAngle(definition.angle - facing)
         local label = panel.cardinals[index]
         label:ClearAllPoints()
         label:SetPoint("CENTER", panel.field, "CENTER",
-            -math.sin(relative) * (panel.fieldRadius - 5), math.cos(relative) * (panel.fieldRadius - 5))
+            -math.sin(relative) * radius, math.cos(relative) * radius)
     end
 end
 
@@ -970,21 +978,49 @@ end
 
 local function ApplyPanelLayout(focused)
     local name = Settings().vignetteRadarLayout or "classic"
+    local square = Settings().vignetteRadarQuestAreas == true
     if not LAYOUTS[name] then name = "classic" end
-    if panel.layout == name and panel.layoutFocused == focused then return end
+    if panel.layout == name and panel.layoutFocused == focused and panel.squarePlot == square then return end
     local changed = panel.layout ~= name
     local layout = LAYOUTS[name]
     local left, top = SafeNumber(panel:GetLeft()), SafeNumber(panel:GetTop())
-    panel.layout, panel.layoutFocused = name, focused
+    panel.layout, panel.layoutFocused, panel.squarePlot = name, focused, square
     panel.fieldRadius = layout.field / 2 - 9
     panel.plotRadius = panel.fieldRadius - 15
     panel:SetSize(layout.width, layout.height + (focused and layout.focus or 0))
     if left and top then PlacePanel(left, top, Settings().vignetteRadarScale or 1) end
     panel.field:SetSize(layout.field, layout.field)
+    -- QuestPOIFrame supports rectangular child clipping. Match the visible surface
+    -- to that clip instead of letting native quest shading escape a circular face.
+    local radius = panel.fieldRadius
+    panel.field.background:ClearAllPoints()
+    if square then
+        panel.field.background:SetTexture("Interface\\Buttons\\WHITE8X8")
+        panel.field.background:SetPoint("CENTER", panel.field, "CENTER")
+        panel.field.background:SetSize(radius * 2, radius * 2)
+    else
+        panel.field.background:SetTexture(CIRCLE_TEXTURE)
+        panel.field.background:SetAllPoints(panel.field)
+    end
+    panel.questClip:ClearAllPoints()
+    panel.questClip:SetPoint("CENTER", panel.field, "CENTER")
+    panel.questClip:SetSize((radius - 1) * 2, (radius - 1) * 2)
+    local corners = { { -radius, radius }, { radius, radius },
+        { radius, -radius }, { -radius, -radius } }
+    for index, line in ipairs(panel.squareBorder) do
+        local first, last = corners[index], corners[index % 4 + 1]
+        line:SetStartPoint("CENTER", panel.field, first[1], first[2])
+        line:SetEndPoint("CENTER", panel.field, last[1], last[2])
+        line:SetShown(square)
+    end
+    panel.field.halo:SetShown(not square)
+    for _, line in ipairs(panel.outerRing) do line:SetShown(not square) end
     if panel.frameToggle then
         panel.frameToggle:ClearAllPoints()
         panel.frameToggle:SetPoint("CENTER", panel.field, "CENTER",
-            panel.fieldRadius + 5, 0)
+            radius + (square and 8 or 5), 0)
+        panel.frameToggle:SetWidth(square and 10 or 16)
+        panel.frameToggle.glow:SetSize(square and 10 or 16, square and 10 or 16)
     end
     panel.field.halo:SetSize(layout.field + 4, layout.field + 4)
     ResizeRing(panel.outerRing, panel.field, panel.fieldRadius)
@@ -1003,7 +1039,7 @@ local function ApplyPanelLayout(focused)
     panel.sideCaption:SetShown(name == "squat")
     panel.sideGuide:SetShown(name == "squat")
     if name == "squat" then
-        -- A circular plotting area beside the readout keeps this view short even while focused.
+        -- The plotting area beside the readout keeps this view short even while focused.
         Place(panel.field, "BOTTOMLEFT", 10, 38)
         Place(panel.title, "TOPLEFT", 214, -16, 122, 13)
         Place(panel.summary, "TOPLEFT", 214, -35, 148, 10)
@@ -1215,7 +1251,7 @@ ApplyAppearance = function()
         panel.title:SetTextColor(ar, ag, ab, 1)
         panel.field.background:SetVertexColor(br, bg, bb, .94)
         panel.field.halo:SetVertexColor(rr, rg, rb, .18 * db.vignetteRadarRingOpacity)
-        for _, group in ipairs({ { panel.outerRing, .02 }, { panel.rangeRing, .045 },
+        for _, group in ipairs({ { panel.squareBorder, .12 }, { panel.outerRing, .02 }, { panel.rangeRing, .045 },
             { panel.middleRing, .04 }, { panel.innerRing, .03 } }) do
             for _, line in ipairs(group[1]) do
                 line:SetColorTexture(rr, rg, rb, group[2] * db.vignetteRadarRingOpacity)
@@ -2077,7 +2113,7 @@ local function EnsurePanel()
         if not GameTooltip then return end
         local circleOnly = Settings().vignetteRadarCircleOnly == true
         GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
-        GameTooltip:SetText(circleOnly and "Show full radar frame" or "Show only radar circle", 1, 1, 1)
+        GameTooltip:SetText(circleOnly and "Show full radar frame" or "Show only the radar", 1, 1, 1)
         GameTooltip:AddLine("Click to switch views. Your choice is saved.", .7, .8, .8, true)
         GameTooltip:Show()
     end)
@@ -2118,6 +2154,14 @@ local function EnsurePanel()
     panel.field.halo:SetTexture(CIRCLE_TEXTURE)
     panel.field.halo:SetVertexColor(ACCENT[1], ACCENT[2], ACCENT[3], 0.18)
     panel.outerRing = AddRing(panel.field, FIELD_RADIUS, 0.02)
+    panel.squareBorder = {}
+    for index = 1, 4 do
+        local line = panel.field:CreateLine(nil, "BORDER")
+        line:SetThickness(1)
+        line:SetColorTexture(ACCENT[1], ACCENT[2], ACCENT[3], .06)
+        line:Hide()
+        panel.squareBorder[index] = line
+    end
     panel.rangeRing = AddRing(panel.field, PLOT_RADIUS, 0.045)
     panel.middleRing = AddRing(panel.field, PLOT_RADIUS * (2 / 3), 0.04)
     panel.innerRing = AddRing(panel.field, PLOT_RADIUS / 3, 0.03)

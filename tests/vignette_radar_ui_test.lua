@@ -954,6 +954,8 @@ local questDot = assert(panel.questDots[1], "quest locations must create a disti
 assert(questDot:IsShown() and questDot.quest.questID == 12345 and questDot.point[4] > 0
     and panel.summary.text == "1 QUEST IN RANGE", "quest dots should show live positions and a readable count")
 assert(panel.questBlob and not panel.questBlob:IsShown(), "exact blobs must wait for north-up mode")
+assert(panel.squarePlot and panel.field.background.texture == "Interface\\Buttons\\WHITE8X8",
+    "enabling quest areas must select a stable square surface even before blobs are available")
 GetPlayerFacing = function() return math.pi / 2 end
 addon.VignetteRadarAPI.Refresh(false)
 assert(questDot.point[5] < 0, "quest dots should turn with the facing-up radar")
@@ -964,6 +966,49 @@ assert(panel.questClip.clipsChildren and panel.questBlob:IsShown() and panel.que
     and panel.questBlob.drawnQuests[1] == 12345 and panel.questBlob.fillAlpha < 128
     and panel.questBlob.level < questDot.level,
     "native quest shapes must be translucent, clipped, and behind markers")
+local originalBlob = panel.questBlob
+for _, name in ipairs({ "classic", "compact", "squat" }) do
+    addon.SetVignetteRadarLayout(name)
+    checkLayout(false)
+    local face, clip, toggle = bounds(panel.field.background), bounds(panel.questClip), bounds(panel.frameToggle)
+    assert(panel.questBlob == originalBlob and panel.questBlob:IsShown()
+        and panel.questBlob.parent == panel.questClip and panel.questClip.clipsChildren,
+        "every square layout must preserve the single working native blob renderer")
+    assert(face[3] - face[1] == panel.fieldRadius * 2 and face[4] - face[2] == panel.fieldRadius * 2
+        and clip[1] == face[1] + 1 and clip[2] == face[2] + 1
+        and clip[3] == face[3] - 1 and clip[4] == face[4] - 1,
+        "native shading must clip inside the visible square with a one-pixel border inset")
+    assert(toggle[1] >= face[3] + 3 and not panel.field.halo:IsShown() and not panel.outerRing[1]:IsShown(),
+        "square mode must leave a clear restore-control gutter and remove the old circular outer rim")
+    for _, line in ipairs(panel.squareBorder) do
+        assert(line:IsShown() and math.abs(line.startPoint[3]) == panel.fieldRadius
+            and math.abs(line.startPoint[4]) == panel.fieldRadius,
+            "the square border must follow the face in each layout")
+    end
+    panel:SetScale(.8)
+    checkLayout(false)
+    panel:SetScale(1)
+end
+local blobCount = 0
+for _, object in ipairs(objects) do
+    if object.kind == "QuestPOIFrame" then blobCount = blobCount + 1 end
+end
+assert(blobCount == 1, "layout changes must never duplicate the native blob renderer")
+SlashCmdList.VIGNETTERADAR("preview")
+addon.HandleVignetteClick(panel.blipByKey["preview-rare"].target, "LeftButton")
+for _, name in ipairs({ "classic", "compact", "squat" }) do
+    addon.SetVignetteRadarLayout(name)
+    panel:SetScale(.8)
+    checkLayout(true)
+    inside(panel.field.background, panel, 4)
+    inside(panel.questClip, panel.field.background, 1)
+    separate(panel.frameToggle, panel.field.background, 3, "square surface/restore control")
+    assert(panel.squarePlot and not panel.questBlob:IsShown(),
+        "focused previews must keep square geometry without inventing quest blobs")
+end
+panel:SetScale(1)
+addon.HandleVignetteClick(panel.blipByKey["preview-rare"].target, "LeftButton")
+SlashCmdList.VIGNETTERADAR("on")
 local originalCursor = GetCursorPosition
 panel.field.left, panel.field.top = 0, panel.field:GetHeight()
 panel.questBlob.left, panel.questBlob.top = 0, panel.field:GetHeight()
@@ -977,12 +1022,34 @@ assert(GameTooltip:IsShown() and GameTooltip:GetOwner() == panel.questBlob
 GetCursorPosition = function() return panel.field:GetWidth() * .8, panel.field:GetHeight() / 2 end
 panel.scripts.OnUpdate(panel, .11)
 assert(not GameTooltip:IsShown(), "hovering outside the exact quest shape must clear its tooltip")
+panel.questBlob.UpdateMouseOverTooltip = function() return 12345 end
+for _, sign in ipairs({ -1, 1 }) do
+    for _, otherSign in ipairs({ -1, 1 }) do
+        -- This point is in the square's corner, beyond the old circular hit area.
+        panel.questBlob:SetSize(panel.field:GetWidth(), panel.field:GetHeight())
+        GetCursorPosition = function()
+            return panel.field:GetWidth() / 2 + sign * (panel.fieldRadius - 3),
+                panel.field:GetHeight() / 2 + otherSign * (panel.fieldRadius - 3)
+        end
+        panel.scripts.OnUpdate(panel, .11)
+        assert(GameTooltip:IsShown() and GameTooltip:GetOwner() == panel.questBlob,
+            "quest tooltips must work in all four visible square corners")
+    end
+end
+GetCursorPosition = function()
+    return panel.field:GetWidth() / 2 + panel.fieldRadius, panel.field:GetHeight() / 2
+end
+panel.scripts.OnUpdate(panel, .11)
+assert(not GameTooltip:IsShown(), "quest tooltip hit testing must stop at the same square edge as shading")
+panel.questBlob.UpdateMouseOverTooltip = nil
 GetCursorPosition = originalCursor
 panel.field.left, panel.field.top = nil, nil
 panel.questBlob.left, panel.questBlob.top = nil, nil
 panel.frameToggle.scripts.OnClick(panel.frameToggle)
-assert(settings.vignetteRadarCircleOnly and panel.questBlob:IsShown() and questDot:IsShown(),
-    "circle-only view must keep both quest dots and available area shading")
+assert(settings.vignetteRadarCircleOnly and panel.questBlob:IsShown() and questDot:IsShown()
+    and panel.squarePlot and panel.squareBorder[1]:IsShown() and panel.frameToggle:IsShown()
+    and panel.backdropColor[4] == 0,
+    "radar-only view must keep square shading and its restore control while hiding the outer frame")
 panel.frameToggle.scripts.OnClick(panel.frameToggle)
 assert(not settings.vignetteRadarCircleOnly and panel.questBlob:IsShown(),
     "restoring the frame must restore available quest-area shading")
@@ -991,6 +1058,10 @@ settings.vignetteRadarQuestDots = false
 addon.VignetteRadarAPI.Refresh(true)
 assert(not questDot:IsShown() and not panel.questBlob:IsShown(),
     "each quest overlay must disappear as soon as its option is disabled")
+assert(not panel.squarePlot and panel.field.background.texture == "Interface\\CharacterFrame\\TempPortraitAlphaMask"
+    and panel.field.halo:IsShown() and panel.outerRing[1]:IsShown() and not panel.squareBorder[1]:IsShown()
+    and panel.frameToggle.width == 16 and panel.questBlob == originalBlob,
+    "disabling quest areas must restore the original circular face without replacing the blob renderer")
 settings.vignetteRadarQuestAreas = true
 mapID = 782
 C_Map.GetWorldPosFromMapPos = originalWorldPosition
@@ -998,6 +1069,7 @@ addon.VignetteRadarAPI.Refresh(true)
 assert(not panel.questBlob:IsShown(),
     "unrotatable native blobs must not appear on maps whose axes disagree with the radar")
 settings.vignetteRadarQuestAreas = false
+addon.VignetteRadarAPI.Refresh(false)
 local savedFieldPoint = panel.field.point
 panel.frameToggle.scripts.OnClick(panel.frameToggle)
 assert(settings.vignetteRadarCircleOnly == true and panel.backdropColor[4] == 0
