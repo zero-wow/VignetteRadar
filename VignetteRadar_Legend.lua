@@ -2,6 +2,9 @@ local _, addon = ...
 if type(addon) ~= "table" then return end
 
 local PANEL_W, PANEL_H = 232, 370
+local QUEST_PANEL_W, QUEST_VISIBLE_ROWS = 224, 8
+local QUEST_ROW_H, QUEST_ROW_STEP = 22, 26
+local QUEST_DIAMOND_TEXTURE = "Interface\\AddOns\\VignetteRadar\\Media\\quest-diamond.tga"
 local ACCENT = { 0.05, 0.82, 0.62 }
 local FONT_FALLBACK = "Fonts\\FRIZQT__.TTF"
 local SKULL_TEXTURE = "Interface\\TargetingFrame\\UI-TargetingFrame-Skull"
@@ -29,6 +32,8 @@ local TRAIL_STYLES = addon.VignetteRadarTrailStyleByID or {
 local fallbackSettings = {}
 local panel
 local attachedTo
+local questPanel, questAttachedTo, questEntries = nil, nil, {}
+local questOffset = 0
 local changeCallback
 
 local API = {}
@@ -516,6 +521,232 @@ local function EnsurePanel()
     return panel
 end
 
+local function QuestColor(entry)
+    local palette = addon.VignetteRadarQuestColors
+    local color = Settings().vignetteRadarQuestColors and palette and palette[entry.colorSlot or 1]
+    if color then return color[1], color[2], color[3] end
+    if addon.VignetteRadarStyle then return addon.VignetteRadarStyle.Color("quest") end
+    return 1, .74, .27
+end
+
+local function RestoreQuestShift()
+    if not (questPanel and questPanel.shiftedAnchor) then return end
+    local saved = questPanel.shiftedAnchor
+    questPanel.shiftedAnchor = nil
+    local anchor = saved.anchor
+    local currentLeft = FrameValue(anchor, "GetLeft")
+    if currentLeft and math.abs(currentLeft - saved.shiftedLeft) <= 2 then
+        anchor:ClearAllPoints()
+        anchor:SetPoint("TOPLEFT", UIParent, "TOPLEFT", saved.left,
+            (saved.top * saved.scale - saved.screenHeight) / saved.scale)
+    end
+end
+
+local function AttachQuest(anchor, owner)
+    if not questPanel then return end
+    questPanel:ClearAllPoints()
+    local screenWidth, screenHeight = FrameValue(UIParent, "GetWidth"), FrameValue(UIParent, "GetHeight")
+    local parentScale = FrameValue(UIParent, "GetEffectiveScale") or 1
+    local left, right = FrameValue(anchor, "GetLeft"), FrameValue(anchor, "GetRight")
+    local top, bottom = FrameValue(anchor, "GetTop"), FrameValue(anchor, "GetBottom")
+    local anchorScale = (FrameValue(anchor, "GetEffectiveScale") or 1) / parentScale
+    if left then left = left * anchorScale end
+    if right then right = right * anchorScale end
+    if top then top = top * anchorScale end
+    if bottom then bottom = bottom * anchorScale end
+    if anchor and left and left < QUEST_PANEL_W + 12 and owner and screenWidth and screenHeight
+        and not questPanel.shiftedAnchor then
+        local ownerLeft, ownerRight = FrameValue(owner, "GetLeft"), FrameValue(owner, "GetRight")
+        local ownerTop = FrameValue(owner, "GetTop")
+        local ownerScale = (FrameValue(owner, "GetEffectiveScale") or 1) / parentScale
+        local shift = QUEST_PANEL_W + 16 - left
+        if ownerLeft and ownerRight and ownerTop and ownerRight * ownerScale + shift <= screenWidth - 8
+            and type(owner.ClearAllPoints) == "function" and type(owner.SetPoint) == "function" then
+            questPanel.shiftedAnchor = { anchor = owner, left = ownerLeft, top = ownerTop,
+                scale = ownerScale, shiftedLeft = ownerLeft + shift / ownerScale,
+                screenHeight = screenHeight }
+            owner:ClearAllPoints()
+            owner:SetPoint("TOPLEFT", UIParent, "TOPLEFT",
+                ownerLeft + shift / ownerScale,
+                (ownerTop * ownerScale - screenHeight) / ownerScale)
+            left = left + shift
+        end
+    end
+    if anchor and left and left >= QUEST_PANEL_W + 12 then
+        questPanel:SetPoint("TOPRIGHT", anchor, "TOPLEFT", -8, 0)
+    elseif anchor and right and screenWidth and screenWidth - right >= QUEST_PANEL_W + 12 then
+        questPanel:SetPoint("TOPLEFT", anchor, "TOPRIGHT", 8, 0)
+    elseif anchor and bottom and bottom >= questPanel:GetHeight() + 12 then
+        questPanel:SetPoint("TOP", anchor, "BOTTOM", 0, -8)
+    elseif anchor then
+        questPanel:SetPoint("BOTTOM", anchor, "TOP", 0, 8)
+    else
+        questPanel:SetPoint("CENTER", UIParent, "CENTER", 0, 0)
+    end
+    questAttachedTo = anchor
+end
+
+local function RefreshQuestRows()
+    if not questPanel then return end
+    local count = #questEntries
+    local visible = math.min(QUEST_VISIBLE_ROWS, count)
+    local height = 54 + math.max(1, visible) * QUEST_ROW_STEP
+    questPanel:SetHeight(height)
+    local style = addon.VignetteRadarStyle
+    local red, green, blue = ACCENT[1], ACCENT[2], ACCENT[3]
+    if style then red, green, blue = style.Color("accent") end
+    questPanel.accent:SetColorTexture(red, green, blue, .8)
+    questPanel.title:SetTextColor(red, green, blue, 1)
+    questPanel.rule:SetColorTexture(red, green, blue, .18)
+    questPanel.count:SetText(count .. " IN RANGE")
+    questOffset = math.max(0, math.min(questOffset, count - QUEST_VISIBLE_ROWS))
+    local focused = addon.VignetteRadarExploration and addon.VignetteRadarExploration.GetFocusedQuest
+        and addon.VignetteRadarExploration.GetFocusedQuest()
+    for index, row in ipairs(questPanel.rows) do
+        local entry = questEntries[questOffset + index]
+        row.entry = entry
+        row:SetShown(entry ~= nil)
+        if entry then
+            local r, g, b = QuestColor(entry)
+            row.fill:SetVertexColor(r, g, b, 1)
+            row.halo:SetVertexColor(r, g, b, .14)
+            row.name:SetText(entry.name)
+            local selected = focused == entry.questID
+            row.focus:SetColorTexture(r, g, b, .85)
+            row.focus:SetShown(selected)
+            row.name:SetTextColor(selected and r or .82, selected and g or .87,
+                selected and b or .88, 1)
+            row.hover:SetColorTexture(r, g, b, .10)
+        end
+    end
+    local overflow = count > QUEST_VISIBLE_ROWS
+    questPanel.scrollTrack:SetShown(overflow)
+    questPanel.scrollThumb:SetShown(overflow)
+    if overflow then
+        local trackHeight = QUEST_VISIBLE_ROWS * QUEST_ROW_STEP - 4
+        local thumbHeight = math.max(18, trackHeight * QUEST_VISIBLE_ROWS / count)
+        questPanel.scrollTrack:SetHeight(trackHeight)
+        questPanel.scrollThumb:SetHeight(thumbHeight)
+        questPanel.scrollThumb:ClearAllPoints()
+        questPanel.scrollThumb:SetPoint("TOP", questPanel.scrollTrack, "TOP", 0,
+            -(trackHeight - thumbHeight) * questOffset / (count - QUEST_VISIBLE_ROWS))
+        questPanel.scrollThumb:SetColorTexture(red, green, blue, .65)
+    end
+    questPanel.status:SetText(count == 0 and "No mapped quests inside this range"
+        or overflow and (questOffset + 1) .. "–" .. (questOffset + visible) .. " of " .. count .. " · scroll"
+        or "Click a quest to spotlight it")
+end
+
+local function EnsureQuestPanel()
+    if questPanel then return questPanel end
+    if type(CreateFrame) ~= "function" or not UIParent then return nil end
+    questPanel = CreateFrame("Frame", "VignetteRadarQuestLegendPanel", UIParent, "BackdropTemplate")
+    questPanel:SetSize(QUEST_PANEL_W, 80)
+    if questPanel.SetFrameStrata then questPanel:SetFrameStrata("DIALOG") end
+    if questPanel.SetClampedToScreen then questPanel:SetClampedToScreen(true) end
+    if questPanel.EnableMouse then questPanel:EnableMouse(true) end
+    Surface(questPanel)
+    questPanel.accent = questPanel:CreateTexture(nil, "OVERLAY")
+    questPanel.accent:SetPoint("TOPRIGHT", -1, -1)
+    questPanel.accent:SetPoint("BOTTOMRIGHT", -1, 1)
+    questPanel.accent:SetWidth(2)
+    questPanel.title = Text(questPanel, 11, "QUEST KEY")
+    questPanel.title:SetPoint("TOPLEFT", 12, -10)
+    questPanel.count = Text(questPanel, 8, "0 IN RANGE")
+    questPanel.count:SetPoint("TOPRIGHT", -31, -11)
+    questPanel.count:SetJustifyH("RIGHT")
+    questPanel.count:SetWidth(85)
+    questPanel.rule = SectionRule(questPanel, 31)
+    questPanel.rows = {}
+    local function Scroll(_, delta)
+        questOffset = math.max(0, math.min(math.max(0, #questEntries - QUEST_VISIBLE_ROWS),
+            questOffset - delta))
+        RefreshQuestRows()
+    end
+    if questPanel.EnableMouseWheel then questPanel:EnableMouseWheel(true) end
+    questPanel:SetScript("OnMouseWheel", Scroll)
+    for index = 1, QUEST_VISIBLE_ROWS do
+        local row = CreateFrame("Button", nil, questPanel)
+        row:SetSize(204, QUEST_ROW_H)
+        row:SetPoint("TOPLEFT", 10, -37 - (index - 1) * QUEST_ROW_STEP)
+        if row.EnableMouseWheel then row:EnableMouseWheel(true) end
+        row:SetScript("OnMouseWheel", Scroll)
+        row.hover = row:CreateTexture(nil, "BACKGROUND")
+        row.hover:SetAllPoints()
+        row.hover:Hide()
+        row.focus = row:CreateTexture(nil, "ARTWORK")
+        row.focus:SetSize(2, 16)
+        row.focus:SetPoint("LEFT", 0, 0)
+        row.halo = row:CreateTexture(nil, "ARTWORK")
+        row.halo:SetSize(18, 18)
+        row.halo:SetPoint("LEFT", 7, 0)
+        row.halo:SetTexture(CIRCLE_TEXTURE)
+        row.rim = row:CreateTexture(nil, "OVERLAY")
+        row.rim:SetSize(13, 13)
+        row.rim:SetPoint("CENTER", row.halo, "CENTER")
+        row.rim:SetTexture(QUEST_DIAMOND_TEXTURE)
+        row.rim:SetVertexColor(.04, .05, .06, .98)
+        row.fill = row:CreateTexture(nil, "OVERLAY")
+        row.fill:SetSize(9, 9)
+        row.fill:SetPoint("CENTER", row.halo, "CENTER")
+        row.fill:SetTexture(QUEST_DIAMOND_TEXTURE)
+        row.name = Text(row, 10, "")
+        row.name:SetPoint("LEFT", 30, 0)
+        row.name:SetWidth(164)
+        row:SetScript("OnEnter", function(self)
+            self.hover:Show()
+            if not (self.entry and GameTooltip) then return end
+            GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+            GameTooltip:SetText(self.entry.name, 1, .89, .78)
+            if self.entry.distance then
+                GameTooltip:AddLine(math.floor(self.entry.distance + .5) .. " yd from you", .72, .76, .78)
+            end
+            GameTooltip:AddLine("Click to spotlight; click again to clear.", .6, .8, .72, true)
+            GameTooltip:Show()
+        end)
+        row:SetScript("OnLeave", function(self)
+            self.hover:Hide()
+            if GameTooltip then GameTooltip:Hide() end
+        end)
+        row:SetScript("OnClick", function(self)
+            local exploration = addon.VignetteRadarExploration
+            if self.entry and exploration and exploration.FocusQuest then
+                exploration.FocusQuest(self.entry.questID)
+                RefreshQuestRows()
+            end
+        end)
+        row:Hide()
+        questPanel.rows[index] = row
+    end
+    questPanel.scrollTrack = questPanel:CreateTexture(nil, "ARTWORK")
+    questPanel.scrollTrack:SetPoint("TOPRIGHT", -5, -38)
+    questPanel.scrollTrack:SetWidth(2)
+    questPanel.scrollTrack:SetColorTexture(.55, .61, .63, .20)
+    questPanel.scrollThumb = questPanel:CreateTexture(nil, "OVERLAY")
+    questPanel.scrollThumb:SetWidth(2)
+    questPanel.status = Text(questPanel, 8, "No mapped quests inside this range")
+    questPanel.status:SetPoint("BOTTOMLEFT", 12, 8)
+    questPanel.status:SetTextColor(.53, .62, .63, 1)
+    questPanel.close = CreateFrame("Button", nil, questPanel)
+    questPanel.close:SetSize(20, 20)
+    questPanel.close:SetPoint("TOPRIGHT", -5, -5)
+    for _, points in ipairs({ { -4, -4, 4, 4 }, { -4, 4, 4, -4 } }) do
+        local line = questPanel.close:CreateLine(nil, "OVERLAY")
+        line:SetThickness(1.8)
+        line:SetColorTexture(.72, .78, .79, .9)
+        line:SetStartPoint("CENTER", questPanel.close, points[1], points[2])
+        line:SetEndPoint("CENTER", questPanel.close, points[3], points[4])
+    end
+    questPanel.close:SetScript("OnClick", function() API.HideQuest() end)
+    questPanel:SetScript("OnHide", RestoreQuestShift)
+    if type(UISpecialFrames) == "table" then
+        UISpecialFrames[#UISpecialFrames + 1] = "VignetteRadarQuestLegendPanel"
+    end
+    RefreshQuestRows()
+    questPanel:Hide()
+    return questPanel
+end
+
 function API.Refresh()
     local settings = API.ApplyDefaults()
     if not panel then return end
@@ -583,7 +814,10 @@ function API.Refresh()
         or settings.vignetteRadarPOIIcons and "Pack icons vary · saved, not live"
         or "Saved in one pack; not live detections")
     local questRed, questGreen, questBlue = Color("quest", { 1, .74, .27 })
-    if settings.vignetteRadarQuestColors then questRed, questGreen, questBlue = .37, .86, .78 end
+    if settings.vignetteRadarQuestColors and addon.VignetteRadarQuestColors then
+        local first = addon.VignetteRadarQuestColors[1]
+        questRed, questGreen, questBlue = first[1], first[2], first[3]
+    end
     panel.guides.quest.fill:SetVertexColor(questRed, questGreen, questBlue, 1)
     panel.guides.quest.halo:SetVertexColor(questRed, questGreen, questBlue, .16)
     local showQuestHalo = settings.vignetteRadarQuestDots and settings.vignetteRadarQuestAreas
@@ -673,6 +907,41 @@ function API.IsShown()
     return panel ~= nil and panel:IsShown() or false
 end
 
+function API.SetQuestEntries(entries)
+    questEntries = type(entries) == "table" and entries or {}
+    table.sort(questEntries, function(left, right)
+        if left.distance ~= right.distance then
+            return (left.distance or math.huge) < (right.distance or math.huge)
+        end
+        return left.questID < right.questID
+    end)
+    if questPanel and questPanel:IsShown() then RefreshQuestRows() end
+end
+
+function API.ToggleQuest(anchor, owner)
+    local key = EnsureQuestPanel()
+    if not key then return false end
+    if key:IsShown() then key:Hide(); return false end
+    RefreshQuestRows()
+    AttachQuest(anchor or questAttachedTo, owner)
+    key:Show()
+    return true
+end
+
+function API.ReanchorQuest(anchor, owner)
+    if not (questPanel and questPanel:IsShown()) then return false end
+    AttachQuest(anchor or questAttachedTo, owner)
+    return true
+end
+
+function API.HideQuest()
+    if questPanel then questPanel:Hide() end
+end
+
+function API.IsQuestShown()
+    return questPanel ~= nil and questPanel:IsShown() or false
+end
+
 API.ApplyDefaults()
 
 API.Testing = {
@@ -680,4 +949,5 @@ API.Testing = {
     CategoryOrder = CATEGORY_ORDER,
     Categories = CATEGORIES,
     GetPanel = function() return panel end,
+    GetQuestPanel = function() return questPanel end,
 }

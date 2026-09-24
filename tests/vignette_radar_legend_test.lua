@@ -244,6 +244,43 @@ assert(legend.Reanchor(squat) and panel.point[1] == "TOPLEFT" and panel.point[3]
     "an open legend must retain its side gutter after Squat layout changes")
 assert(legend.Toggle(squat) == false, "legend Squat toggle must close")
 
+-- The quest key is independent of the category legend and mirrors the same
+-- per-quest color slot used by the radar diamond and native area texture.
+addon.VignetteRadarQuestColors = {
+    { 94/255, 219/255, 199/255 }, { 255/255, 179/255, 87/255 },
+}
+settings.vignetteRadarQuestColors = true
+local questAnchor = CreateFrame("Frame", nil, UIParent)
+questAnchor.left, questAnchor.right, questAnchor.top, questAnchor.bottom = 320, 520, 400, 200
+local entries = {}
+for index = 1, 10 do
+    entries[index] = { questID = index, name = "Quest " .. index,
+        colorSlot = index % 2 + 1, distance = index * 10 }
+end
+legend.SetQuestEntries(entries)
+assert(legend.ToggleQuest(questAnchor) and legend.IsQuestShown(),
+    "quest key must open independently from the category legend")
+local questPanel = assert(legend.Testing.GetQuestPanel(), "quest key must have a stable panel")
+assert(questPanel.point[1] == "TOPRIGHT" and questPanel.point[3] == "TOPLEFT"
+    and questPanel.point[4] == -8 and questPanel.width == 224,
+    "quest key must prefer the left of the radar with a visible gutter")
+assert(questPanel.rows[1].name.text == "Quest 1" and questPanel.rows[1].fill.vertexColor[1] == 1
+    and questPanel.rows[1].fill.vertexColor[2] == 179/255
+    and questPanel.rows[1].fill.vertexColor[3] == 87/255,
+    "quest names and diamonds must use the exact native blob palette")
+assert(questPanel.scrollTrack:IsShown() and questPanel.rows[8]:IsShown()
+    and not questPanel.rows[9], "the compact key must scroll instead of escaping its panel")
+questPanel.scripts.OnMouseWheel(questPanel, -1)
+assert(questPanel.rows[1].name.text == "Quest 2" and questPanel.status.text:find("2–9", 1, true),
+    "scrolling must update visible rows and position text")
+settings.vignetteRadarQuestColors = false
+legend.SetQuestEntries(entries)
+assert(questPanel.rows[1].fill.vertexColor[1] == .7
+    and questPanel.rows[1].fill.vertexColor[2] == .6,
+    "the quest key must follow the themed single-color mode")
+assert(legend.ToggleQuest(questAnchor) == false and not legend.IsQuestShown(),
+    "quest key toggle must close an open key")
+
 -- Validate fallback behavior without native EllesmereUI helpers or fonts.
 EllesmereUI = nil
 methods.SetAtlas = nil

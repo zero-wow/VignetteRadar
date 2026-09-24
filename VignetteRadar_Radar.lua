@@ -38,9 +38,12 @@ local ROUNDED_BORDER_TEXTURE = "Interface\\AddOns\\VignetteRadar\\Media\\radar-r
 local ROUNDED_CONTROL_TEXTURE = "Interface\\AddOns\\VignetteRadar\\Media\\control-rounded-square.tga"
 local QUEST_CLIP_INSET = 4
 local QUEST_COLORS = {
-    { .37, .86, .78 }, { 1, .70, .34 }, { .71, .59, 1 }, { 1, .47, .52 },
-    { .43, .78, 1 }, { .73, .86, .37 }, { .96, .60, .83 }, { 1, .57, .32 },
+    { 94/255, 219/255, 199/255 }, { 255/255, 179/255, 87/255 },
+    { 181/255, 150/255, 255/255 }, { 255/255, 120/255, 133/255 },
+    { 110/255, 199/255, 255/255 }, { 186/255, 219/255, 94/255 },
+    { 245/255, 153/255, 212/255 }, { 255/255, 145/255, 82/255 },
 }
+addon.VignetteRadarQuestColors = QUEST_COLORS
 local SKULL_TEXTURE = "Interface\\TargetingFrame\\UI-TargetingFrame-Skull"
 local LAUNCHER_BEZEL = "Interface\\AddOns\\VignetteRadar\\Media\\vignette-radar-bezel.tga"
 local LAUNCHER_CLOSED = "Interface\\AddOns\\VignetteRadar\\Media\\vignette-radar-closed.tga"
@@ -1139,6 +1142,31 @@ local function RenderQuestDots(player, range)
     return count
 end
 
+addon.UpdateVignetteRadarQuestKey = function()
+    local legend = LegendAPI()
+    if not (legend and legend.IsQuestShown and legend.IsQuestShown()
+        and legend.SetQuestEntries) then return end
+    local now = Now()
+    if panel._questKeyNextAt and now < panel._questKeyNextAt then return end
+    panel._questKeyNextAt = now + .5
+    local entries = {}
+    local player = PlayerSnapshot(activeMapID)
+    local range = Settings().vignetteRadarRange or 150
+    if player then
+        for _, quest in ipairs(activeQuests) do
+            if not (player.instanceID and quest.instanceID and player.instanceID ~= quest.instanceID) then
+                local dx, dy = quest.worldX - player.worldX, quest.worldY - player.worldY
+                local distance = math.sqrt(dx * dx + dy * dy)
+                if distance <= range then
+                    entries[#entries + 1] = { questID = quest.questID, name = quest.name,
+                        colorSlot = quest.colorSlot, distance = distance }
+                end
+            end
+        end
+    end
+    legend.SetQuestEntries(entries)
+end
+
 local function HideQuestAreas()
     if panel and panel.questBlob then
         if GameTooltip and GameTooltip.GetOwner and GameTooltip:GetOwner() == panel.questBlob then
@@ -1668,9 +1696,6 @@ local function ApplyPanelLayout(focused)
         panel.combatToggle, panel.target, panel.legend, panel.close, panel.frameToggle }) do
         if control and control.glow then control.glow:SetTexture(highlightTexture) end
     end
-    if panel.hoverTools then
-        for _, control in ipairs(panel.hoverTools) do control.glow:SetTexture(highlightTexture) end
-    end
     panel.fieldRadius = layout.field / 2 - 9
     panel.plotRadius = panel.fieldRadius - 15
     panel:SetSize(layout.width, layout.height + (focused and layout.focus or 0))
@@ -1792,16 +1817,24 @@ local function ApplyPanelLayout(focused)
         if HideTrailPopup then HideTrailPopup() end
         local legend, picker = LegendAPI(), TargetPickerAPI()
         if legend and legend.Hide then legend.Hide() end
+        if legend and legend.HideQuest then legend.HideQuest() end
         if picker and picker.Hide then picker.Hide() end
         panel.legend:SetAlpha(0.68)
         UpdateTargetButton()
     else
         local legend, picker = LegendAPI(), TargetPickerAPI()
         if legend and legend.Reanchor then legend.Reanchor(panel) end
+        if legend and legend.ReanchorQuest and legend.IsQuestShown and legend.IsQuestShown() then
+            legend.ReanchorQuest(CircleOnly() and panel.field or panel, panel)
+        end
         if picker and picker.Reanchor then picker.Reanchor(panel) end
     end
     local quick = addon.VignetteRadarQuickConfig
     if quick and quick.Reanchor then quick.Reanchor(CircleOnly() and panel.field or panel) end
+    local legend = LegendAPI()
+    if legend and legend.ReanchorQuest and legend.IsQuestShown and legend.IsQuestShown() then
+        legend.ReanchorQuest(CircleOnly() and panel.field or panel, panel)
+    end
 end
 
 local function UpdateFocusReadout(target, player, selected)
@@ -1890,6 +1923,7 @@ local function UpdatePanelChrome()
             panel._hoverToolsVisible = showTools
             for _, tool in ipairs(panel.hoverTools) do tool:SetShown(showTools) end
         end
+        if panel.RefreshCornerTools then panel.RefreshCornerTools() end
     end
     if circleOnly then
         panel.focusReadout:Hide()
@@ -2685,6 +2719,8 @@ Render = function()
         if panel.emptyHelp then panel.emptyHelp:Hide() end
         RenderExploration(nil, range)
         HideQuestDots()
+        panel._questKeyNextAt = nil
+        addon.UpdateVignetteRadarQuestKey()
         HideMapNotes()
         HideQuestAreas()
         panel.summary:SetText(FocusedTargetKey() and "PREVIEW FOCUS" or "PREVIEW")
@@ -2710,6 +2746,8 @@ Render = function()
         if panel.emptyHelp then panel.emptyHelp:SetShown(not CircleOnly() and panel.emptyReason ~= nil) end
         RenderExploration(nil, range)
         HideQuestDots()
+        panel._questKeyNextAt = nil
+        addon.UpdateVignetteRadarQuestKey()
         HideMapNotes()
         HideQuestAreas()
         panel.summary:SetText("POSITION UNAVAILABLE")
@@ -2732,6 +2770,7 @@ Render = function()
     for _, line in ipairs(panel.headingChevron) do line:SetShown(player.headingAvailable) end
     local questAreasShown = RenderQuestAreas(player, mapID, range)
     local questsInRange = RenderQuestDots(player, range)
+    addon.UpdateVignetteRadarQuestKey()
     local notesInRange = RenderMapNotes(player, range)
     local edgeCueCount = RenderEdgeCues(player, range, targets)
     RenderExploration(player, range)
@@ -2837,6 +2876,10 @@ local function SavePosition()
     end
     local quick = addon.VignetteRadarQuickConfig
     if quick and quick.Reanchor then quick.Reanchor(CircleOnly() and panel.field or panel) end
+    local legend = LegendAPI()
+    if legend and legend.ReanchorQuest and legend.IsQuestShown and legend.IsQuestShown() then
+        legend.ReanchorQuest(CircleOnly() and panel.field or panel, panel)
+    end
 end
 
 local function AddResizeGrips()
@@ -3468,6 +3511,7 @@ local function EnsurePanel()
     panel.legend = CreateFrame("Button", nil, panel)
     panel.legend:SetSize(24, 24)
     panel.legend:SetPoint("TOPRIGHT", -31, -5)
+    panel.legend:RegisterForClicks("LeftButtonUp", "RightButtonUp")
     panel.legend:SetAlpha(0.68)
     panel.legend.glow = panel.legend:CreateTexture(nil, "BACKGROUND")
     panel.legend.glow:SetSize(18, 18)
@@ -3492,7 +3536,11 @@ local function EnsurePanel()
         line:SetPoint("LEFT", 11, 12 - (index * 6))
         line:SetColorTexture(0.68, 0.72, 0.74, 0.72)
     end
-    panel.legend:SetScript("OnClick", function(self)
+    panel.legend:SetScript("OnClick", function(self, button)
+        if button == "RightButton" then
+            if addon.ToggleVignetteRadarQuestKey then addon.ToggleVignetteRadarQuestKey() end
+            return
+        end
         HideTrailPopup()
         if addon.VignetteRadarQuickConfig then addon.VignetteRadarQuickConfig.Hide() end
         local legend = LegendAPI()
@@ -3515,6 +3563,7 @@ local function EnsurePanel()
         GameTooltip:SetText("Radar legend", 1, 1, 1)
         GameTooltip:AddLine("See live detections, saved map notes, quests, pins, routes, and trail symbols. Filter or spotlight live types here.",
             0.65, 0.80, 0.77, true)
+        GameTooltip:AddLine("Right-click for the colored quest key on the left.", .65, .8, .77, true)
         GameTooltip:Show()
     end)
     panel.legend:SetScript("OnLeave", function(self)
@@ -3925,54 +3974,53 @@ local function EnsurePanel()
     UpdateCombatToggle()
 
     -- The square face leaves four useful corner wedges beyond the plotting ring.
-    -- Keep every primary action there while the pointer is over the face.
+    -- One atlas texture replaces the old glow, line, and font stacks.
     panel.hoverTools = {}
+    panel.RefreshCornerTools = function()
+        if not (panel and panel.hoverTools) then return end
+        local settings = Settings()
+        local quick = addon.VignetteRadarQuickConfig
+        local legend = LegendAPI()
+        local focused = FocusedTargetKey()
+        for _, tool in ipairs(panel.hoverTools) do
+            local id = tool.toolID
+            local active = id == "north" and settings.vignetteRadarNorthUp == true
+                or id == "trail" and settings.vignetteRadarBreadcrumbs == true
+                or id == "eye" and settings.vignetteRadarKeepVisibleCombat == true
+                or id == "target" and focused ~= nil
+                or id == "config" and quick and quick.IsShown and quick.IsShown()
+                or id == "legend" and legend and
+                    ((legend.IsShown and legend.IsShown()) or (legend.IsQuestShown and legend.IsQuestShown()))
+            local state = (active and 2 or 0) + (tool._hovered and 1 or 0)
+            if state ~= tool._artState then
+                local column = tool.artColumn
+                tool.art:SetTexCoord((column * 64 + 1) / 1024, (column * 64 + 63) / 1024,
+                    (state * 64 + 1) / 256, (state * 64 + 63) / 256)
+                tool._artState = state
+            end
+            if tool._artRed ~= ACCENT[1] or tool._artGreen ~= ACCENT[2]
+                or tool._artBlue ~= ACCENT[3] then
+                tool.art:SetVertexColor(ACCENT[1], ACCENT[2], ACCENT[3], 1)
+                tool._artRed, tool._artGreen, tool._artBlue = ACCENT[1], ACCENT[2], ACCENT[3]
+            end
+            tool:SetAlpha(tool.reference and tool.reference._enabled == false and .38 or 1)
+        end
+    end
     local function HoverTool(id, title, reference, point, x, y)
         local tool = CreateFrame("Button", nil, panel.field)
         tool:SetSize(16, 16)
         tool:SetFrameLevel(panel.field:GetFrameLevel() + 8)
         tool:SetPoint(point, panel.field, point, x, y)
         tool:RegisterForClicks("LeftButtonUp", "RightButtonUp")
-        tool.glow = tool:CreateTexture(nil, "BACKGROUND")
-        tool.glow:SetTexture(CIRCLE_TEXTURE)
-        tool.glow:SetSize(18, 18)
-        tool.glow:SetPoint("CENTER")
-        tool.glow:SetVertexColor(ACCENT[1], ACCENT[2], ACCENT[3], .10)
-        local function Stroke(x1, y1, x2, y2, thickness)
-            local line = tool:CreateLine(nil, "OVERLAY")
-            line:SetThickness(thickness or 1.5)
-            line:SetColorTexture(ACCENT[1], ACCENT[2], ACCENT[3], .88)
-            line:SetStartPoint("CENTER", tool, x1, y1)
-            line:SetEndPoint("CENTER", tool, x2, y2)
-        end
-        local function Dot(x, y, size, r, g, b)
-            local dot = tool:CreateTexture(nil, "OVERLAY")
-            dot:SetTexture(CIRCLE_TEXTURE)
-            dot:SetSize(size, size)
-            dot:SetPoint("CENTER", tool, "CENTER", x, y)
-            dot:SetVertexColor(r or ACCENT[1], g or ACCENT[2], b or ACCENT[3], .95)
-        end
-        if id == "config" then Dot(0, 0, 6)
-        elseif id == "target" then Stroke(-4, 0, 4, 0); Stroke(0, -4, 0, 4); Dot(0, 0, 3)
-        elseif id == "legend" then
-            Dot(-3, 4, 3, .79, .87, 1); Dot(-3, 0, 3, 1, .68, .2); Dot(-3, -4, 3, .68, .42, 1)
-            Stroke(1, 4, 5, 4, 1); Stroke(1, 0, 5, 0, 1); Stroke(1, -4, 5, -4, 1)
-        elseif id == "minus" then Stroke(-4, 0, 4, 0, 2)
-        elseif id == "plus" then Stroke(-4, 0, 4, 0, 2); Stroke(0, -4, 0, 4, 2)
-        elseif id == "north" or id == "help" then
-            local label = Text(tool, 11, id == "north" and "N" or "?", true)
-            label:SetAllPoints(); label:SetJustifyH("CENTER")
-        elseif id == "trail" then
-            Stroke(-5, 0, -2, 0, 2); Stroke(1, 0, 4, 0, 2)
-        elseif id == "eye" then
-            Stroke(-5, 0, 0, 3); Stroke(0, 3, 5, 0)
-            Stroke(-5, 0, 0, -3); Stroke(0, -3, 5, 0); Dot(0, 0, 3)
-        elseif id == "close" then Stroke(-4, -4, 4, 4); Stroke(-4, 4, 4, -4)
-        elseif id == "frame" then Stroke(-3, -4, 2, 0); Stroke(2, 0, -3, 4)
-        end
+        tool.toolID, tool.reference, tool.artColumn = id, reference, #panel.hoverTools
+        tool.art = tool:CreateTexture(nil, "ARTWORK")
+        tool.art:SetTexture("Interface\\AddOns\\VignetteRadar\\Media\\radar-corner-controls.tga")
+        tool.art:SetSize(18, 18)
+        tool.art:SetPoint("CENTER")
         tool:SetScript("OnEnter", function(self)
             panel._hoverToolsShown = true
-            self.glow:SetVertexColor(ACCENT[1], ACCENT[2], ACCENT[3], .25)
+            self._hovered = true
+            panel.RefreshCornerTools()
             if GameTooltip then
                 GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
                 GameTooltip:SetText(title, 1, 1, 1)
@@ -3980,7 +4028,8 @@ local function EnsurePanel()
             end
         end)
         tool:SetScript("OnLeave", function(self)
-            self.glow:SetVertexColor(ACCENT[1], ACCENT[2], ACCENT[3], .10)
+            self._hovered = false
+            panel.RefreshCornerTools()
             if GameTooltip then GameTooltip:Hide() end
             if C_Timer and C_Timer.After then C_Timer.After(0, function()
                 if panel.field.IsMouseOver and not panel.field:IsMouseOver() then
@@ -4007,13 +4056,14 @@ local function EnsurePanel()
                 click(reference, button)
                 panel._trailPopupAnchor = nil
             end
+            panel.RefreshCornerTools()
         end)
         tool:Hide()
         panel.hoverTools[#panel.hoverTools + 1] = tool
     end
     HoverTool("config", "Quick settings", panel.settingsDot, "TOPLEFT", 10, -10)
     HoverTool("target", "Choose a target", panel.target, "TOPLEFT", 30, -10)
-    HoverTool("legend", "Legend and filters", panel.legend, "TOPLEFT", 10, -30)
+    HoverTool("legend", "Legend · right-click for quest key", panel.legend, "TOPLEFT", 10, -30)
     HoverTool("minus", "Zoom out", panel.zoomOut, "TOPRIGHT", -10, -10)
     HoverTool("plus", "Zoom in", panel.zoomIn, "TOPRIGHT", -30, -10)
     HoverTool("north", "North up / facing up", panel.compass, "TOPRIGHT", -10, -30)
@@ -4021,6 +4071,7 @@ local function EnsurePanel()
     HoverTool("eye", "Stay fully visible", panel.combatToggle, "BOTTOMLEFT", 30, 10)
     HoverTool("help", "Radar status", nil, "BOTTOMLEFT", 10, 30)
     HoverTool("close", "Tuck away radar", panel.close, "BOTTOMRIGHT", -10, 10)
+    panel.RefreshCornerTools()
     panel.field:SetScript("OnEnter", function()
         panel._hoverToolsShown = true
         UpdatePanelChrome()
@@ -4084,6 +4135,7 @@ local function EnsurePanel()
         UpdateTargetButton()
         local legend = LegendAPI()
         if legend and type(legend.Hide) == "function" then pcall(legend.Hide) end
+        if legend and type(legend.HideQuest) == "function" then pcall(legend.HideQuest) end
         local picker = TargetPickerAPI()
         if picker and type(picker.Hide) == "function" then pcall(picker.Hide) end
     end)
@@ -4290,6 +4342,23 @@ RefreshRadar = function(rescan)
 end
 
 addon.RefreshVignetteRadar = function(rescan) RefreshRadar(rescan ~= false) end
+addon.ToggleVignetteRadarQuestKey = function()
+    local legend = LegendAPI()
+    if not (legend and legend.ToggleQuest) then return false end
+    if not (panel and panel:IsShown()) then
+        Settings().vignetteRadarEnabled = true
+        manualPanelState = true
+        RefreshRadar(true)
+    end
+    if not (panel and panel:IsShown()) then return false end
+    local opened = legend.ToggleQuest(CircleOnly() and panel.field or panel, panel)
+    if opened then
+        panel._questKeyNextAt = nil
+        addon.UpdateVignetteRadarQuestKey()
+    end
+    if panel.RefreshCornerTools then panel.RefreshCornerTools() end
+    return opened
+end
 addon.VignetteRadarAPI = {
     GetTargets = function() return activeTargets end,
     GetCurrentMapID = CurrentMapID,
@@ -4299,6 +4368,7 @@ addon.VignetteRadarAPI = {
     GetLauncher = function() return launcher end,
     IsPreviewing = function() return preview end,
     Refresh = function(rescan) RefreshRadar(rescan == true) end,
+    ToggleQuestKey = addon.ToggleVignetteRadarQuestKey,
     RefreshPresentation = function()
         if panel and panel:IsShown() then Render() end
         if launcher then UpdateLauncher(0, true) end

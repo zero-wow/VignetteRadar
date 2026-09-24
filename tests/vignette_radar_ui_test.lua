@@ -1137,6 +1137,31 @@ assert(secondQuestDot:IsShown() and secondQuestDot.fill.vertexColor[1] ~= questD
     and panel.questColorBlobs[1].fillTexture ~= panel.questColorBlobs[2].fillTexture
     and panel.questColorBlobs[1].borderAlpha > 0,
     "each nearby quest needs matching diamond, circle, and bordered native area colors")
+local beforeQuestKeyLeft = panel:GetLeft()
+panel.legend.scripts.OnClick(panel.legend, "RightButton")
+local questKey = assert(_G.VignetteRadarQuestLegendPanel)
+assert(questKey:IsShown() and questKey.point[1] == "TOPRIGHT"
+    and questKey.point[3] == "TOPLEFT" and questKey.count.text == "2 IN RANGE",
+    "the quest key must open from the radar's left side with nearby quests")
+for index = 1, 2 do
+    local row = questKey.rows[index]
+    local dot = row.entry.questID == questDot.quest.questID and questDot or secondQuestDot
+    assert(row.name.text == dot.quest.name
+        and row.fill.texture == dot.fill.texture
+        and row.fill.vertexColor[1] == dot.fill.vertexColor[1]
+        and row.fill.vertexColor[2] == dot.fill.vertexColor[2]
+        and row.fill.vertexColor[3] == dot.fill.vertexColor[3],
+        "quest key diamonds and names must match the actual radar markers")
+end
+questKey.rows[1].scripts.OnClick(questKey.rows[1])
+assert(addon.VignetteRadarExploration.GetFocusedQuest() == questKey.rows[1].entry.questID,
+    "clicking a quest key row must spotlight that quest")
+questKey.rows[1].scripts.OnClick(questKey.rows[1])
+assert(addon.VignetteRadarExploration.GetFocusedQuest() == nil,
+    "clicking the key row again must clear its spotlight")
+questKey.close.scripts.OnClick(questKey.close)
+assert(not questKey:IsShown() and panel:GetLeft() == beforeQuestKeyLeft,
+    "closing the left key must restore a radar shifted to make room")
 addon.VignetteRadarExploration.FocusQuest(12346)
 addon.VignetteRadarAPI.Refresh(false)
 assert(panel.questColorBlobs[1].drawnQuests[1] == 12345
@@ -1149,6 +1174,16 @@ addon.VignetteRadarAPI.Refresh(false)
 assert(not questDot:IsShown() and questDot.halo:IsShown()
     and not secondQuestDot:IsShown() and secondQuestDot.halo:IsShown(),
     "quest-area circles must show for all map quests even with diamonds disabled")
+settings.vignetteRadarQuestHalos = false
+addon.VignetteRadarAPI.Refresh(false)
+panel.legend.scripts.OnClick(panel.legend, "RightButton")
+assert(questKey:IsShown() and questKey.count.text == "2 IN RANGE",
+    "the quest key must name quests with native blobs even when dots and estimates are hidden")
+assert((questKey.rows[1].name.text == "Nearby quest" or questKey.rows[2].name.text == "Nearby quest")
+    and (questKey.rows[1].name.text == "Second quest" or questKey.rows[2].name.text == "Second quest"),
+    "native-only quest key entries must keep both quest names")
+questKey.close.scripts.OnClick(questKey.close)
+settings.vignetteRadarQuestHalos = true
 settings.vignetteRadarQuestDots = true
 addon.VignetteRadarAPI.Refresh(false)
 settings.vignetteRadarQuestColors = false
@@ -1169,10 +1204,22 @@ for _, layoutName in ipairs({ "classic", "compact", "squat" }) do
     assert(#panel.hoverTools == 10 and panel.hoverTools[1]:IsShown()
         and not panel.settingsDot:IsShown(),
         "square radar-only view must reveal its corner controls on hover")
-    assert(panel.hoverTools[1].glow.texture
-            == "Interface\\AddOns\\VignetteRadar\\Media\\control-rounded-square.tga"
-        and panel.zoomIn.glow.texture == panel.hoverTools[1].glow.texture,
-        "square view must use rounded-square highlights on its corner and toolbar controls")
+    assert(panel.hoverTools[1].glow == nil
+        and panel.hoverTools[1].art.texture
+            == "Interface\\AddOns\\VignetteRadar\\Media\\radar-corner-controls.tga"
+        and panel.zoomIn.glow.texture
+            == "Interface\\AddOns\\VignetteRadar\\Media\\control-rounded-square.tga",
+        "corner controls must use state artwork instead of a separate glow and glyph stack")
+    local configTool = panel.hoverTools[1]
+    local normalRow = configTool.art.texCoord[3]
+    configTool.scripts.OnEnter(configTool)
+    assert(configTool.art.texCoord[3] > normalRow and configTool.art.texCoord[3] < .5,
+        "hover must select the dedicated highlighted image")
+    configTool.scripts.OnLeave(configTool)
+    assert(configTool.art.texCoord[3] == normalRow,
+        "mouse leave must restore the normal image")
+    assert(panel.hoverTools[6].art.texCoord[3] > .5,
+        "north-up must use an on image distinct from the normal state")
     local side, center = panel.field:GetWidth(), panel.field:GetWidth() / 2
     for _, tool in ipairs(panel.hoverTools) do
         local point, x, y = tool.point[1], tool.point[4], tool.point[5]
@@ -1315,9 +1362,10 @@ assert(not panel.squarePlot and panel.field.background.texture == "Interface\\Ch
     and panel.field.halo:IsShown() and panel.outerRing[1]:IsShown() and not panel.squareBorder:IsShown()
     and panel.frameToggle.width == 16 and panel.questBlob == originalBlob,
     "disabling quest areas must restore the original circular face without replacing the blob renderer")
-assert(panel.hoverTools[1].glow.texture == "Interface\\CharacterFrame\\TempPortraitAlphaMask"
-    and panel.zoomIn.glow.texture == panel.hoverTools[1].glow.texture,
-    "circular view must restore circular button highlights")
+assert(panel.hoverTools[1].art.texture
+        == "Interface\\AddOns\\VignetteRadar\\Media\\radar-corner-controls.tga"
+    and panel.zoomIn.glow.texture == "Interface\\CharacterFrame\\TempPortraitAlphaMask",
+    "circular view must restore circular main controls while keeping corner art ready")
 settings.vignetteRadarQuestAreas = true
 mapID = 782
 C_Map.GetWorldPosFromMapPos = originalWorldPosition
@@ -1446,9 +1494,12 @@ for _ in pairs(quick.tabs) do tabCount = tabCount + 1 end
 assert(tabCount == 10 and quick.pages.Themes and quick.pages.Guides and quick.pages.Explore
     and quick.pages["Map Data"],
     "compact settings must visibly include exploration controls")
-assert(UISpecialFrames[1] == "VignetteRadarExplorePanel"
-    and UISpecialFrames[2] == "VignetteRadarQuickConfigPanel",
-    "Escape must close the exploration and compact settings panels")
+local escapePanels = {}
+for _, name in ipairs(UISpecialFrames) do escapePanels[name] = true end
+assert(escapePanels.VignetteRadarExplorePanel
+    and escapePanels.VignetteRadarQuestLegendPanel
+    and escapePanels.VignetteRadarQuickConfigPanel,
+    "Escape must close exploration, the quest key, and compact settings")
 for _, object in ipairs(objects) do
     if object.optionKey then exposed[object.optionKey] = true end
     if object.colorSlot then colorSlots[object.colorSlot] = true end

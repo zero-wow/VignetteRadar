@@ -586,9 +586,14 @@ local function Build()
     Check(quests, "vignetteRadarNorthUp", "Keep north at the top", 14, -115)
     Check(quests, "vignetteRadarEdgeCues", "Show nearby off-screen cues", 14, -143)
     Check(quests, "vignetteRadarQuestColors", "Color each quest uniquely", 14, -171)
-    Label(quests, "Exact blobs need north-up; circles are estimates.", 14, -204, 10)
-    Stepper(quests, "vignetteRadarQuestHaloRadius", "Circle radius", -225,
+    Label(quests, "Exact blobs need north-up; circles are estimates.", 14, -196, 10)
+    Stepper(quests, "vignetteRadarQuestHaloRadius", "Circle radius", -214,
         { 10, 20, 40, 80 }, function(value) return value .. " yd" end)
+    Button(quests, "Toggle quest key", 14, -240, 260, function()
+        if addon.VignetteRadarAPI and addon.VignetteRadarAPI.ToggleQuestKey then
+            addon.VignetteRadarAPI.ToggleQuestKey()
+        end
+    end)
 
     local mapData = quick.pages["Map Data"]
     Section(mapData, "CHOOSE ONE MAP-DATA PACK", -3)
