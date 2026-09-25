@@ -75,6 +75,7 @@ local approachPulseKey, approachPulseUntil
 local displayedRange
 local clusterHoverKey, clusterHoverUntil
 local RefreshRadar, ScanVignettes, Render, UpdateLauncher, EnsureLauncher, ApplyAppearance
+local function RefreshZygorVisual() if RefreshRadar then RefreshRadar(false) end end
 local PREVIEW_TARGETS = {
     { key = "preview-rare", x = 28, y = 52, launcherX = 3, launcherY = 6,
         distanceFactor = 0.34, name = "Sample rare", category = "rare", sample = true },
@@ -92,11 +93,17 @@ end
 
 function addon.VignetteRadarRenderSeconds()
     local mode = Settings().vignetteRadarPerformance
-    return mode == "low" and .2 or mode == "balanced" and .1 or .05
+    if addon.VignetteRadarBudget and addon.VignetteRadarBudget.softThrottle then
+        return .25
+    end
+    return mode == "low" and .25 or mode == "balanced" and .15 or .1
 end
 
 function addon.VignetteRadarScanSeconds()
     local mode = Settings().vignetteRadarPerformance
+    if addon.VignetteRadarBudget and addon.VignetteRadarBudget.softThrottle then
+        return 2.5
+    end
     return mode == "low" and 2.5 or mode == "balanced" and 1.5 or 1
 end
 
@@ -261,7 +268,7 @@ end
 
 -- Repeating work can be suspended for this session if it starts consuming a
 -- frame budget. No SavedVariable is changed, and direct controls still work.
-addon.VignetteRadarBudget = { paused = {} }
+addon.VignetteRadarBudget = { paused = {}, recent = {} }
 local function ProfileTime()
     if type(debugprofilestop) ~= "function" then return nil end
     local ok, value = pcall(debugprofilestop)
@@ -284,6 +291,19 @@ local function CheckUpdateBudget(owner, started, label)
     end
     owner._budgetWindowCost = (owner._budgetWindowCost or 0) + duration
     if finished - owner._budgetWindowStart >= 1000 then
+        local recent = owner._budgetWindowCost * 1000
+            / math.max(1000, finished - owner._budgetWindowStart)
+        addon.VignetteRadarBudget.recent[label] = recent
+        if label == "radar" and recent >= 30
+            and not addon.VignetteRadarBudget.softThrottle then
+            owner._heavyWindows = (owner._heavyWindows or 0) + 1
+            if owner._heavyWindows >= 3 then
+                addon.VignetteRadarBudget.softThrottle = true
+                if DEFAULT_CHAT_FRAME and DEFAULT_CHAT_FRAME.AddMessage then
+                    DEFAULT_CHAT_FRAME:AddMessage("Vignette Radar temporarily switched to Low CPU updates after sustained high workload. /reload restores your selected rate.")
+                end
+            end
+        else owner._heavyWindows = 0 end
         if owner._budgetWindowCost >= 300 then owner._slowUpdates = 3 end
         owner._budgetWindowStart, owner._budgetWindowCost = finished, 0
     end
@@ -1493,6 +1513,8 @@ local function StyleQuestBlob(blob, range)
     -- entire radar. Fade the native mesh itself so markers remain legible.
     local opacity = math.max(.2, math.min(1, (SafeNumber(range) or 300) / 300))
     local fillAlpha = math.max(3, math.floor(48 * opacity + .5))
+    if blob._radarDefaultStyle and blob._radarFillAlpha == fillAlpha
+        and blob._radarBorderAlpha == 0 then return true end
     local ok = pcall(function()
         if not blob._radarDefaultStyle then
             blob:SetFillTexture("Interface\\WorldMap\\UI-QuestBlob-Inside")
@@ -1635,18 +1657,32 @@ local function RenderQuestAreas(player, mapID, range)
     local canvasScale = math.max(1, width / MAX_QUEST_BLOB_CANVAS,
         height / MAX_QUEST_BLOB_CANVAS)
     panel.questAreaPlayerMapX, panel.questAreaPlayerMapY = player.mapX, player.mapY
-    local key = tostring(mapID) .. ":" .. tostring(width) .. ":" .. tostring(height)
-    for _, quest in ipairs(activeQuests) do key = key .. ":" .. tostring(quest.questID) end
-    panel.questBlobSources = { blob }
+    if blob._keyQuests ~= activeQuests or blob._keyMapID ~= mapID
+        or blob._keyWidth ~= width or blob._keyHeight ~= height then
+        local key = tostring(mapID) .. ":" .. tostring(width) .. ":" .. tostring(height)
+        for _, quest in ipairs(activeQuests) do key = key .. ":" .. tostring(quest.questID) end
+        blob._questDrawKey, blob._keyQuests, blob._keyMapID = key, activeQuests, mapID
+        blob._keyWidth, blob._keyHeight = width, height
+    end
+    local key = blob._questDrawKey
+    if not panel.questBlobSources then panel.questBlobSources = { blob } end
     if not StyleQuestBlob(blob, range) then HideQuestAreas(); return end
     if blob._radarCanvasScale ~= canvasScale then
         blob:SetScale(canvasScale)
         blob._radarCanvasScale = canvasScale
     end
-    blob:SetSize(width / canvasScale, height / canvasScale)
-    blob:ClearAllPoints()
-    blob:SetPoint("CENTER", panel.field, "CENTER", (0.5 - player.mapX) * width / canvasScale,
-        (player.mapY - 0.5) * height / canvasScale)
+    local canvasWidth, canvasHeight = width / canvasScale, height / canvasScale
+    if blob._canvasWidth ~= canvasWidth or blob._canvasHeight ~= canvasHeight then
+        blob:SetSize(canvasWidth, canvasHeight)
+        blob._canvasWidth, blob._canvasHeight = canvasWidth, canvasHeight
+    end
+    local canvasX, canvasY = (0.5 - player.mapX) * canvasWidth,
+        (player.mapY - 0.5) * canvasHeight
+    if blob._canvasX ~= canvasX or blob._canvasY ~= canvasY then
+        blob:ClearAllPoints()
+        blob:SetPoint("CENTER", panel.field, "CENTER", canvasX, canvasY)
+        blob._canvasX, blob._canvasY = canvasX, canvasY
+    end
     if blob.drawnKey ~= key or now >= (blob.nextDrawAt or 0) then
         local ok = true
         if blob.mapContextID ~= mapID then
@@ -1666,7 +1702,8 @@ local function RenderQuestAreas(player, mapID, range)
         if not ok then HideQuestAreas(); return end
         blob.drawnKey = key
         -- DrawBlob can succeed before Blizzard loads the shape data.
-        blob.nextDrawAt = now + addon.VignetteRadarScanSeconds()
+        blob.retryDelay = math.min(5, (blob.retryDelay or 1) * 2)
+        blob.nextDrawAt = now + blob.retryDelay
     end
     blob:Show()
     return true
@@ -2237,6 +2274,37 @@ end
 local function UpdatePanelChrome()
     local circleOnly = CircleOnly()
     local style = addon.VignetteRadarStyle
+    local showButtons = not circleOnly and Settings().vignetteRadarControlsVisible ~= false
+    local showTools = circleOnly and Settings().vignetteRadarHoverTools ~= false
+        and panel._hoverToolsShown == true
+    local frameButton = panel.frameToggle
+    local quick = addon.VignetteRadarQuickConfig
+    local legend = LegendAPI()
+    local focused = FocusedTargetKey()
+    local routeActive = addon.VignetteRadarWorldFocus
+        and addon.VignetteRadarWorldFocus.IsRouteActive() or false
+    local quickShown = quick and quick.IsShown and quick.IsShown() or false
+    local legendShown = legend and ((legend.IsShown and legend.IsShown())
+        or (legend.IsQuestShown and legend.IsQuestShown())) or false
+    local helpShown = panel.emptyReason ~= nil
+    if panel._chromeCircleOnly == circleOnly and panel._chromeButtons == showButtons
+        and panel._chromeTools == showTools and panel._chromeLayout == panel.layout
+        and panel._chromeHelp == helpShown and panel._chromeFocused == focused
+        and panel._chromeRoute == routeActive and panel._chromeQuick == quickShown
+        and panel._chromeLegend == legendShown
+        and panel._chromeFrameHover == (frameButton and frameButton._hovered or false)
+        and panel._chromeR == ACCENT[1] and panel._chromeG == ACCENT[2]
+        and panel._chromeB == ACCENT[3]
+        and panel._chromeStyleRev == (style and style.revision) then return end
+    panel._chromeCircleOnly, panel._chromeButtons, panel._chromeTools =
+        circleOnly, showButtons, showTools
+    panel._chromeLayout, panel._chromeHelp, panel._chromeFocused =
+        panel.layout, helpShown, focused
+    panel._chromeRoute, panel._chromeQuick, panel._chromeLegend =
+        routeActive, quickShown, legendShown
+    panel._chromeFrameHover = frameButton and frameButton._hovered or false
+    panel._chromeR, panel._chromeG, panel._chromeB = ACCENT[1], ACCENT[2], ACCENT[3]
+    panel._chromeStyleRev = style and style.revision
     local br, bg, bb = .02, .025, .03
     if style then br, bg, bb = style.Color("background") end
     panel:SetBackdropColor(math.min(.14, br * 2.7), math.min(.14, bg * 2.7),
@@ -2247,15 +2315,12 @@ local function UpdatePanelChrome()
         panel.zoomLabel }) do
         control:SetShown(not circleOnly)
     end
-    local showButtons = not circleOnly and Settings().vignetteRadarControlsVisible ~= false
     for _, control in ipairs({ panel.zoomOut, panel.zoomIn, panel.combatToggle,
         panel.trailToggle, panel.routeToggle, panel.compass, panel.target, panel.legend, panel.minimize, panel.close }) do
         control:SetShown(showButtons)
     end
     if panel.emptyHelp then panel.emptyHelp:SetShown(not circleOnly and panel.emptyReason ~= nil) end
     if panel.hoverTools then
-        local showTools = circleOnly and Settings().vignetteRadarHoverTools ~= false
-            and panel._hoverToolsShown == true
         if panel._hoverToolsVisible ~= showTools then
             panel._hoverToolsVisible = showTools
             for _, tool in ipairs(panel.hoverTools) do tool:SetShown(showTools) end
@@ -2413,6 +2478,11 @@ local function UpdateCombatToggle()
     if not (panel and panel.combatToggle) then return end
     local button = panel.combatToggle
     local keepVisible = Settings().vignetteRadarKeepVisibleCombat == true
+    if button.keepVisible == keepVisible and button._drawHovered == button._hovered
+        and button._drawR == ACCENT[1] and button._drawG == ACCENT[2]
+        and button._drawB == ACCENT[3] then return end
+    button._drawHovered = button._hovered
+    button._drawR, button._drawG, button._drawB = ACCENT[1], ACCENT[2], ACCENT[3]
     local red, green, blue, opacity
     if keepVisible then
         red, green, blue, opacity = ACCENT[1], ACCENT[2], ACCENT[3], 1
@@ -2996,6 +3066,12 @@ routeMenu.Refresh = function()
     routeMenu.popup.title:SetTextColor(ar, ag, ab, 1)
     routeMenu.popup.section:SetTextColor(ar, ag, ab, .88)
     routeMenu.popup.rule:SetColorTexture(ar, ag, ab, .2)
+    if routeMenu.mode == "zygor" then
+        if routeMenu.popup.zygor and routeMenu.popup.zygor.Refresh then
+            routeMenu.popup.zygor.Refresh()
+        end
+        return
+    end
     routeMenu.popup.rule2:SetColorTexture(ar, ag, ab, .16)
     routeMenu.popup.status:SetText(focus and focus.Status() or "Waypoint data unavailable")
     routeMenu.popup.status:SetTextColor(.7, .79, .8, 1)
@@ -3065,7 +3141,9 @@ function routeMenu.Ensure()
         button:SetPoint("TOPLEFT", routeMenu.popup, "TOPLEFT", x, y)
         button:SetScript("OnClick", function()
             local ok, reason = action()
-            if ok then
+            if ok == "page" then
+                return
+            elseif ok then
                 routeMenu.Hide()
             else
                 reason = type(reason) == "string" and reason or "No waypoint could be set"
@@ -3088,10 +3166,9 @@ function routeMenu.Ensure()
                 return false, "World Focus is unavailable"
             end)
     end
-    Choice("zygor", "Pin Zygor Step", 13, -117, 222, function()
-        local api = addon.VignetteRadarAPI
-        if api and api.PinZygorStep then return api.PinZygorStep() end
-        return false, "World Focus is unavailable"
+    Choice("zygor", "Zygor Objectives...", 13, -117, 222, function()
+        routeMenu.ShowZygorPage()
+        return "page"
     end)
     Choice("previous", "Previous Point", 13, -145, 107, function()
         return addon.VignetteRadarWorldFocus.Cycle(-1)
@@ -3119,6 +3196,136 @@ function routeMenu.Ensure()
         if quick and quick.OpenPage then quick.OpenPage("Auto Route", CircleOnly() and panel.field or panel) end
         return true
     end)
+    routeMenu.popup.mainControls = { routeMenu.popup.status, routeMenu.popup.section,
+        routeMenu.popup.rule2 }
+    for _, button in pairs(routeMenu.popup.choices) do
+        routeMenu.popup.mainControls[#routeMenu.popup.mainControls + 1] = button
+    end
+    local zygor = CreateFrame("Frame", nil, routeMenu.popup)
+    zygor:SetPoint("TOPLEFT", routeMenu.popup, "TOPLEFT", 0, -32)
+    zygor:SetSize(248, 258)
+    zygor:EnableMouseWheel(true)
+    routeMenu.popup.zygor = zygor
+    zygor.status = Text(zygor, 9, "")
+    zygor.status:SetPoint("TOPLEFT", 13, -4)
+    zygor.status:SetWidth(222)
+    if zygor.status.SetMaxLines then zygor.status:SetMaxLines(1) end
+    zygor.section = Text(zygor, 9, "PIN A LOCATION", true)
+    zygor.section:SetPoint("TOPLEFT", 13, -27)
+    local function ZygorButton(label, x, y, width, action)
+        local button = addon.VignetteRadarControls.Button(zygor, label, width, 22)
+        button:SetPoint("TOPLEFT", zygor, "TOPLEFT", x, y)
+        button:SetScript("OnClick", function()
+            local ok, reason = action(button)
+            if ok == "page" then
+                return
+            elseif ok then
+                routeMenu.Hide()
+                if RefreshRadar then RefreshRadar(false) end
+            else
+                routeMenu.popup.zygor.status:SetText(reason or "No mapped point for this step")
+                routeMenu.popup.zygor.status:SetTextColor(1, .63, .38, 1)
+            end
+        end)
+        return button
+    end
+    zygor.objective = ZygorButton("Selected Objective", 13, -45, 107, function()
+        local bridge = addon.VignetteRadarZygor
+        if bridge.IsFollowing() then return bridge.SetMode("objective") end
+        bridge.SetMode("objective")
+        return bridge.Pin("objective")
+    end)
+    zygor.travel = ZygorButton("Next Travel Stop", 128, -45, 107, function()
+        local bridge = addon.VignetteRadarZygor
+        if bridge.IsFollowing() then return bridge.SetMode("travel") end
+        bridge.SetMode("travel")
+        return bridge.Pin("travel")
+    end)
+    zygor.follow = ZygorButton("Follow Guide", 13, -73, 222, function()
+        local ok, reason = addon.VignetteRadarZygor.ToggleFollow()
+        return ok, reason
+    end)
+    zygor.goalTitle = Text(zygor, 9, "OBJECTIVES · SCROLL FOR MORE", true)
+    zygor.goalTitle:SetPoint("TOPLEFT", 13, -106)
+    zygor.rows = {}
+    for index = 1, 4 do
+        local row = ZygorButton("", 13, -124 - (index - 1) * 24, 210, function(self)
+            return addon.VignetteRadarZygor.Pin("objective", self.goalIndex)
+        end)
+        row:HookScript("OnEnter", function(self)
+            if not (self.goalReason and GameTooltip) then return end
+            GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+            GameTooltip:SetText(self.goalReason, 1, .75, .52, true)
+            GameTooltip:Show()
+        end)
+        row:HookScript("OnLeave", function()
+            if GameTooltip then GameTooltip:Hide() end
+        end)
+        zygor.rows[index] = row
+    end
+    zygor.scrollTrack = zygor:CreateTexture(nil, "ARTWORK")
+    zygor.scrollTrack:SetColorTexture(.45, .55, .57, .28)
+    zygor.scrollTrack:SetPoint("TOPLEFT", zygor, "TOPLEFT", 230, -124)
+    zygor.scrollTrack:SetSize(3, 94)
+    zygor.scrollThumb = zygor:CreateTexture(nil, "OVERLAY")
+    zygor.scrollThumb:SetColorTexture(.65, .8, .82, .85)
+    zygor.scrollThumb:SetSize(3, 28)
+    zygor.back = ZygorButton("Back to Routes", 13, -228, 222, function()
+        routeMenu.ShowMainPage()
+        return "page"
+    end)
+    zygor.offset = 0
+    zygor.Refresh = function()
+        local bridge = addon.VignetteRadarZygor
+        local rows, reason
+        if bridge then rows, reason = bridge.Goals()
+        else rows, reason = {}, "Zygor integration unavailable" end
+        zygor.status:SetText(bridge and bridge.GuideLabel() or reason)
+        zygor.status:SetTextColor(.7, .79, .8, 1)
+        zygor.follow:SetText(bridge and bridge.IsPaused() and "Resume Guide Follow"
+            or bridge and bridge.IsFollowing() and "Pause Guide Follow" or "Follow Guide")
+        zygor.objective:SetEnabled(bridge ~= nil)
+        zygor.travel:SetEnabled(bridge ~= nil)
+        local maxOffset = math.max(0, #rows - #zygor.rows)
+        zygor.offset = math.min(zygor.offset, maxOffset)
+        for index, row in ipairs(zygor.rows) do
+            local goal = rows[index + zygor.offset]
+            row.goalIndex = goal and goal.index
+            row.goalReason = goal and (not goal.mapped and goal.reason or nil)
+            row:SetShown(goal ~= nil)
+            if goal then
+                local name = goal.name
+                if #name > 26 then name = name:sub(1, 25) .. "…" end
+                row:SetText(goal.index .. ". " .. name .. (goal.complete and " · Done" or ""))
+                row:SetEnabled(goal.mapped)
+                row:SetAlpha(goal.complete and .62 or 1)
+            end
+        end
+        zygor.goalTitle:SetText(#rows > 0 and (maxOffset > 0
+            and "OBJECTIVES · SCROLL FOR MORE" or "OBJECTIVES")
+            or reason or "NO VISIBLE OBJECTIVES IN THIS STEP")
+        if #rows == 0 and reason then zygor.status:SetText(reason) end
+        zygor.scrollTrack:SetShown(maxOffset > 0)
+        zygor.scrollThumb:SetShown(maxOffset > 0)
+        if maxOffset > 0 then
+            zygor.scrollThumb:SetHeight(math.max(18, 94 * #zygor.rows / #rows))
+            zygor.scrollThumb:ClearAllPoints()
+            zygor.scrollThumb:SetPoint("TOP", zygor.scrollTrack, "TOP", 0,
+                -(94 - zygor.scrollThumb:GetHeight()) * zygor.offset / maxOffset)
+        end
+    end
+    zygor:SetScript("OnMouseWheel", function(_, delta)
+        zygor.offset = math.max(0, zygor.offset - delta)
+        zygor.Refresh()
+    end)
+    for _, row in ipairs(zygor.rows) do
+        row:EnableMouseWheel(true)
+        row:SetScript("OnMouseWheel", function(_, delta)
+            zygor.offset = math.max(0, zygor.offset - delta)
+            zygor.Refresh()
+        end)
+    end
+    zygor:Hide()
     routeMenu.popup:SetScript("OnHide", function()
         if panel and panel.routeToggle then
             panel.routeToggle._popupOpen = false
@@ -3132,6 +3339,92 @@ function routeMenu.Ensure()
     return routeMenu.popup
 end
 
+function routeMenu.ShowZygorPage()
+    local popup = routeMenu.Ensure()
+    routeMenu.mode = "zygor"
+    popup:SetHeight(300)
+    popup.title:SetText("ZYGOR STEP PICKER")
+    for _, control in ipairs(popup.mainControls) do control:Hide() end
+    popup.zygor:Show()
+    routeMenu.Refresh()
+    if routeMenu.anchor then routeMenu.Position(routeMenu.anchor) end
+end
+
+function routeMenu.ShowMainPage()
+    local popup = routeMenu.Ensure()
+    routeMenu.mode = nil
+    popup:SetHeight(263)
+    popup.title:SetText("ROUTE CHOOSER")
+    popup.zygor:Hide()
+    for _, control in ipairs(popup.mainControls) do control:Show() end
+    routeMenu.Refresh()
+    if routeMenu.anchor then routeMenu.Position(routeMenu.anchor) end
+end
+
+function routeMenu.HideGuideStrip()
+    if routeMenu.guideStrip then routeMenu.guideStrip:Hide() end
+end
+
+function routeMenu.ShowGuideStrip(anchor)
+    local bridge = addon.VignetteRadarZygor
+    if not (CircleOnly() and anchor and _G.ZygorGuidesViewer and bridge) then return end
+    if not routeMenu.guideStrip then
+        local strip = CreateFrame("Frame", nil, UIParent)
+        strip:SetSize(280, 62)
+        strip:SetFrameStrata("DIALOG")
+        strip:SetClampedToScreen(true)
+        strip:EnableMouse(true)
+        addon.VignetteRadarControls.RoundedStatusSurface(strip)
+        strip.title = Text(strip, 9, "ZYGOR GUIDE", true)
+        strip.title:SetPoint("TOPLEFT", 12, -9)
+        strip.title:SetWidth(198)
+        if strip.title.SetMaxLines then strip.title:SetMaxLines(1) end
+        strip.detail = Text(strip, 10, "")
+        strip.detail:SetPoint("TOPLEFT", 12, -28)
+        strip.detail:SetWidth(254)
+        strip.detail:SetHeight(27)
+        strip.detail:SetWordWrap(true)
+        if strip.detail.SetMaxLines then strip.detail:SetMaxLines(2) end
+        strip.action = addon.VignetteRadarControls.Button(strip, "Follow", 58, 20)
+        strip.action:SetPoint("TOPRIGHT", strip, "TOPRIGHT", -9, -7)
+        strip.action:SetScript("OnClick", function()
+            bridge.ToggleFollow()
+            routeMenu.ShowGuideStrip(routeMenu.guideAnchor)
+            if RefreshRadar then RefreshRadar(false) end
+        end)
+        strip:SetScript("OnLeave", function()
+            if C_Timer and C_Timer.After then C_Timer.After(.15, function()
+                if strip:IsShown() and not strip:IsMouseOver()
+                    and not (routeMenu.guideAnchor and routeMenu.guideAnchor:IsMouseOver()) then
+                    strip:Hide()
+                end
+            end) end
+        end)
+        strip:Hide()
+        routeMenu.guideStrip = strip
+    end
+    local strip = routeMenu.guideStrip
+    routeMenu.guideAnchor = anchor
+    addon.VignetteRadarControls.RefreshRoundedStatusSurface(strip)
+    strip.title:SetText(bridge.GuideLabel())
+    strip.title:SetTextColor(ACCENT[1], ACCENT[2], ACCENT[3], 1)
+    local focus = addon.VignetteRadarWorldFocus
+    strip.detail:SetText(focus and focus.OwnsGuideWaypoint()
+        and focus.Status() or bridge.Status())
+    strip.action:SetText(bridge.IsPaused() and "Resume"
+        or bridge.IsFollowing() and "Pause" or "Follow")
+    strip:ClearAllPoints()
+    local field = panel and panel.field
+    local bottom = field and field.GetBottom and field:GetBottom()
+    if (routeMenu.toast and routeMenu.toast:IsShown())
+        or (bottom and bottom < strip:GetHeight() + 12) then
+        strip:SetPoint("BOTTOM", field, "TOP", 0, 7)
+    else
+        strip:SetPoint("TOP", field or anchor, "BOTTOM", 0, -7)
+    end
+    strip:Show()
+end
+
 routeMenu.Toggle = function(anchor)
     local popup = routeMenu.Ensure()
     if popup:IsShown() then routeMenu.Hide(); return false end
@@ -3140,6 +3433,9 @@ routeMenu.Toggle = function(anchor)
     if legend and legend.Hide then legend.Hide() end
     if picker and picker.Hide then picker.Hide() end
     if addon.VignetteRadarQuickConfig then addon.VignetteRadarQuickConfig.Hide() end
+    routeMenu.HideGuideStrip()
+    routeMenu.anchor = anchor
+    routeMenu.ShowMainPage()
     routeMenu.Position(anchor)
     routeMenu.Refresh()
     popup:Show()
@@ -3524,7 +3820,22 @@ Render = function()
     addon.UpdateVignetteRadarQuestKey()
     local notesInRange = RenderMapNotes(player, range, targets)
     local edgeCueCount = RenderEdgeCues(player, range, targets)
-    RenderExploration(player, range)
+    local exploreNow = Now()
+    local trailSettings = Settings()
+    if not panel._exploreNextAt or exploreNow >= panel._exploreNextAt
+        or panel._exploreRange ~= range or panel._exploreMapID ~= mapID
+        or panel._exploreRadius ~= panel.plotRadius
+        or panel._exploreEnabled ~= trailSettings.vignetteRadarBreadcrumbs
+        or panel._exploreStyle ~= trailSettings.vignetteRadarTrailStyle
+        or panel._exploreLens ~= addon.VignetteRadarLensActive then
+        RenderExploration(player, range)
+        panel._exploreNextAt = exploreNow + .2
+        panel._exploreRange, panel._exploreMapID = range, mapID
+        panel._exploreRadius = panel.plotRadius
+        panel._exploreEnabled = trailSettings.vignetteRadarBreadcrumbs
+        panel._exploreStyle = trailSettings.vignetteRadarTrailStyle
+        panel._exploreLens = addon.VignetteRadarLensActive
+    end
     local shown, staleShown, totalInRange = 0, 0, 0
     local groups = {}
     for _, target in ipairs(targets) do
@@ -4318,7 +4629,9 @@ EnsureLauncher = function()
             UpdateLauncherSweep(self, self._sweepElapsed)
             self._sweepElapsed = 0
         end
-        if self._targetElapsed >= 0.25 then
+        local launcherInterval = (self._hovered or self._shock or (self.detected or 0) > 0)
+            and .25 or .5
+        if self._targetElapsed >= launcherInterval then
             self._targetElapsed = 0
             UpdateLauncher(0, true)
         end
@@ -5169,6 +5482,19 @@ local function EnsurePanel()
     HoverTool("trail", "Trail: left toggle, right style", panel.trailToggle, "BOTTOMLEFT", 10, 10)
     HoverTool("route", "Auto Route: start, pause, or resume; right-click to choose",
         panel.routeToggle, "BOTTOMRIGHT", -10, 30)
+    for _, tool in ipairs(panel.hoverTools) do
+        if tool.toolID == "route" then
+            tool:HookScript("OnEnter", function(self) routeMenu.ShowGuideStrip(self) end)
+            tool:HookScript("OnLeave", function(self)
+                if C_Timer and C_Timer.After then C_Timer.After(.15, function()
+                    local strip = routeMenu.guideStrip
+                    if strip and strip:IsShown() and not strip:IsMouseOver()
+                        and not self:IsMouseOver() then strip:Hide() end
+                end) end
+            end)
+            break
+        end
+    end
     HoverTool("eye", "Stay fully visible", panel.combatToggle, "BOTTOMLEFT", 30, 10)
     HoverTool("help", "Radar status", nil, "BOTTOMLEFT", 10, 30)
     HoverTool("minimize", "Minimize to launcher", panel.minimize, "BOTTOMRIGHT", -30, 10)
@@ -5207,9 +5533,15 @@ local function EnsurePanel()
             self._shortTrailElapsed = 0
         end
         self._questTooltipElapsed = (self._questTooltipElapsed or 0) + elapsed
-        if self._questTooltipElapsed >= .1 then
+        if self._questTooltipElapsed >= .15 then
             self._questTooltipElapsed = 0
-            UpdateQuestAreaTooltip()
+            local tooltipOwner = GameTooltip and GameTooltip.GetOwner and GameTooltip:GetOwner()
+            if (self.field and self.field.IsMouseOver and self.field:IsMouseOver())
+                or (self.questBlob and self.questBlob.IsMouseOver
+                    and self.questBlob:IsMouseOver())
+                or tooltipOwner == self.field or tooltipOwner == self.questBlob then
+                UpdateQuestAreaTooltip()
+            end
         end
         if self._scanElapsed >= addon.VignetteRadarScanSeconds() then
             self._scanElapsed = 0
@@ -5312,18 +5644,18 @@ ScanVignettes = function(mapID)
     activeMapID = mapID
     activeTargets = CollectVignettes(mapID)
     local db = Settings()
-    local focusOnlyQuests = db.vignetteRadarWorldFocusEnabled and not preview
-        and not db.vignetteRadarQuestDots and not db.vignetteRadarQuestAreas
-        and not (db.vignetteRadarBeaconsEnabled and db.vignetteRadarBeaconQuests)
     local questCache = addon._focusQuestCache
-    if focusOnlyQuests and questCache and questCache.mapID == mapID
+    local questOptions = tostring(db.vignetteRadarNextQuestStep) .. ":"
+        .. tostring(db.vignetteRadarQuestDots) .. ":" .. tostring(db.vignetteRadarQuestAreas)
+        .. ":" .. tostring(db.vignetteRadarWorldFocusEnabled) .. ":"
+        .. tostring(db.vignetteRadarBeaconsEnabled and db.vignetteRadarBeaconQuests)
+    if questCache and questCache.mapID == mapID and questCache.options == questOptions
         and now - questCache.at < 5 then
         activeQuests = questCache.quests
     else
         activeQuests = CollectQuests(mapID)
-        if focusOnlyQuests then
-            addon._focusQuestCache = { quests = activeQuests, mapID = mapID, at = now }
-        else addon._focusQuestCache = nil end
+        addon._focusQuestCache = { quests = activeQuests, mapID = mapID,
+            options = questOptions, at = now }
     end
     local startsEnabled = Settings().vignetteRadarQuestStartBadges == true
     local startsNow = Now()
@@ -5460,7 +5792,11 @@ ScanVignettes = function(mapID)
 end
 
 RefreshRadar = function(rescan)
+    if addon.VignetteRadarZygor then
+        addon.VignetteRadarZygor.Bind(MapToWorld, MapVector, CurrentMapID, RefreshZygorVisual)
+    end
     local settings = Settings()
+    if panel then panel._exploreNextAt = nil end
     local exploration = addon.VignetteRadarExploration
     local mapID = CurrentMapID()
     local trail, trailMap
@@ -5578,11 +5914,10 @@ addon.VignetteRadarAPI = {
         return #activeMapNotes
     end,
     PinZygorStep = function()
-        local worldFocus, mapID = addon.VignetteRadarWorldFocus, CurrentMapID()
-        if not worldFocus then return false, "World Focus is unavailable" end
-        local guide, reason = worldFocus.ZygorNote(mapID, MapToWorld, MapVector, true, true)
-        if not guide then return false, reason or "Zygor has no active guide waypoint" end
-        return worldFocus.SelectNote(guide, true)
+        local zygor = addon.VignetteRadarZygor
+        if not zygor then return false, "Zygor integration is unavailable" end
+        zygor.Bind(MapToWorld, MapVector, CurrentMapID, RefreshZygorVisual)
+        return zygor.Pin("objective")
     end,
     GetPlayerSnapshot = function() return PlayerSnapshot(CurrentMapID()) end,
     GetSelectableTargets = SelectableTargets,
@@ -5626,7 +5961,10 @@ addon.VignetteRadarAPI = {
     GetPanel = function() return panel end,
     GetLauncher = function() return launcher end,
     IsPreviewing = function() return preview end,
-    Refresh = function(rescan) RefreshRadar(rescan == true) end,
+    Refresh = function(rescan)
+        if rescan == true then addon._focusQuestCache = nil end
+        RefreshRadar(rescan == true)
+    end,
     ToggleQuestKey = addon.ToggleVignetteRadarQuestKey,
     RefreshPresentation = function()
         if panel and panel:IsShown() then Render() end
@@ -5965,11 +6303,18 @@ for _, event in ipairs({
     "VIGNETTES_UPDATED", "VIGNETTE_MINIMAP_UPDATED",
     "QUEST_LOG_UPDATE", "QUEST_POI_UPDATE", "QUEST_WATCH_LIST_CHANGED", "SUPER_TRACKING_CHANGED",
     "PLAYER_REGEN_DISABLED", "PLAYER_REGEN_ENABLED", "ZONE_CHANGED", "ZONE_CHANGED_INDOORS",
+    "LOOT_OPENED", "LOOT_SLOT_CLEARED", "LOOT_CLOSED",
     "GLOBAL_MOUSE_DOWN",
 }) do
     events:RegisterEvent(event)
 end
 events:SetScript("OnEvent", function(_, event)
+    if event == "LOOT_OPENED" or event == "LOOT_SLOT_CLEARED"
+        or event == "LOOT_CLOSED" then
+        local focus = addon.VignetteRadarWorldFocus
+        if focus and focus.OnLootEvent and focus.OnLootEvent(event) then RefreshRadar(false) end
+        return
+    end
     if event == "GLOBAL_MOUSE_DOWN" then
         -- This event runs only for clicks, never in the radar update loop.
         -- Keep related popups open while the pointer is inside any of them.
@@ -6027,12 +6372,14 @@ events:SetScript("OnEvent", function(_, event)
         or event == "QUEST_POI_UPDATE" or event == "QUEST_WATCH_LIST_CHANGED") then
         addon.VignetteRadarQuestData.Invalidate(mapChanged and "map" or "quest")
         addon.VignetteRadarStartsNextAt = nil
+        addon._focusQuestCache = nil
     end
     if mapChanged then questMapBasis = nil end
     if mapChanged or event == "QUEST_LOG_UPDATE" or event == "QUEST_POI_UPDATE"
         or event == "QUEST_WATCH_LIST_CHANGED" or event == "SUPER_TRACKING_CHANGED" then
         if panel and panel.questBlob then
             panel.questBlob.drawnKey = nil
+            panel.questBlob.retryDelay = nil
             if mapChanged then panel.questBlob.mapContextID = nil end
         end
     end

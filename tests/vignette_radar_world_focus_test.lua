@@ -264,6 +264,37 @@ assert(guide and guide.kind == "guide" and guide.worldX == 600
     and guide.name == "Selected objective"
     and not focus.ZygorNote(124, function() error("wrong map") end, function() end),
     "the selected, same-map guide objective should win over Zygor's manual arrow")
+player.worldX = 300
+focus.Sync(123, player, {}, {}, {})
+assert(focus.SelectNote(guide, true))
+player.worldX = 600
+focus.Sync(123, player, {}, {}, {})
+assert(focus.HasFocus() and waypoint.position.x == .6,
+    "arriving at a Zygor objective must keep the pin until its guide step changes")
+player.worldX = 300
+activeZygorStep.goals[2].status = "complete"
+local nextGoal = focus.ZygorNote(123, function(_, vector)
+    return vector.x * 1000, vector.y * 1000, 42
+end, function(x, y) return { x = x, y = y } end)
+assert(nextGoal and nextGoal.mapX == .5,
+    "a completed selected goal should yield to the next incomplete objective")
+activeZygorStep.goals[1].status = "complete"
+local waiting, waitingReason = focus.ZygorNote(123, function(_, vector)
+    return vector.x * 1000, vector.y * 1000, 42
+end, function(x, y) return { x = x, y = y } end, true, true)
+assert(not waiting and waitingReason == "Waiting for Zygor's next guide step",
+    "all completed goals must wait for Zygor rather than repin a finished objective")
+activeZygorStep.goals[1].status = "incomplete"
+activeZygorStep.goals[2].status = "incomplete"
+activeZygorStep.waypath = { coords = {
+    { map = 123, x = .3, y = .5 }, { map = 123, x = .45, y = .5 },
+} }
+local travel = focus.ZygorNote(123, function(_, vector)
+    return vector.x * 1000, vector.y * 1000, 42
+end, function(x, y) return { x = x, y = y } end, true, true, "travel")
+assert(travel and travel.mapX == .45 and travel.name == "Travel Stop 2/2",
+    "travel mode should advance past a nearby path node instead of pinning the objective")
+activeZygorStep.waypath = nil
 settings.vignetteRadarWorldFocusZygor = false
 assert(not focus.ZygorNote(123, function() error("hidden guide") end, function() end),
     "the guide dot toggle should still hide Zygor from the radar")
@@ -338,5 +369,30 @@ do
     focus.Sync(123, player, { live }, {}, { incomplete })
     assert(focus.StartNearest("rare") and waypoint.position.x == .7,
         "incomplete map notes must not break duplicate checking or valid rare routes")
+end
+do
+    local looted, nextChest = Step(500), Step(600)
+    looted.kind, looted.key, looted.name, looted.objectID =
+        "treasure", "loot:first", "First cache", 777
+    nextChest.kind, nextChest.key, nextChest.name =
+        "treasure", "loot:second", "Second cache"
+    player.worldX = 490
+    focus.Sync(123, player, {}, {}, { looted, nextChest })
+    assert(focus.SelectNote(looted) and focus.ToggleRoute()
+        and waypoint.position.x == .5)
+    GetTime = function() return 100 end
+    GetNumLootItems = function() return 1 end
+    GetLootSourceInfo = function() return "Creature-0-1-1-1-777-000" end
+    focus.OnLootEvent("LOOT_OPENED")
+    assert(not focus.OnLootEvent("LOOT_SLOT_CLEARED") and waypoint.position.x == .5,
+        "looting a nearby creature must not consume a treasure route stop")
+    GetLootSourceInfo = function() return "GameObject-0-1-1-1-999-000" end
+    focus.OnLootEvent("LOOT_OPENED")
+    assert(not focus.OnLootEvent("LOOT_SLOT_CLEARED") and waypoint.position.x == .5,
+        "a different nearby container must not consume the saved treasure")
+    GetLootSourceInfo = function() return "GameObject-0-1-1-1-777-000" end
+    focus.OnLootEvent("LOOT_OPENED")
+    assert(focus.OnLootEvent("LOOT_SLOT_CLEARED") and waypoint.position.x == .6,
+        "looting the matched nearby treasure should advance even outside 3 yards")
 end
 io.write("vignette radar World Focus tests passed\n")

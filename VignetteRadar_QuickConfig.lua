@@ -72,6 +72,10 @@ local function Changed(key, value, subkey)
     elseif key == "vignetteRadarPOIIcons" then
         db[key] = value == true
         addon.VignetteRadarAPI.Refresh(false)
+    elseif key == "vignetteRadarFollowZygor" and addon.VignetteRadarZygor then
+        addon.VignetteRadarZygor.SetFollow(value)
+    elseif key == "vignetteRadarZygorMode" and addon.VignetteRadarZygor then
+        addon.VignetteRadarZygor.SetMode(value)
     elseif key == "vignetteRadarCategories" and legend then
         legend.SetCategoryEnabled(subkey, value)
     elseif key == "vignetteRadarHighlight" and legend then
@@ -294,6 +298,24 @@ function API.Refresh()
         if quick.pages["Auto Route"] and quick.pages["Auto Route"].status then
             quick.pages["Auto Route"].status:SetText(focus and focus.Status() or "Waypoint data unavailable")
         end
+    end
+    if quick.pages.Zygor and quick.pages.Zygor.status and addon.VignetteRadarZygor then
+        quick.pages.Zygor.status:SetText(addon.VignetteRadarZygor.GuideLabel()
+            .. "\n" .. addon.VignetteRadarZygor.Status())
+        if quick.pages.Zygor.followButton then
+            quick.pages.Zygor.followButton:SetText(addon.VignetteRadarZygor.IsPaused()
+                and "Resume Follow" or addon.VignetteRadarZygor.IsFollowing()
+                    and "Pause Follow" or "Start Follow")
+        end
+    end
+    if quick.pages.Performance and quick.pages.Performance.workload then
+        local budget = addon.VignetteRadarBudget
+        local recent = budget and budget.recent or {}
+        local total = (recent.radar or 0) + (recent.launcher or 0)
+            + (recent.background or 0)
+        quick.pages.Performance.workload:SetText(budget and budget.softThrottle
+            and string.format("Recent update work: %.1f ms/sec · temporarily slowed", total)
+            or string.format("Recent update work: %.1f ms/sec", total))
     end
     for _, box in ipairs(checks) do
         local value = db[box.optionKey]
@@ -554,16 +576,8 @@ local function Build()
     Check(focus, "vignetteRadarWorldFocusRoutes", "Follow Pack Entrance + Path Steps", 14, -77)
     Check(focus, "vignetteRadarWorldFocusSavedNotes", "Include Saved Treasure + Rare Notes", 14, -105)
     Check(focus, "vignetteRadarWorldFocusZygor", "Show Zygor Step", 14, -133, nil, 145)
-    focus.pinZygor = Button(focus, "Pin Zygor", 202, -135, 72, function()
-        local api = addon.VignetteRadarAPI
-        local ok, reason
-        if api and api.PinZygorStep then ok, reason = api.PinZygorStep()
-        else reason = "World Focus is unavailable" end
-        API.Refresh()
-        if not ok and reason and UIErrorsFrame and UIErrorsFrame.AddMessage then
-            UIErrorsFrame:AddMessage(reason, 1, .65, .25)
-        end
-        if not ok and reason then focus.status:SetText(reason) end
+    focus.pinZygor = Button(focus, "Zygor...", 202, -135, 72, function()
+        SelectPage("Zygor")
     end)
     Section(focus, "ARRIVAL DISTANCE", -166)
     Choice(focus, "vignetteRadarWorldFocusArrivalRadius", 10, "10 yd", 14, -184, 80)
@@ -584,6 +598,44 @@ local function Build()
     end)
     Button(focus, "Auto Route...", 150, -246, 124, function() SelectPage("Auto Route") end)
     focus.status = Label(focus, "", 14, -277, 9, 260)
+
+    local zygor = CreateFrame("Frame", nil, quick)
+    zygor:SetSize(WIDTH, HEIGHT - 137)
+    zygor:SetPoint("TOPLEFT", quick, "TOPLEFT", 0, -137)
+    zygor.searchPage = "Zygor"
+    zygor:Hide()
+    quick.pages.Zygor = zygor
+    Section(zygor, "ZYGOR GUIDE", -3)
+    Check(zygor, "vignetteRadarWorldFocusZygor", "Show Guide Point on Radar", 14, -21)
+    Check(zygor, "vignetteRadarFollowZygor", "Follow Active Guide Automatically", 14, -49)
+    Section(zygor, "FOLLOW DESTINATION", -81)
+    Choice(zygor, "vignetteRadarZygorMode", "objective", "Objective", 14, -99, 124)
+    Choice(zygor, "vignetteRadarZygorMode", "travel", "Travel Stop", 150, -99, 124)
+    zygor.pinObjective = Button(zygor, "Pin Objective", 14, -133, 124, function()
+        local bridge = addon.VignetteRadarZygor
+        local ok, reason
+        if bridge then ok, reason = bridge.Pin("objective") end
+        API.Refresh()
+        if not ok and reason then zygor.status:SetText(reason) end
+    end)
+    zygor.pinTravel = Button(zygor, "Pin Travel Stop", 150, -133, 124, function()
+        local bridge = addon.VignetteRadarZygor
+        local ok, reason
+        if bridge then ok, reason = bridge.Pin("travel") end
+        API.Refresh()
+        if not ok and reason then zygor.status:SetText(reason) end
+    end)
+    zygor.status = Label(zygor, "", 14, -170, 9, 260)
+    zygor.status:SetHeight(43)
+    zygor.status:SetWordWrap(true)
+    zygor.followButton = Button(zygor, "Start Follow", 14, -221, 124, function()
+        addon.VignetteRadarZygor.ToggleFollow()
+        API.Refresh()
+    end)
+    Button(zygor, "Back to World Focus", 150, -221, 124, function()
+        SelectPage("World Focus")
+    end)
+    Label(zygor, "Manual waypoints pause Follow until you resume it.", 14, -258, 9, 260)
 
     local autoRoute = CreateFrame("Frame", nil, quick)
     autoRoute:SetSize(WIDTH, HEIGHT - 137)
@@ -950,12 +1002,15 @@ local function Build()
     Choice(performance, "vignetteRadarPerformance", "standard", "Standard", 14, -25, 80)
     Choice(performance, "vignetteRadarPerformance", "balanced", "Balanced", 104, -25, 80)
     Choice(performance, "vignetteRadarPerformance", "low", "Low CPU", 194, -25, 80)
-    Label(performance, "Standard: smoothest motion, scans each second.", 14, -61, 9)
-    Label(performance, "Balanced: half as many redraws.", 14, -79, 9)
-    Label(performance, "Low CPU: fewer redraws and slower scans.", 14, -97, 9)
+    Label(performance, "Standard: 10 redraws/sec, scans each second.", 14, -61, 9)
+    Label(performance, "Balanced: about 7 redraws/sec.", 14, -79, 9)
+    Label(performance, "Low CPU: 4 redraws/sec and slower scans.", 14, -97, 9)
     Section(performance, "AUTOMATIC PROTECTION", -132)
-    Label(performance, "Excessive update time pauses the affected display", 14, -152, 9)
-    Label(performance, "for this session. /reload retries it.", 14, -170, 9)
+    Label(performance, "Sustained high load slows updates for this session.", 14, -152, 9)
+    Label(performance, "Extreme spikes pause them. /reload resets both.", 14, -170, 9)
+    performance.workload = Label(performance, "Measuring update work...", 14, -195, 9, 260)
+    performance.workload:SetHeight(29)
+    performance.workload:SetWordWrap(true)
     Button(performance, "Back to Status", 14, -231, 260, function()
         SelectPage("Status")
     end)

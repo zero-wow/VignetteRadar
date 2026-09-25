@@ -8,6 +8,7 @@ addon.VignetteRadarWorldFocus = API
 local targets, quests, notes, player = {}, {}, {}, nil
 local active, candidates = nil, {}
 local route, pausedRoute, lastSelected = nil, nil, nil
+local lootSession
 local ROUTE_LIMIT, ROUTE_DUPLICATE_YARDS = 192, 60
 local QuestComplete
 
@@ -347,6 +348,7 @@ local function RouteNote(label, message)
 end
 
 local function Activate(item)
+    lootSession = nil
     local steps = { item }
     if item.kind == "treasure" and addon.GetSettings().vignetteRadarWorldFocusRoutes
         and type(item.route) == "table" and #item.route > 1 then steps = item.route end
@@ -392,6 +394,9 @@ local function Select(item, directPin)
     AttachKnownTreasurePath(item)
     local ok, reason = Activate(item)
     if not ok then return false, reason end
+    if item.kind ~= "guide" and addon.VignetteRadarZygor then
+        addon.VignetteRadarZygor.PauseForManual("Manual waypoint selected")
+    end
     lastSelected = item
     route, pausedRoute = nil, nil
     local kind = RouteKind(item)
@@ -448,6 +453,11 @@ function API.GetFocusedStep()
     return active and active.steps[active.index] or nil
 end
 
+function API.OwnsGuideWaypoint()
+    return active and active.kind == "guide" and active.steps[active.index]
+        and SameWaypoint(active.steps[active.index]) or false
+end
+
 function API.Clear(silent)
     if not active then return false, "No focused waypoint" end
     local name = active.name
@@ -465,7 +475,10 @@ function API.Clear(silent)
         local cleared = pcall(C_Map.ClearUserWaypoint)
         if not cleared then return false, "Waypoint could not be cleared" end
     end
-    active, route, pausedRoute, lastSelected = nil, nil, nil, nil
+    if active.kind == "guide" and addon.VignetteRadarZygor then
+        addon.VignetteRadarZygor.PauseForManual("Guide waypoint cleared")
+    end
+    active, route, pausedRoute, lastSelected, lootSession = nil, nil, nil, nil, nil
     if not silent then RouteNote("WORLD FOCUS", "Cleared · " .. (name or "Waypoint")) end
     return true
 end
@@ -616,10 +629,22 @@ function API.Sync(mapID, snapshot, liveTargets, questPoints, mapNotes)
     targets, quests, notes, player = liveTargets or {}, questPoints or {}, mapNotes or {}, snapshot
     if player then player.mapID = mapID end
     if addon.GetSettings().vignetteRadarWorldFocusEnabled then BuildCandidates()
-    else candidates, active, route, pausedRoute = {}, nil, nil, nil end
+    else
+        candidates = {}
+        if not (active and active.kind == "guide" and addon.VignetteRadarZygor
+            and addon.VignetteRadarZygor.IsFollowing()) then
+            active, route, pausedRoute = nil, nil, nil
+        end
+    end
     if not (active and player) then return end
     local step = active.steps[active.index]
-    if not step or not SameWaypoint(step) then active, route, pausedRoute = nil, nil, nil; return end
+    if not step or not SameWaypoint(step) then
+        if active.kind == "guide" and addon.VignetteRadarZygor then
+            addon.VignetteRadarZygor.PauseForManual("Waypoint changed outside the radar")
+        end
+        active, route, pausedRoute = nil, nil, nil
+        return
+    end
     if not (Number(player.worldX) and Number(player.worldY)) then return end
     if route and route.kind ~= "quest" and addon.VignetteRadarRecent
         and addon.VignetteRadarRecent.IsHidden(active.item) then
@@ -653,14 +678,8 @@ function API.Sync(mapID, snapshot, liveTargets, questPoints, mapNotes)
             return
         end
     end
-    if active.kind == "guide" then
-        for _, note in ipairs(notes) do
-            if note.kind == "guide" and note.key ~= active.key then
-                Select(note)
-                return
-            end
-        end
-    end
+    -- Zygor follow is driven by guide messages, never by the ordinary scan.
+    if active.kind == "guide" then return end
     if not (Number(step.worldX) and Number(step.worldY)
         and Number(player.worldX) and Number(player.worldY)) then return end
     if pausedRoute or (not route and not addon.GetSettings().vignetteRadarWorldFocusAutoAdvance) then return end
@@ -729,6 +748,87 @@ function API.Advance()
     return ok
 end
 
+local function LootLocation()
+    local snapshot = player
+    local radar = addon.VignetteRadarAPI
+    if radar and type(radar.GetPlayerSnapshot) == "function" then
+        local ok, current = pcall(radar.GetPlayerSnapshot)
+        if ok and type(current) == "table" then snapshot = current end
+    end
+    if not (snapshot and active and active.item and Number(snapshot.worldX)
+        and Number(snapshot.worldY) and Number(active.item.worldX)
+        and Number(active.item.worldY)) then return nil end
+    if Number(snapshot.instanceID) and Number(active.item.instanceID)
+        and snapshot.instanceID ~= active.item.instanceID then return nil end
+    return Distance(snapshot.worldX, snapshot.worldY,
+        active.item.worldX, active.item.worldY)
+end
+
+local function LootSourceMatch(item)
+    if type(GetNumLootItems) ~= "function" or type(GetLootSourceInfo) ~= "function" then
+        return "unknown"
+    end
+    local ok, slots = pcall(GetNumLootItems)
+    if not ok or not Number(slots) then return "unknown" end
+    local gameObject, creature, exact = false, false, false
+    for slot = 1, math.min(slots, 32) do
+        local read, guid = pcall(GetLootSourceInfo, slot)
+        if read and type(guid) == "string"
+            and not (issecretvalue and issecretvalue(guid)) then
+            if guid:find("^GameObject%-") then
+                gameObject = true
+                local objectID = tonumber(guid:match(
+                    "^GameObject%-%d+%-%d+%-%d+%-%d+%-(%d+)%-"))
+                if (item.objectGUID and guid == item.objectGUID)
+                    or (Number(item.objectID) and objectID == item.objectID) then
+                    exact = true
+                end
+            elseif guid:find("^Creature%-") or guid:find("^Vehicle%-") then
+                creature = true
+            end
+        end
+    end
+    if exact then return "exact" end
+    if gameObject and (item.objectGUID or Number(item.objectID)) then return "wrong-object" end
+    if gameObject then return "gameobject" end
+    if creature then return "creature" end
+    return "unknown"
+end
+
+function API.OnLootEvent(event)
+    if event == "LOOT_CLOSED" then lootSession = nil; return false end
+    if event == "LOOT_OPENED" then
+        lootSession = nil
+        if not (route and route.kind == "treasure" and active
+            and active.kind == "treasure" and active.item
+            and active.steps[active.index]
+            and SameWaypoint(active.steps[active.index])) then return false end
+        local source = LootSourceMatch(active.item)
+        local radius = source == "exact" and 50
+            or source == "gameobject" and 18 or source == "unknown" and 8 or 0
+        local distance = LootLocation()
+        if not (distance and distance <= radius) then return false end
+        lootSession = { key = active.key, at = type(GetTime) == "function" and GetTime() or 0,
+            radius = radius }
+        return false
+    end
+    if event ~= "LOOT_SLOT_CLEARED" or not lootSession then return false end
+    local session = lootSession
+    lootSession = nil
+    if not (route and route.kind == "treasure" and active and active.key == session.key
+        and active.steps[active.index]
+        and SameWaypoint(active.steps[active.index])) then return false end
+    local now = type(GetTime) == "function" and GetTime() or 0
+    local distance = LootLocation()
+    if now < session.at or now - session.at > 5
+        or not (distance and distance <= session.radius) then return false end
+    if addon.VignetteRadarRecent and addon.VignetteRadarRecent.HideNote then
+        addon.VignetteRadarRecent.HideNote(active.item)
+    end
+    AdvanceRoute()
+    return true
+end
+
 local function ZygorPoint(source, step)
     if type(source) ~= "table" then return nil end
     local pointMapID = Number(source.map) or Number(source.m) or Number(step and step.map)
@@ -761,7 +861,49 @@ local function ZygorGoalPoint(goal, step, directPin)
     return point
 end
 
-function API.ZygorNote(mapID, mapToWorld, mapVector, allowHidden, allowRemote)
+local function ZygorGoalComplete(goal)
+    if not goal then return false end
+    if type(goal.IsComplete) == "function" then
+        local ok, done = pcall(goal.IsComplete, goal)
+        if ok and type(done) == "boolean" then return done end
+    end
+    return goal.status == "complete"
+end
+
+local function ZygorTravelPoint(step, mapToWorld, mapVector)
+    local coords = step and step.waypath and step.waypath.coords
+    if type(coords) ~= "table" then return nil end
+    local nearest, nearestDistance, count
+    count = math.min(#coords, 64)
+    for index = 1, count do
+        local point = ZygorPoint(coords[index], step)
+        if point then
+            if not nearest then nearest = index end
+            if player and Number(player.worldX) and Number(player.worldY) then
+                local ok, x, y, instanceID = pcall(mapToWorld, point.m,
+                    mapVector(point.x, point.y))
+                if ok and Number(x) and Number(y)
+                    and (not Number(instanceID) or not Number(player.instanceID)
+                        or instanceID == player.instanceID) then
+                    local distance = (x - player.worldX)^2 + (y - player.worldY)^2
+                    if not nearestDistance or distance < nearestDistance then
+                        nearest, nearestDistance = index, distance
+                    end
+                end
+            end
+        end
+    end
+    if not nearest then return nil end
+    if nearestDistance and nearestDistance <= 20^2 then
+        for index = nearest + 1, count do
+            local nextPoint = ZygorPoint(coords[index], step)
+            if nextPoint then return nextPoint, index, count end
+        end
+    end
+    return ZygorPoint(coords[nearest], step), nearest, count
+end
+
+function API.ZygorNote(mapID, mapToWorld, mapVector, allowHidden, allowRemote, mode, goalIndex)
     if not allowHidden and addon.GetSettings().vignetteRadarWorldFocusZygor ~= true then return nil end
     local zgv = _G.ZygorGuidesViewer
     if not zgv then return nil, "Zygor is not loaded" end
@@ -772,35 +914,44 @@ function API.ZygorNote(mapID, mapToWorld, mapVector, allowHidden, allowRemote)
     -- selected objective from the active guide step instead.
     local selected, waypoint
     local goals = type(step.goals) == "table" and step.goals or nil
-    if goals then
-        local goalNum = Number(step.current_waypoint_goal_num)
+    if goals and mode ~= "travel" then
+        local anyIncomplete = false
+        local goalNum = Number(goalIndex) or Number(step.current_waypoint_goal_num)
         if goalNum and goalNum >= 1 and goalNum <= 64 then
             selected = goals[goalNum]
-            waypoint = ZygorGoalPoint(selected, step, allowRemote)
+            if goalIndex or not ZygorGoalComplete(selected) then
+                waypoint = ZygorGoalPoint(selected, step, allowRemote)
+            end
         end
+        if goalIndex and not waypoint then return nil, "That Zygor objective has no mapped location" end
         if not waypoint then
             for index = 1, math.min(#goals, 64) do
                 local goal = goals[index]
-                if goal and goal.status == "incomplete" then
+                if goal and not ZygorGoalComplete(goal) then
+                    anyIncomplete = true
                     waypoint = ZygorGoalPoint(goal, step, allowRemote)
                     if waypoint then selected = goal; break end
                 end
             end
         end
-        if not waypoint then
+        if not waypoint and not goalIndex and #goals > 0 and not anyIncomplete then
             for index = 1, math.min(#goals, 64) do
-                local goal = goals[index]
-                waypoint = ZygorGoalPoint(goal, step, allowRemote)
-                if waypoint then selected = goal; break end
+                if goals[index] and not ZygorGoalComplete(goals[index]) then
+                    anyIncomplete = true
+                    break
+                end
+            end
+            if not anyIncomplete then
+                return nil, "Waiting for Zygor's next guide step"
             end
         end
     end
-    if not waypoint and type(step.waypath) == "table"
-        and type(step.waypath.coords) == "table" then
-        for index = 1, math.min(#step.waypath.coords, 64) do
-            waypoint = ZygorPoint(step.waypath.coords[index], step)
-            if waypoint then break end
-        end
+    local travelIndex, travelCount
+    if not waypoint or mode == "travel" then
+        waypoint, travelIndex, travelCount = ZygorTravelPoint(step, mapToWorld, mapVector)
+    end
+    if mode == "travel" and not waypoint then
+        return nil, "Current Zygor step has no mapped travel stop"
     end
     if not waypoint and pointer then
         local possible = { pointer.DestinationWaypoint, pointer.current_waypoint,
@@ -823,6 +974,9 @@ function API.ZygorNote(mapID, mapToWorld, mapVector, allowHidden, allowRemote)
     end
     local stepNum = Number(step.num)
     local title = waypoint.title
+    if mode == "travel" then
+        title = "Travel Stop " .. tostring(travelIndex or 1) .. "/" .. tostring(travelCount or 1)
+    end
     if type(title) ~= "string" or title == "" then
         title = "Zygor Step " .. tostring(stepNum or "?")
     end
@@ -830,6 +984,11 @@ function API.ZygorNote(mapID, mapToWorld, mapVector, allowHidden, allowRemote)
         .. ":" .. math.floor(waypoint.x * 10000) .. ":" .. math.floor(waypoint.y * 10000),
         kind = "guide", source = "Zygor", name = title, mapID = waypoint.m,
         mapX = waypoint.x, mapY = waypoint.y, worldX = worldX, worldY = worldY,
-        instanceID = instanceID, note = selected and "Selected Zygor guide objective"
+        instanceID = instanceID, stepNumber = stepNum,
+        travelIndex = travelIndex, travelCount = travelCount,
+        goalNumber = selected and (Number(selected.num) or Number(goalIndex)
+            or Number(step.current_waypoint_goal_num)) or nil,
+        goalCount = goals and #goals or 0,
+        note = selected and "Selected Zygor guide objective"
             or "Current Zygor guide path" }
 end

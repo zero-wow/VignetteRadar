@@ -220,6 +220,7 @@ assert(loadfile("VignetteRadar_RouteDraft.lua"))("VignetteRadar", addon)
 assert(loadfile("VignetteRadar_Exploration.lua"))("VignetteRadar", addon)
 assert(loadfile("VignetteRadar_POIs.lua"))("VignetteRadar", addon)
 assert(loadfile("VignetteRadar_WorldFocus.lua"))("VignetteRadar", addon)
+assert(loadfile("VignetteRadar_Zygor.lua"))("VignetteRadar", addon)
 assert(loadfile("VignetteRadar_Beacons.lua"))("VignetteRadar", addon)
 assert(loadfile(legendSourcePath))("VignetteRadar", addon)
 assert(loadfile(targetPickerSourcePath))("VignetteRadar", addon)
@@ -675,21 +676,28 @@ do
             and -button.point[5] + button.height <= chooser.height - 12,
             "route chooser actions must fit inside the popup with a visible gutter")
     end
-    local originalPin = addon.VignetteRadarAPI.PinZygorStep
-    local pinned = false
-    addon.VignetteRadarAPI.PinZygorStep = function() pinned = true; return true end
+    local bridge = addon.VignetteRadarZygor
+    local originalPin = bridge.Pin
+    local pinned
+    bridge.Pin = function(mode) pinned = mode; return true end
     chooser.choices.zygor.scripts.OnClick()
-    assert(pinned and not chooser:IsShown(), "the Zygor row must pin directly and dismiss the chooser")
-    addon.VignetteRadarAPI.PinZygorStep = function()
+    assert(chooser:IsShown() and chooser.height == 300 and chooser.zygor:IsShown()
+        and not chooser.choices.rare:IsShown(),
+        "the route chooser should open a scrollable Zygor objective page")
+    chooser.zygor.objective.scripts.OnClick()
+    assert(pinned == "objective" and not chooser:IsShown(),
+        "the selected objective action should pin and dismiss the chooser")
+    bridge.Pin = function()
         return false, "Zygor has no active guide waypoint"
     end
     panel.routeToggle.scripts.OnClick(panel.routeToggle, "RightButton")
     chooser.choices.zygor.scripts.OnClick()
-    assert(chooser:IsShown() and chooser.status.text == "Zygor has no active guide waypoint",
+    chooser.zygor.objective.scripts.OnClick()
+    assert(chooser:IsShown() and chooser.zygor.status.text == "Zygor has no active guide waypoint",
         "a failed Zygor pin must explain why instead of silently closing: "
-            .. tostring(chooser:IsShown()) .. ", " .. tostring(chooser.status.text))
+            .. tostring(chooser:IsShown()) .. ", " .. tostring(chooser.zygor.status.text))
     chooser.close.scripts.OnClick()
-    addon.VignetteRadarAPI.PinZygorStep = originalPin
+    bridge.Pin = originalPin
     local focus = addon.VignetteRadarWorldFocus
     local originalNearest, chosen = focus.StartNearest, nil
     focus.StartNearest = function(kind) chosen = kind; return true end
@@ -1187,13 +1195,23 @@ assert(questDot.halo and questDot.halo:IsShown() and questDot.halo.parent == pan
     and not questDot.fill:IsShown(),
     "quest dots should get a subtle clipped location circle behind the dot")
 completedQuestIDs[12345] = true
-addon.VignetteRadarAPI.Refresh(true)
+for _, object in ipairs(objects) do
+    if object.events and object.events.QUEST_LOG_UPDATE then
+        object.scripts.OnEvent(object, "QUEST_LOG_UPDATE")
+        break
+    end
+end
 assert(questDot.quest.completed and questDot.rim.texture == "Interface\\AddOns\\VignetteRadar\\Media\\quest-diamond.tga"
     and questDot.rim.width == 13
     and questDot.fill:IsShown(),
     "a quest ready to turn in must use a solid diamond")
 completedQuestIDs[12345] = nil
-addon.VignetteRadarAPI.Refresh(true)
+for _, object in ipairs(objects) do
+    if object.events and object.events.QUEST_LOG_UPDATE then
+        object.scripts.OnEvent(object, "QUEST_LOG_UPDATE")
+        break
+    end
+end
 assert(not questDot.quest.completed and not questDot.fill:IsShown(),
     "an unfinished quest must return to a hollow diamond")
 questDot.scripts.OnEnter(questDot)
@@ -1216,7 +1234,8 @@ GetCursorPosition = function()
 end
 settings.vignetteRadarQuestDots = false
 addon.VignetteRadarAPI.Refresh(false)
-panel.scripts.OnUpdate(panel, .11)
+panel.field.hovered = true
+panel.scripts.OnUpdate(panel, .16)
 assert(not questDot:IsShown() and questDot.halo:IsShown()
     and GameTooltip:IsShown() and GameTooltip:GetOwner() == panel.field
     and table.concat(GameTooltip.lines, " | "):find("Estimated quest location", 1, true),
@@ -1229,6 +1248,7 @@ assert(addon.VignetteRadarExploration.GetFocusedQuest() == nil,
     "clicking the estimated area again should clear its spotlight")
 settings.vignetteRadarQuestDots = true
 addon.VignetteRadarAPI.Refresh(false)
+panel.field.hovered = false
 GameTooltip:Hide()
 GetCursorPosition = savedQuestCursor
 panel.field.left, panel.field.top = savedFieldLeft, savedFieldTop
@@ -1329,12 +1349,14 @@ local closeCursor, closeLeft, closeTop = GetCursorPosition, panel.field.left, pa
 panel.field.left, panel.field.top = 0, panel.field:GetHeight()
 panel.questBlob.hoverQuestID = 12345
 GetCursorPosition = function() return panel.field:GetWidth() / 2, panel.field:GetHeight() / 2 end
-panel.scripts.OnUpdate(panel, .11)
+panel.field.hovered = true
+panel.scripts.OnUpdate(panel, .16)
 assert(GameTooltip:IsShown() and GameTooltip.text == "Nearby quest",
     "the exact quest tooltip must stay aligned with the scaled close-zoom canvas")
 GetCursorPosition = closeCursor
 panel.field.left, panel.field.top = closeLeft, closeTop
 panel.questBlob.hoverQuestID = nil
+panel.field.hovered = false
 GameTooltip:Hide()
 panel.plotRadius = regularPlotRadius
 settings.vignetteRadarRange = regularQuestRange
@@ -1603,11 +1625,13 @@ panel.questBlob.left, panel.questBlob.top = 0, panel.field:GetHeight()
 panel.questBlob:SetSize(panel.field:GetWidth(), panel.field:GetHeight())
 panel.questBlob.hoverQuestID = 12345
 GetCursorPosition = function() return panel.field:GetWidth() / 2, panel.field:GetHeight() / 2 end
-panel.scripts.OnUpdate(panel, .11)
+panel.questBlob.hovered = true
+panel.scripts.OnUpdate(panel, .16)
 assert(GameTooltip:IsShown() and GameTooltip:GetOwner() == panel.questBlob
     and GameTooltip.text == "Nearby quest" and GameTooltip.line:find("Click to spotlight", 1, true)
     and table.concat(GameTooltip.lines, " | "):find("Collect supplies: 1/3", 1, true),
     "hovering a native quest shape must identify the quest and its unfinished objectives")
+panel.questBlob.hovered = false
 panel.field.scripts.OnMouseUp(panel.field, "LeftButton")
 assert(addon.VignetteRadarExploration.GetFocusedQuest() == 12345,
     "clicking a hovered native blob must spotlight its quest")
@@ -1615,7 +1639,7 @@ panel.field.scripts.OnMouseUp(panel.field, "LeftButton")
 assert(addon.VignetteRadarExploration.GetFocusedQuest() == nil,
     "clicking a spotlighted blob again must restore all quest areas")
 GetCursorPosition = function() return panel.field:GetWidth() * .8, panel.field:GetHeight() / 2 end
-panel.scripts.OnUpdate(panel, .11)
+panel.scripts.OnUpdate(panel, .16)
 assert(not GameTooltip:IsShown(), "hovering outside the exact quest shape must clear its tooltip")
 panel.questBlob.UpdateMouseOverTooltip = function() return 12345 end
 for _, sign in ipairs({ -1, 1 }) do
@@ -1626,7 +1650,7 @@ for _, sign in ipairs({ -1, 1 }) do
             return panel.field:GetWidth() / 2 + sign * (panel.fieldRadius - 5),
                 panel.field:GetHeight() / 2 + otherSign * (panel.fieldRadius - 5)
         end
-        panel.scripts.OnUpdate(panel, .11)
+        panel.scripts.OnUpdate(panel, .16)
         assert(GameTooltip:IsShown() and GameTooltip:GetOwner() == panel.questBlob,
             "quest tooltips must work in all four visible square corners")
     end
@@ -1634,7 +1658,7 @@ end
 GetCursorPosition = function()
     return panel.field:GetWidth() / 2 + panel.fieldRadius - 3, panel.field:GetHeight() / 2
 end
-panel.scripts.OnUpdate(panel, .11)
+panel.scripts.OnUpdate(panel, .16)
 assert(not GameTooltip:IsShown(), "quest tooltip hit testing must stop at the same square edge as shading")
 panel.questBlob.UpdateMouseOverTooltip = nil
 GetCursorPosition = originalCursor
@@ -1800,11 +1824,11 @@ assert(quick.pages.Status and quick.pages.Search and quick.pages.Beacons
     and quick.pages.Performance and quick.find,
     "diagnostics and search must be reachable from the compact settings panel")
 settings.vignetteRadarPerformance = "low"
-assert(addon.VignetteRadarRenderSeconds() == .2
+assert(addon.VignetteRadarRenderSeconds() == .25
     and addon.VignetteRadarScanSeconds() == 2.5,
     "Low CPU mode must reduce both redraws and scans")
 settings.vignetteRadarPerformance = "balanced"
-assert(addon.VignetteRadarRenderSeconds() == .1
+assert(addon.VignetteRadarRenderSeconds() == .15
     and addon.VignetteRadarScanSeconds() == 1.5,
     "Balanced mode must offer a middle update rate")
 settings.vignetteRadarPerformance = "standard"
@@ -1974,17 +1998,26 @@ do
         and zygorCheck.label.parent.point[4] + zygorCheck.label.parent.width < pinZygor.point[4]
         and pinZygor.point[4] + pinZygor.width <= quick.width - 14,
         "the direct Zygor pin action must fit beside its toggle with a visible gutter")
-    local originalPinZygor, pinZygorCalled = addon.VignetteRadarAPI.PinZygorStep, false
-    addon.VignetteRadarAPI.PinZygorStep = function() pinZygorCalled = true; return true end
     pinZygor.scripts.OnClick()
-    assert(pinZygorCalled, "the Zygor action must pin the current guide step directly")
-    addon.VignetteRadarAPI.PinZygorStep = function()
+    assert(quick.pages.Zygor:IsShown()
+        and quickControl("Zygor", "vignetteRadarFollowZygor")
+        and quickControl("Zygor", "vignetteRadarZygorMode", "travel"),
+        "World Focus should open dedicated Zygor follow and destination controls")
+    local bridge = addon.VignetteRadarZygor
+    local originalPinZygor, pinZygorCalled = bridge.Pin, false
+    bridge.Pin = function(mode)
+        pinZygorCalled = mode == "objective"
+        return true
+    end
+    quick.pages.Zygor.pinObjective.scripts.OnClick()
+    assert(pinZygorCalled, "the Zygor page must pin the active objective")
+    bridge.Pin = function()
         return false, "Zygor has no active guide waypoint"
     end
-    pinZygor.scripts.OnClick()
-    assert(quick.pages["World Focus"].status.text == "Zygor has no active guide waypoint",
+    quick.pages.Zygor.pinObjective.scripts.OnClick()
+    assert(quick.pages.Zygor.status.text == "Zygor has no active guide waypoint",
         "the settings action must show a persistent explanation when pinning fails")
-    addon.VignetteRadarAPI.PinZygorStep = originalPinZygor
+    bridge.Pin = originalPinZygor
 end
 quick.tabs.Explore.scripts.OnClick(quick.tabs.Explore)
 assert(quick.pages.Explore:IsShown() and quickControl("Explore", "vignetteRadarBreadcrumbs")
@@ -2160,7 +2193,7 @@ assert(settings.vignetteRadarFullSweep and #sweep == 2 and sweep[1]:IsShown()
     and sweep[1].color[4] < .2 and panel.blipByKey["preview-rare"].level > panel.field.level,
     "the optional full-size sweep must stay subtle and behind markers")
 local oldAngle = panel._sweepAngle
-panel.scripts.OnUpdate(panel, .06)
+panel.scripts.OnUpdate(panel, .11)
 assert(panel._sweepAngle ~= oldAngle and sweep[1]:IsShown(),
     "the full-size sweep must animate while enabled")
 sweepToggle:SetChecked(false)
@@ -2314,7 +2347,7 @@ for _, blip in pairs(panel.blipByKey) do if blip.cluster then crowded = blip; br
 assert(crowded and crowded.count:IsShown() and crowded.count.text == "2",
     "overlapping detections must expose a count badge")
 crowded.scripts.OnEnter(crowded)
-panel.scripts.OnUpdate(panel, .06)
+panel.scripts.OnUpdate(panel, .11)
 assert(panel.blipByKey.rare and panel.blipByKey.treasure,
     "hovering a count badge must spread individual targets for selection")
 assert(panel.blipByKey.rare.target.groupMin == 3 and panel.blipByKey.rare.target.groupMax == 5,
