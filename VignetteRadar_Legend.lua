@@ -5,6 +5,7 @@ local PANEL_W, PANEL_H = 232, 370
 local QUEST_PANEL_W, QUEST_VISIBLE_ROWS = 224, 8
 local QUEST_ROW_H, QUEST_ROW_STEP = 22, 26
 local QUEST_DIAMOND_TEXTURE = "Interface\\AddOns\\VignetteRadar\\Media\\quest-diamond.tga"
+local QUEST_HOLLOW_DIAMOND_TEXTURE = "Interface\\AddOns\\VignetteRadar\\Media\\quest-diamond-hollow.tga"
 local ACCENT = { 0.05, 0.82, 0.62 }
 local FONT_FALLBACK = "Fonts\\FRIZQT__.TTF"
 local SKULL_TEXTURE = "Interface\\TargetingFrame\\UI-TargetingFrame-Skull"
@@ -609,6 +610,17 @@ local function RefreshQuestRows()
         if entry then
             local r, g, b = QuestColor(entry)
             row.fill:SetVertexColor(r, g, b, 1)
+            if entry.completed then
+                row.rim:SetTexture(QUEST_DIAMOND_TEXTURE)
+                row.rim:SetVertexColor(.04, .05, .06, .98)
+                row.fill:Show()
+                row.number:SetTextColor(.03, .04, .05, 1)
+            else
+                row.rim:SetTexture(QUEST_HOLLOW_DIAMOND_TEXTURE)
+                row.rim:SetVertexColor(r, g, b, 1)
+                row.fill:Hide()
+                row.number:SetTextColor(r, g, b, 1)
+            end
             row.number:SetText(addon.GetSettings().vignetteRadarQuestNumbers
                 and tostring(entry.colorSlot or 1) or "")
             row.halo:SetVertexColor(r, g, b, .14)
@@ -703,6 +715,8 @@ local function EnsureQuestPanel()
             if not (self.entry and GameTooltip) then return end
             GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
             GameTooltip:SetText(self.entry.name, 1, .89, .78)
+            GameTooltip:AddLine(self.entry.completed and "Complete · solid diamond"
+                or "In progress · hollow diamond", .68, .82, .8)
             if self.entry.distance then
                 GameTooltip:AddLine(math.floor(self.entry.distance + .5) .. " yd from you", .72, .76, .78)
             end
@@ -824,11 +838,17 @@ function API.Refresh()
         questRed, questGreen, questBlue = first[1], first[2], first[3]
     end
     panel.guides.quest.fill:SetVertexColor(questRed, questGreen, questBlue, 1)
-    panel.guides.quest.halo:SetVertexColor(.34, .60, 1, .16)
+    local areaRed, areaGreen, areaBlue = .34, .60, 1
+    if settings.vignetteRadarQuestColors and settings.vignetteRadarQuestAreaColors
+        and addon.VignetteRadarQuestColors then
+        local first = addon.VignetteRadarQuestColors[1]
+        areaRed, areaGreen, areaBlue = first[1], first[2], first[3]
+    end
+    panel.guides.quest.halo:SetVertexColor(areaRed, areaGreen, areaBlue, .16)
     local showQuestHalo = settings.vignetteRadarQuestDots and settings.vignetteRadarQuestAreas
         and settings.vignetteRadarQuestHalos
     panel.guides.quest.halo:SetShown(showQuestHalo == true)
-    panel.guides.area.fill:SetVertexColor(.34, .60, 1, .3)
+    panel.guides.area.fill:SetVertexColor(areaRed, areaGreen, areaBlue, .3)
     panel.guides.quest:SetAlpha(settings.vignetteRadarQuestDots and 1 or .6)
     panel.guides.quest.label:SetText(not settings.vignetteRadarQuestDots and "Quest off"
         or showQuestHalo and "Quest + halo" or "Quest diamond")

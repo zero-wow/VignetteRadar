@@ -1,7 +1,7 @@
 local _, addon = ...
 if type(addon) ~= "table" then return end
 
-local WIDTH, HEIGHT = 288, 412
+local WIDTH, HEIGHT = 288, 432
 local THEME_COLUMNS, THEME_ROW, THEME_VIEW_HEIGHT = 4, 24, 46
 local THEME_VIEW_WIDTH = 244
 local ACCENT = { 0.05, 0.82, 0.62 }
@@ -586,10 +586,10 @@ local function Build()
     Check(quests, "vignetteRadarNorthUp", "Keep north at the top", 14, -115)
     Check(quests, "vignetteRadarEdgeCues", "Show nearby off-screen cues", 14, -143)
     Check(quests, "vignetteRadarQuestColors", "Color quest diamonds", 14, -171)
-    Label(quests, "Exact blobs need north-up; circles are estimates.", 14, -196, 10)
-    Stepper(quests, "vignetteRadarQuestHaloRadius", "Circle radius", -214,
+    Check(quests, "vignetteRadarQuestAreaColors", "Match areas to diamond colors", 14, -199)
+    Stepper(quests, "vignetteRadarQuestHaloRadius", "Circle radius", -230,
         { 10, 20, 40, 80 }, function(value) return value .. " yd" end)
-    Button(quests, "Toggle quest key", 14, -240, 260, function()
+    Button(quests, "Toggle quest key", 14, -258, 260, function()
         if addon.VignetteRadarAPI and addon.VignetteRadarAPI.ToggleQuestKey then
             addon.VignetteRadarAPI.ToggleQuestKey()
         end

@@ -33,6 +33,7 @@ local ACCENT = { 0.05, 0.82, 0.62 }
 local RED = { 1, 0.18, 0.14 }
 local CIRCLE_TEXTURE = "Interface\\CharacterFrame\\TempPortraitAlphaMask"
 local QUEST_DIAMOND_TEXTURE = "Interface\\AddOns\\VignetteRadar\\Media\\quest-diamond.tga"
+addon.VignetteRadarQuestHollowTexture = "Interface\\AddOns\\VignetteRadar\\Media\\quest-diamond-hollow.tga"
 local SQUARE_TEXTURE = "Interface\\Buttons\\WHITE8X8"
 local ROUNDED_SQUARE_TEXTURE = "Interface\\AddOns\\VignetteRadar\\Media\\radar-rounded-square.tga"
 local ROUNDED_BORDER_TEXTURE = "Interface\\AddOns\\VignetteRadar\\Media\\radar-rounded-border.tga"
@@ -468,6 +469,7 @@ local function CollectQuests(mapID, force)
                 quests[#quests + 1] = {
                     questID = questID, mapX = pointX, mapY = pointY, nextStep = nextStep,
                     worldX = worldX, worldY = worldY, instanceID = instanceID,
+                    completed = SafeBoolean(Call(C_QuestLog.IsComplete, questID)) == true,
                     name = SafeString(SafeField(record, "name"))
                         or SafeString(Call(C_QuestLog.GetTitleForQuestID, questID)) or "Quest location",
                 }
@@ -943,13 +945,56 @@ end
 
 local MAP_NOTE_COLOR = { treasure = "treasure", mob = "rare", item = "event", note = "other" }
 local MAP_NOTE_LABEL = { treasure = "Treasure", mob = "Mob", item = "Item", note = "Note" }
+function addon.VignetteRadarTesting.MapNoteMatchesLive(note, target)
+    if not (note and target and SafeNumber(note.worldX) and SafeNumber(note.worldY)
+        and SafeNumber(target.worldX) and SafeNumber(target.worldY)) then return false end
+    if not ((note.kind == "treasure" and target.category == "treasure")
+        or (note.kind == "mob" and target.category == "rare")) then return false end
+    local dx, dy = note.worldX - target.worldX, note.worldY - target.worldY
+    local distanceSquared = dx * dx + dy * dy
+    if distanceSquared <= 100 then return true end
+    if distanceSquared > 3600 then return false end
+    if note.questID and target.rewardQuestID and note.questID == target.rewardQuestID then return true end
+    local guid = SafeString(target.objectGUID)
+    if guid then
+        local guidKind, id = guid:match("^([A-Za-z]+)%-%d+%-%d+%-%d+%-%d+%-(%d+)%-")
+        if guidKind == "GameObject" and note.objectID and tonumber(id) == note.objectID then return true end
+        if (guidKind == "Creature" or guidKind == "Vehicle")
+            and note.npcID and tonumber(id) == note.npcID then return true end
+    end
+    local noteName = SafeString(note.name)
+    local targetName = SafeString(target.name)
+    if noteName and targetName then
+        noteName = noteName:lower():gsub("[^%w]", "")
+        targetName = targetName:lower():gsub("[^%w]", "")
+        if #noteName >= 6 and noteName == targetName and noteName ~= "treasurelocation"
+            and noteName ~= "moblocation" and noteName ~= "detectedvignette" then return true end
+    end
+    return false
+end
+
 local function MapNoteMinimumDistance(range)
     return math.min(9, range * 0.1)
 end
-local function RenderMapNotes(player, range)
+local function RenderMapNotes(player, range, targets)
     local settings = Settings()
     if not (player and settings.vignetteRadarPOISource ~= "none")
         or addon.VignetteRadarLensActive == "quest" then HideMapNotes(); return 0 end
+    -- A 60-yard grid bounds duplicate checks even when the selected pack
+    -- contains hundreds of notes and the radar redraws frequently.
+    local live = {}
+    for _, target in ipairs(targets or {}) do
+        if not target.stale and (target.category == "rare" or target.category == "treasure")
+            and TargetVisible(target)
+            and not (player.instanceID and target.instanceID and player.instanceID ~= target.instanceID)
+            and target.distance and target.distance <= range then
+            local cellX, cellY = math.floor(target.worldX / 60), math.floor(target.worldY / 60)
+            live[cellX] = live[cellX] or {}
+            live[cellX][cellY] = live[cellX][cellY] or {}
+            local bucket = live[cellX][cellY]
+            bucket[#bucket + 1] = target
+        end
+    end
     local count = 0
     for _, note in ipairs(activeMapNotes) do
         if count >= MAX_MAP_NOTES then break end
@@ -961,7 +1006,28 @@ local function RenderMapNotes(player, range)
             and not (player.instanceID and note.instanceID and player.instanceID ~= note.instanceID) then
             local dx, dy = note.worldX - player.worldX, note.worldY - player.worldY
             local distance = math.sqrt(dx * dx + dy * dy)
-            if distance >= MapNoteMinimumDistance(range) and distance <= range then
+            local duplicate = false
+            if note.kind == "mob" or note.kind == "treasure" then
+                local cellX, cellY = math.floor(note.worldX / 60), math.floor(note.worldY / 60)
+                for x = cellX - 1, cellX + 1 do
+                    local column = live[x]
+                    if column then
+                        for y = cellY - 1, cellY + 1 do
+                            local bucket = column[y]
+                            if bucket then
+                                for _, target in ipairs(bucket) do
+                                    if addon.VignetteRadarTesting.MapNoteMatchesLive(note, target) then
+                                        duplicate = true; break
+                                    end
+                                end
+                            end
+                            if duplicate then break end
+                        end
+                    end
+                    if duplicate then break end
+                end
+            end
+            if not duplicate and distance >= MapNoteMinimumDistance(range) and distance <= range then
                 local usePackIcon = settings.vignetteRadarPOIIcons == true and note.icon ~= nil
                 local x, y = Project(dx, dy, distance, ViewFacing(player.facing),
                     panel.plotRadius - (usePackIcon and 11 or 5), range)
@@ -1096,6 +1162,8 @@ local function RenderQuestDots(player, range)
                             if not GameTooltip then return end
                             GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
                             GameTooltip:SetText(self.quest.name, 1, 0.82, 0.35)
+                            GameTooltip:AddLine(self.quest.completed and "Complete · solid diamond"
+                                or "In progress · hollow diamond", .68, .82, .8)
                             GameTooltip:AddLine(math.floor(self.distance + 0.5) .. " yd from you", 0.72, 0.76, 0.78)
                             if self.quest.nextStep then
                                 GameTooltip:AddLine("Blizzard's next quest step", .58, .83, .73)
@@ -1124,15 +1192,28 @@ local function RenderQuestDots(player, range)
                     dot.quest, dot.distance = quest, distance
                     local tracked = Settings().vignetteRadarFollowTrackedQuest
                         and followedQuestID == quest.questID and followedQuestMapID == activeMapID
-                    dot.rim:SetVertexColor(tracked and .95 or .04, tracked and .97 or .05,
-                        tracked and .93 or .06, .98)
+                    local red, green, blue
                     if Settings().vignetteRadarQuestColors then
                         local color = QUEST_COLORS[quest.colorSlot or 1]
-                        dot.fill:SetVertexColor(color[1], color[2], color[3], 1)
+                        red, green, blue = color[1], color[2], color[3]
                     elseif addon.VignetteRadarStyle then
-                        dot.fill:SetVertexColor(addon.VignetteRadarStyle.Color("quest"))
+                        red, green, blue = addon.VignetteRadarStyle.Color("quest")
                     else
-                        dot.fill:SetVertexColor(1, .74, .27, 1)
+                        red, green, blue = 1, .74, .27
+                    end
+                    dot.fill:SetVertexColor(red, green, blue, 1)
+                    if quest.completed then
+                        dot.rim:SetTexture(QUEST_DIAMOND_TEXTURE)
+                        dot.rim:SetVertexColor(tracked and .95 or .04,
+                            tracked and .97 or .05, tracked and .93 or .06, .98)
+                        dot.fill:Show()
+                        dot.number:SetTextColor(.03, .04, .05, 1)
+                    else
+                        dot.rim:SetTexture(addon.VignetteRadarQuestHollowTexture)
+                        dot.rim:SetVertexColor(tracked and .95 or red,
+                            tracked and .97 or green, tracked and .93 or blue, 1)
+                        dot.fill:Hide()
+                        dot.number:SetTextColor(red, green, blue, 1)
                     end
                     dot.number:SetText(Settings().vignetteRadarQuestNumbers
                         and tostring(quest.colorSlot or 1) or "")
@@ -1158,8 +1239,11 @@ local function RenderQuestDots(player, range)
                         dot.halo:SetSize(haloRadius * 2, haloRadius * 2)
                         dot.halo:ClearAllPoints()
                         dot.halo:SetPoint("CENTER", panel.field, "CENTER", x, y)
-                        dot.halo.fill:SetVertexColor(QUEST_AREA_BLUE[1], QUEST_AREA_BLUE[2],
-                            QUEST_AREA_BLUE[3], haloAlpha)
+                        local haloColor = Settings().vignetteRadarQuestColors
+                            and Settings().vignetteRadarQuestAreaColors
+                            and QUEST_COLORS[quest.colorSlot or 1] or QUEST_AREA_BLUE
+                        dot.halo.fill:SetVertexColor(haloColor[1], haloColor[2],
+                            haloColor[3], haloAlpha)
                         dot.halo:SetAlpha(spotlight and spotlight ~= quest.questID and .65 or 1)
                         dot.halo:Show()
                     elseif dot.halo then
@@ -1194,7 +1278,8 @@ addon.UpdateVignetteRadarQuestKey = function()
                 local distance = math.sqrt(dx * dx + dy * dy)
                 if distance <= range then
                     entries[#entries + 1] = { questID = quest.questID, name = quest.name,
-                        colorSlot = quest.colorSlot, distance = distance }
+                        colorSlot = quest.colorSlot, distance = distance,
+                        completed = quest.completed }
                 end
             end
         end
@@ -1286,26 +1371,62 @@ local function HideQuestAreas()
         panel.questBlob:Hide()
         panel.questBlob.drawnKey = nil
         panel.questBlob.nextDrawAt = nil
+        if panel.questColorBlobs then
+            for index = 2, #panel.questColorBlobs do
+                local colored = panel.questColorBlobs[index]
+                colored:Hide()
+                colored.drawnKey = nil
+            end
+        end
     end
 end
 
-local function StyleQuestBlob(blob, range)
-    -- Keep the native quest-area artwork blue regardless of diamond colors.
+local function ColoredQuestBlobs()
+    if not (Settings().vignetteRadarQuestColors and Settings().vignetteRadarQuestAreaColors
+        and not panel.questColorFailed) then return nil end
+    if panel.questColorBlobs then return panel.questColorBlobs end
+    if type(InCombatLockdown) == "function" and SafeBoolean(Call(InCombatLockdown)) then return nil end
+    local blobs = { panel.questBlob }
+    panel.questBlob._questColorSlot = 1
+    for index = 2, #QUEST_COLORS do
+        local ok, blob = pcall(CreateFrame, "QuestPOIFrame", nil, panel.questClip)
+        if not (ok and blob and type(blob.DrawNone) == "function" and type(blob.DrawBlob) == "function"
+            and type(blob.SetMapID) == "function" and type(blob.SetFillTexture) == "function"
+            and type(blob.SetBorderTexture) == "function") then
+            for _, created in ipairs(blobs) do if created ~= panel.questBlob then created:Hide() end end
+            panel.questColorFailed = true
+            return nil
+        end
+        blob:SetFrameLevel(panel.field:GetFrameLevel() + 2)
+        blob:EnableMouse(false)
+        blob:Hide()
+        blob._questColorSlot = index
+        blobs[index] = blob
+    end
+    panel.questColorBlobs = blobs
+    return blobs
+end
+
+local function StyleQuestBlob(blob, slot, range)
+    local fill = slot and ("Interface\\AddOns\\VignetteRadar\\Media\\quest-solid-%02d.tga"):format(slot)
+        or "Interface\\WorldMap\\UI-QuestBlob-Inside"
+    local border = slot and fill or "Interface\\WorldMap\\UI-QuestBlob-Outside"
     -- A close zoom can put the player inside a quest shape that covers the
     -- entire radar. Fade the native mesh itself so markers remain legible.
     local opacity = math.max(.2, math.min(1, (SafeNumber(range) or 300) / 300))
-    local fillAlpha = math.max(3, math.floor(48 * opacity + .5))
+    local fillAlpha = math.max(3, math.floor((slot and 38 or 48) * opacity + .5))
+    local borderAlpha = slot and math.max(5, math.floor(78 * opacity + .5)) or 0
     local ok = pcall(function()
-        if not blob._radarDefaultTextures then
-            blob:SetFillTexture("Interface\\WorldMap\\UI-QuestBlob-Inside")
-            blob:SetBorderTexture("Interface\\WorldMap\\UI-QuestBlob-Outside")
+        if blob.colorSlot ~= slot then
+            blob:SetFillTexture(fill)
+            blob:SetBorderTexture(border)
         end
         if blob._radarFillAlpha ~= fillAlpha then blob:SetFillAlpha(fillAlpha) end
-        if blob._radarBorderAlpha ~= 0 then blob:SetBorderAlpha(0) end
+        if blob._radarBorderAlpha ~= borderAlpha then blob:SetBorderAlpha(borderAlpha) end
     end)
     if ok then
-        blob._radarDefaultTextures = true
-        blob._radarFillAlpha, blob._radarBorderAlpha = fillAlpha, 0
+        blob.colorSlot = slot
+        blob._radarFillAlpha, blob._radarBorderAlpha = fillAlpha, borderAlpha
     end
     return ok
 end
@@ -1346,7 +1467,14 @@ local function UpdateQuestAreaTooltip()
                 x, y = (cursorX - blobLeft) / width, (blobTop - cursorY) / height
             end
             if x and y and x >= 0 and x <= 1 and y >= 0 and y <= 1 then
-                questID = SafeNumber(Call(blob.UpdateMouseOverTooltip, blob, x, y))
+                local sources = panel.questBlobSources or { blob }
+                for index = #sources, 1, -1 do
+                    local source = sources[index]
+                    if source:IsShown() and type(source.UpdateMouseOverTooltip) == "function" then
+                        questID = SafeNumber(Call(source.UpdateMouseOverTooltip, source, x, y))
+                        if questID then break end
+                    end
+                end
             end
         end
     end
@@ -1432,33 +1560,74 @@ local function RenderQuestAreas(player, mapID, range)
     panel.questAreaPlayerMapX, panel.questAreaPlayerMapY = player.mapX, player.mapY
     local key = tostring(mapID) .. ":" .. tostring(width) .. ":" .. tostring(height)
     for _, quest in ipairs(activeQuests) do key = key .. ":" .. tostring(quest.questID) end
-    if not StyleQuestBlob(blob, range) then HideQuestAreas(); return end
-    if blob._radarCanvasScale ~= canvasScale then
-        blob:SetScale(canvasScale)
-        blob._radarCanvasScale = canvasScale
-    end
-    blob:SetSize(width / canvasScale, height / canvasScale)
-    blob:ClearAllPoints()
-    blob:SetPoint("CENTER", panel.field, "CENTER", (0.5 - player.mapX) * width / canvasScale,
-        (player.mapY - 0.5) * height / canvasScale)
-    if blob.drawnKey ~= key or now >= (blob.nextDrawAt or 0) then
-        local ok = true
-        if blob.mapContextID ~= mapID then
-            ok = pcall(blob.SetMapID, blob, mapID)
-            if ok then blob.mapContextID = mapID end
-        end
-        if ok then ok = pcall(blob.DrawNone, blob) end
-        if ok then
-            for _, quest in ipairs(activeQuests) do
-                if not pcall(blob.DrawBlob, blob, quest.questID, true) then ok = false; break end
+    local colored = ColoredQuestBlobs()
+    local sources = colored or { blob }
+    local renderSources = { blob }
+    if colored then
+        local activeSlots = {}
+        for _, quest in ipairs(activeQuests) do activeSlots[quest.colorSlot or 1] = true end
+        for index = 2, #colored do
+            if activeSlots[index] then
+                renderSources[#renderSources + 1] = colored[index]
+            else
+                colored[index]:Hide()
+                colored[index].drawnKey = nil
             end
         end
-        if not ok then HideQuestAreas(); return end
-        blob.drawnKey = key
-        -- DrawBlob can succeed before Blizzard loads the shape data.
-        blob.nextDrawAt = now + RESCAN_SECONDS
     end
-    blob:Show()
+    panel.questBlobSources = renderSources
+    for index, source in ipairs(renderSources) do
+        local slot = colored and source._questColorSlot or nil
+        if not StyleQuestBlob(source, slot, range) then
+            if colored then
+                panel.questColorFailed = true
+                HideQuestAreas()
+                return RenderQuestAreas(player, mapID, range)
+            end
+            HideQuestAreas()
+            return
+        end
+        if source._radarCanvasScale ~= canvasScale then
+            source:SetScale(canvasScale)
+            source._radarCanvasScale = canvasScale
+        end
+        source:SetSize(width / canvasScale, height / canvasScale)
+        source:ClearAllPoints()
+        source:SetPoint("CENTER", panel.field, "CENTER", (0.5 - player.mapX) * width / canvasScale,
+            (player.mapY - 0.5) * height / canvasScale)
+        local sourceKey = key .. ":" .. tostring(slot or 0)
+        if source.drawnKey ~= sourceKey or now >= (source.nextDrawAt or 0) then
+            local ok = true
+            if source.mapContextID ~= mapID then
+                ok = pcall(source.SetMapID, source, mapID)
+                if ok then source.mapContextID = mapID end
+            end
+            if ok then ok = pcall(source.DrawNone, source) end
+            if ok then
+                for _, quest in ipairs(activeQuests) do
+                    if not slot or quest.colorSlot == slot then
+                        if not pcall(source.DrawBlob, source, quest.questID, true) then ok = false; break end
+                    end
+                end
+            end
+            if not ok then
+                if colored then
+                    panel.questColorFailed = true
+                    HideQuestAreas()
+                    return RenderQuestAreas(player, mapID, range)
+                end
+                HideQuestAreas()
+                return
+            end
+            source.drawnKey = sourceKey
+            -- DrawBlob can succeed before Blizzard loads the shape data.
+            source.nextDrawAt = now + RESCAN_SECONDS
+        end
+        source:Show()
+    end
+    if not colored and panel.questColorBlobs then
+        for index = 2, #panel.questColorBlobs do panel.questColorBlobs[index]:Hide() end
+    end
     return true
 end
 
@@ -2899,7 +3068,7 @@ Render = function()
     local questsInRange = RenderQuestDots(player, range)
     local startsInRange = addon.RenderVignetteRadarQuestStarts(player, mapID, range)
     addon.UpdateVignetteRadarQuestKey()
-    local notesInRange = RenderMapNotes(player, range)
+    local notesInRange = RenderMapNotes(player, range, targets)
     local edgeCueCount = RenderEdgeCues(player, range, targets)
     RenderExploration(player, range)
     local shown, staleShown, totalInRange = 0, 0, 0

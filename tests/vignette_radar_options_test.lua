@@ -157,7 +157,8 @@ for _, pageName in ipairs({ "Radar", "Layout", "Alerts", "Behavior", "Quests", "
     for _, object in ipairs(objects) do
         if object.parent == page and (object.kind == "Button" or object.kind == "CheckButton") then
             local x1, y1, x2, y2 = rect(object)
-            assert(x1 >= 18 and x2 <= 496 and y1 >= 111 and y2 <= 310,
+            assert(x1 >= 18 and x2 <= 496 and y1 >= 111
+                and y2 <= (pageName == "Quests" and 338 or 310),
                 pageName .. " control escapes the content gutter or footer space: " .. tostring(object.text))
             for _, other in ipairs(pageControls) do
                 assert(not overlaps(object, other), pageName .. " has overlapping hit targets")
@@ -197,7 +198,7 @@ assert(#controls >= 26, "each feature must have a usable control")
 for _, key in ipairs({
     "vignetteRadarEnabled", "vignetteRadarHideWhenEmpty", "vignetteRadarLauncherVisible",
     "vignetteRadarWorldMap", "vignetteRadarNorthUp", "vignetteRadarQuestDots", "vignetteRadarQuestAreas",
-    "vignetteRadarQuestHalos", "vignetteRadarQuestColors",
+    "vignetteRadarQuestHalos", "vignetteRadarQuestColors", "vignetteRadarQuestAreaColors",
     "vignetteRadarAlerts", "vignetteRadarAlertSound", "vignetteRadarAlertCategories.rare",
     "vignetteRadarAlertCategories.treasure", "vignetteRadarAlertCategories.event",
     "vignetteRadarAlertCategories.other", "vignetteRadarLastSeen", "vignetteRadarQuietCombat",
@@ -215,7 +216,8 @@ assert(byKey["vignetteRadarAlertCategories.rare"].label.text == "Rares and bosse
 assert(byKey.vignetteRadarQuestDots.label.text == "Show quest diamonds"
     and byKey.vignetteRadarQuestAreas.label.text == "Shade Blizzard quest areas"
     and byKey.vignetteRadarQuestHalos.label.text == "Approximate quest circles"
-    and byKey.vignetteRadarQuestColors.label.text == "Color quest diamonds",
+    and byKey.vignetteRadarQuestColors.label.text == "Color quest diamonds"
+    and byKey.vignetteRadarQuestAreaColors.label.text == "Match areas to diamond colors",
     "quest dots and areas need separate plain-language switches")
 local trailPickerButton
 for _, object in ipairs(objects) do

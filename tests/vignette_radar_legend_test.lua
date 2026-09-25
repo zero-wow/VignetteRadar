@@ -219,6 +219,19 @@ assert(panel.mapNotes.mob.rim.vertexColor[1] == .2
     and panel.rows.rare.swatch.texture == "Interface\\TargetingFrame\\UI-TargetingFrame-Skull"
     and panel.rows.treasure.swatch.atlas == "VignetteLoot",
     "legend symbols must follow theme colors and restore icon artwork when re-enabled")
+addon.VignetteRadarQuestColors = { { 94/255, 219/255, 199/255 } }
+settings.vignetteRadarQuestColors = true
+settings.vignetteRadarQuestAreaColors = true
+legend.Refresh()
+assert(panel.guides.area.fill.vertexColor[1] == 94/255
+    and panel.guides.area.fill.vertexColor[2] == 219/255
+    and panel.guides.quest.halo.vertexColor[1] == 94/255,
+    "the legend must show matching area and halo colors when that option is enabled")
+settings.vignetteRadarQuestAreaColors = false
+legend.Refresh()
+assert(panel.guides.area.fill.vertexColor[1] == .34
+    and panel.guides.quest.halo.vertexColor[3] == 1,
+    "the legend must return to blue when matching area colors are disabled")
 
 panel.rows.event.scripts.OnClick(panel.rows.event)
 assert(settings.vignetteRadarHighlight == "event", "clicking a category row must spotlight it")
@@ -270,6 +283,14 @@ assert(questPanel.rows[1].name.text == "Quest 1" and questPanel.rows[1].fill.ver
     and questPanel.rows[1].fill.vertexColor[2] == 179/255
     and questPanel.rows[1].fill.vertexColor[3] == 87/255,
     "quest names and diamonds must use the exact quest marker palette")
+assert(questPanel.rows[1].rim.texture == "Interface\\AddOns\\VignetteRadar\\Media\\quest-diamond-hollow.tga"
+    and not questPanel.rows[1].fill:IsShown(),
+    "the quest key must show an unfinished quest with a hollow diamond")
+entries[1].completed = true
+legend.SetQuestEntries(entries)
+assert(questPanel.rows[1].rim.texture == "Interface\\AddOns\\VignetteRadar\\Media\\quest-diamond.tga"
+    and questPanel.rows[1].fill:IsShown(),
+    "the quest key must use a solid diamond for a complete quest")
 assert(questPanel.scrollTrack:IsShown() and questPanel.rows[8]:IsShown()
     and not questPanel.rows[9], "the compact key must scroll instead of escaping its panel")
 questPanel.scripts.OnMouseWheel(questPanel, -1)

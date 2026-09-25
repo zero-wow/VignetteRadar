@@ -85,14 +85,14 @@ local function CandidateMaps(mapID)
         if not parentOK then break end
         local mapType = Field(parentInfo, "mapType")
         local continent = Enum and Enum.UIMapType and Enum.UIMapType.Continent
-        if continent ~= nil and mapType == continent then break end
         maps[#maps + 1], seen[parent] = parent, true
+        if continent ~= nil and mapType == continent then break end
     end
     return maps
 end
 
 local function Probe(handler, mapID)
-    local ok, iterator, state, key = pcall(handler.GetNodes2, handler, mapID, true)
+    local ok, iterator, state, key = pcall(handler.GetNodes2, handler, mapID, false)
     if not ok or type(iterator) ~= "function" then return 0 end
     local count = 0
     for _ = 1, MAX_NODES do
@@ -148,19 +148,59 @@ function POIs.ZoneSources(mapID)
     return entries
 end
 
-function POIs.ResolveSource(mapID, chosen)
-    if chosen == "none" or type(mapID) ~= "number" then return nil end
-    local best
-    for _, entry in ipairs(POIs.ZoneSources(mapID)) do
-        if chosen == entry.id then return entry.id, entry.mapID end
-        if chosen == "auto" and autoChoice and autoChoice.mapID == mapID
-            and autoChoice.id == entry.id then return entry.id, entry.mapID end
-        if chosen == "auto" and (not best or entry.depth < best.depth
-            or (entry.depth == best.depth and entry.count > best.count)
-            or (entry.depth == best.depth and entry.count == best.count and entry.id < best.id)) then
-            best = entry
+local function MapNameHints(mapID)
+    local snapshot = sourceCache[mapID]
+    if snapshot and snapshot.mapNames then return snapshot.mapNames end
+    local names, seen = {}, {}
+    local current = mapID
+    if C_Map and type(C_Map.GetMapInfo) == "function" then
+        for depth = 1, 6 do
+            if type(current) ~= "number" or seen[current] then break end
+            seen[current] = true
+            local ok, info = pcall(C_Map.GetMapInfo, current)
+            if not ok then break end
+            local name = String(Field(info, "name"))
+            if name then
+                name = name:lower():gsub("[^%w]", "")
+                if #name >= 5 then names[#names + 1] = name end
+            end
+            current = Field(info, "parentMapID")
         end
     end
+    if snapshot then snapshot.mapNames = names end
+    return names
+end
+
+local function NameAffinity(id, names)
+    local lower = id:lower():gsub("[^%w]", "")
+    for depth, name in ipairs(names) do
+        if lower:find(name, 1, true) then return #names - depth + 1 end
+    end
+    return 0
+end
+
+function POIs.ResolveSource(mapID, chosen)
+    if chosen == "none" or type(mapID) ~= "number" then return nil end
+    local best, sticky, bestAffinity = nil, nil, -1
+    local entries = POIs.ZoneSources(mapID)
+    local names = chosen == "auto" and MapNameHints(mapID) or {}
+    for _, entry in ipairs(entries) do
+        if chosen == entry.id then return entry.id, entry.mapID end
+        if chosen == "auto" and autoChoice and autoChoice.mapID == mapID
+            and autoChoice.id == entry.id then sticky = entry end
+        if chosen == "auto" then
+            local affinity = NameAffinity(entry.id, names)
+            if not best or affinity > bestAffinity
+                or (affinity == bestAffinity and entry.depth < best.depth)
+                or (affinity == bestAffinity and entry.depth == best.depth and entry.count > best.count)
+                or (affinity == bestAffinity and entry.depth == best.depth
+                    and entry.count == best.count and entry.id < best.id) then
+                best, bestAffinity = entry, affinity
+            end
+        end
+    end
+    if sticky and best and NameAffinity(sticky.id, names) == bestAffinity
+        and sticky.depth == best.depth then best = sticky end
     if chosen == "auto" then autoChoice = best and { mapID = mapID, id = best.id } or nil end
     return best and best.id or nil, best and best.mapID or nil
 end
@@ -242,7 +282,7 @@ function POIs.Collect(mapID, source, mapToWorld, mapVector)
     local handler = notes.plugins[source]
     if not (type(handler) == "table" and type(handler.GetNodes2) == "function"
         and Enabled(notes, source)) then return results end
-    local ok, iterator, state, key = pcall(handler.GetNodes2, handler, mapID, true)
+    local ok, iterator, state, key = pcall(handler.GetNodes2, handler, mapID, false)
     if not ok or type(iterator) ~= "function" then return results end
     for _ = 1, MAX_NODES do
         local yielded, coord, nodeMapID, iconpath, iconScale, alpha = pcall(iterator, state, key)

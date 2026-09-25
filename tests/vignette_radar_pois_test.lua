@@ -14,7 +14,7 @@ local keys = { 50005000, 51005000, 52005000, 53005000, 54005000 }
 local calls = 0
 HandyNotes = { plugins = {
     Midnight = { GetNodes2 = function(_, mapID, minimap)
-        assert(mapID == 123 and minimap == true)
+        assert(mapID == 123 and minimap == false)
         calls = calls + 1
         local index = 1
         return function()
@@ -63,8 +63,9 @@ local now = 100
 GetTime = function() return now end
 Enum = { UIMapType = { Continent = 2 } }
 C_Map = { GetMapInfo = function(mapID)
-    if mapID == 125 then return { parentMapID = 124, mapType = 5 } end
-    if mapID == 124 then return { parentMapID = 2, mapType = 3 } end
+    if mapID == 125 then return { name = "Garrison", parentMapID = 124, mapType = 5 } end
+    if mapID == 124 then return { name = "Frostfire Ridge", parentMapID = 2, mapType = 3 } end
+    if mapID == 2 then return { name = "Draenor", parentMapID = 0, mapType = 2 } end
     return { parentMapID = 0, mapType = 3 }
 end }
 local otherZoneCalls = 0
@@ -120,6 +121,27 @@ HandyNotes.plugins.DenseZone = { GetNodes2 = function(_, mapID)
 end }
 chosen = pois.ResolveSource(123, "auto")
 assert(chosen == "Midnight", "Auto should not change packs mid-zone as note counts update")
+HandyNotes.plugins.TravelGuide = { GetNodes2 = function(_, mapID)
+    if mapID ~= 124 then return function() end, {}, nil end
+    local index = 0
+    return function()
+        index = index + 1
+        if index > 12 then return nil end
+        return 50000000 + index * 10000, nil, nil, 1, 1
+    end, {}, nil
+end }
+HandyNotes.plugins.DraenorTreasures = { GetNodes2 = function(_, mapID)
+    if mapID ~= 2 then return function() end, {}, nil end
+    local done = false
+    return function()
+        if done then return nil end
+        done = true
+        return 50005000, nil, nil, 1, 1
+    end, {}, nil
+end }
+chosen, dataMap = pois.ResolveSource(125, "auto")
+assert(chosen == "DraenorTreasures" and dataMap == 2,
+    "Auto must find a continent-level expansion pack and prefer it over a sticky TravelGuide source")
 assert(#pois.ZoneSources(999) == 0, "unrelated zones must show no data packs")
 local tooltipCalls = 0
 C_TooltipInfo = { GetHyperlink = function(link)

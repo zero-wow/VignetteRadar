@@ -1050,8 +1050,10 @@ local originalWorldPosition = C_Map.GetWorldPosFromMapPos
 C_Map.GetWorldPosFromMapPos = function(_, position)
     return 42, { x = (0.5 - position.y) * 1000, y = (0.5 - position.x) * 1000 }
 end
+local completedQuestIDs = {}
 C_QuestLog = {
     GetQuestsOnMap = function() return { { questID = 12345, x = 0.52, y = 0.5, name = "Nearby quest" } } end,
+    IsComplete = function(questID) return completedQuestIDs[questID] == true end,
     GetTitleForQuestID = function() return "Nearby quest" end,
     GetQuestObjectives = function() return {
         { finished = false, text = "Collect supplies: 1/3" },
@@ -1066,8 +1068,18 @@ addon.VignetteRadarAPI.Refresh(true)
 local questDot = assert(panel.questDots[1], "quest locations must create a distinct dot")
 assert(questDot.halo and questDot.halo:IsShown() and questDot.halo.parent == panel.questClip
     and questDot.halo.level < questDot.level and questDot.halo:GetWidth() == 20
-    and questDot.rim.texture == "Interface\\AddOns\\VignetteRadar\\Media\\quest-diamond.tga",
+    and questDot.rim.texture == "Interface\\AddOns\\VignetteRadar\\Media\\quest-diamond-hollow.tga"
+    and not questDot.fill:IsShown(),
     "quest dots should get a subtle clipped location circle behind the dot")
+completedQuestIDs[12345] = true
+addon.VignetteRadarAPI.Refresh(true)
+assert(questDot.quest.completed and questDot.rim.texture == "Interface\\AddOns\\VignetteRadar\\Media\\quest-diamond.tga"
+    and questDot.fill:IsShown(),
+    "a quest ready to turn in must use a solid diamond")
+completedQuestIDs[12345] = nil
+addon.VignetteRadarAPI.Refresh(true)
+assert(not questDot.quest.completed and not questDot.fill:IsShown(),
+    "an unfinished quest must return to a hollow diamond")
 questDot.scripts.OnEnter(questDot)
 assert(GameTooltip.text == "Nearby quest"
     and table.concat(GameTooltip.lines, " | "):find("Collect supplies: 1/3", 1, true)
@@ -1297,6 +1309,28 @@ questKey.close.scripts.OnClick(questKey.close)
 settings.vignetteRadarQuestHalos = true
 settings.vignetteRadarQuestDots = true
 addon.VignetteRadarAPI.Refresh(false)
+settings.vignetteRadarQuestAreaColors = true
+addon.VignetteRadarAPI.Refresh(false)
+assert(panel.questColorBlobs and #panel.questColorBlobs == 8
+    and #panel.questBlobSources == 2,
+    "colored quest areas must allocate reusable widgets but draw only active colors")
+for _, dot in ipairs({ questDot, secondQuestDot }) do
+    local source = panel.questColorBlobs[dot.quest.colorSlot]
+    local expectedTexture = ("Interface\\AddOns\\VignetteRadar\\Media\\quest-solid-%02d.tga")
+        :format(dot.quest.colorSlot)
+    assert(source:IsShown() and source.fillTexture == expectedTexture
+        and source.drawnQuests[1] == dot.quest.questID and #source.drawnQuests == 1
+        and dot.halo.fill.vertexColor[1] == dot.fill.vertexColor[1]
+        and dot.halo.fill.vertexColor[2] == dot.fill.vertexColor[2]
+        and dot.halo.fill.vertexColor[3] == dot.fill.vertexColor[3],
+        "each exact shape and estimated circle must match its quest diamond")
+end
+settings.vignetteRadarQuestAreaColors = false
+addon.VignetteRadarAPI.Refresh(false)
+assert(panel.questBlob.fillTexture == "Interface\\WorldMap\\UI-QuestBlob-Inside"
+    and #panel.questBlob.drawnQuests == 2
+    and not panel.questColorBlobs[2]:IsShown(),
+    "switching the color option off must restore one shared blue native area")
 settings.vignetteRadarQuestColors = false
 addon.VignetteRadarAPI.Refresh(false)
 assert(panel.questBlob.fillTexture == "Interface\\WorldMap\\UI-QuestBlob-Inside"
@@ -1401,8 +1435,8 @@ local blobCount = 0
 for _, object in ipairs(objects) do
     if object.kind == "QuestPOIFrame" then blobCount = blobCount + 1 end
 end
-assert(blobCount == 1 and panel.questBlob.fillTexture == "Interface\\WorldMap\\UI-QuestBlob-Inside",
-    "quest areas must reuse one default-blue Blizzard blob across layouts")
+assert(blobCount == 8 and panel.questBlob.fillTexture == "Interface\\WorldMap\\UI-QuestBlob-Inside",
+    "the optional color widgets must be reused while default-blue mode stays active")
 SlashCmdList.VIGNETTERADAR("preview")
 addon.HandleVignetteClick(panel.blipByKey["preview-rare"].target, "LeftButton")
 for _, name in ipairs({ "classic", "compact", "squat" }) do
@@ -1603,7 +1637,7 @@ addon.SetVignetteRadarNorthUp(false)
 SlashCmdList.VIGNETTERADAR("preview")
 panel.settingsDot.scripts.OnClick(panel.settingsDot)
 local quick = assert(addon.VignetteRadarQuickConfig.GetPanel())
-assert(quick:IsShown() and quick.width == 288 and quick.height == 412,
+assert(quick:IsShown() and quick.width == 288 and quick.height == 432,
     "the settings dot must open the narrow, self-contained panel")
 local tabCount, exposed, colorSlots = 0, {}, {}
 for _ in pairs(quick.tabs) do tabCount = tabCount + 1 end
@@ -1642,6 +1676,7 @@ for _, key in ipairs({ "vignetteRadarEnabled", "vignetteRadarHideWhenEmpty", "vi
     "vignetteRadarKeepVisibleCombat",
     "vignetteRadarQuietInstances", "vignetteRadarQuestDots", "vignetteRadarQuestAreas",
     "vignetteRadarQuestHalos", "vignetteRadarQuestHaloRadius", "vignetteRadarQuestColors",
+    "vignetteRadarQuestAreaColors",
     "vignetteRadarNextQuestStep", "vignetteRadarQuestStartBadges",
     "vignetteRadarQuestNumbers", "vignetteRadarDataStatus",
     "vignetteRadarLensEnabled", "vignetteRadarLensCategory",
@@ -2327,6 +2362,21 @@ assert(panel:IsShown() and panel.mapNotes[1] and panel.mapNotes[1]:IsShown()
     and panel.mapNotes[1].note.kind == "note" and panel.mapNotes[1].note.source == "TestPack",
     "the chosen pack must draw its map note")
 local closeNote = panel.mapNotes[1].note
+local previousTreasurePosition = livePositions.treasure
+closeNote.kind = "treasure"
+livePositions.treasure = { x = .52, y = .5 }
+guids = { "treasure" }
+addon.VignetteRadarAPI.Refresh(true)
+assert(addon.VignetteRadarAPI.GetTargets()[1]
+    and addon.VignetteRadarAPI.GetTargets()[1].category == "treasure"
+    and not panel.mapNotes[1]:IsShown(),
+    "a live treasure must replace a coincident map-pack treasure marker")
+closeNote.kind = "note"
+addon.VignetteRadarAPI.Refresh(false)
+assert(panel.mapNotes[1]:IsShown(),
+    "a nearby map note of another kind must remain visible beside a live treasure")
+guids, livePositions.treasure = {}, previousTreasurePosition
+addon.VignetteRadarAPI.Refresh(true)
 local savedNoteX, savedNoteY = closeNote.worldX, closeNote.worldY
 local savedRange = settings.vignetteRadarRange
 local closePlayer = addon.VignetteRadarAPI.GetPlayerSnapshot()

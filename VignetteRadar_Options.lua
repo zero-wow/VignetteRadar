@@ -334,17 +334,20 @@ local function BuildPanel()
     AddChoice(quests, "vignetteRadarQuestHaloRadius", 20, "20", 356, -250, 39)
     AddChoice(quests, "vignetteRadarQuestHaloRadius", 40, "40", 404, -250, 39)
     AddChoice(quests, "vignetteRadarQuestHaloRadius", 80, "80", 452, -250, 39)
-    AddButton(quests, "Toggle quest key", 18, -285, 203, function()
+    AddCheckbox(quests, "vignetteRadarQuestAreaColors", "Match areas to diamond colors", 258, -282, nil, 205)
+    AddButton(quests, "Toggle quest key", 18, -313, 203, function()
         if addon.VignetteRadarAPI and addon.VignetteRadarAPI.ToggleQuestKey then
             addon.VignetteRadarAPI.ToggleQuestKey()
         end
     end)
-    AddButton(quests, "Wayfinding options", 258, -285, 203, function()
+    AddButton(quests, "Wayfinding options", 258, -313, 203, function()
         if addon.VignetteRadarQuickConfig and addon.VignetteRadarQuickConfig.OpenPage then
             addon.VignetteRadarQuickConfig.OpenPage("Wayfinding")
         end
     end)
-    AddFooter(quests, "Exact blobs need north-up; estimated circles stay behind markers.")
+    local questFooter = AddFooter(quests, "Exact blobs need north-up; estimated circles stay behind markers.")
+    questFooter:ClearAllPoints()
+    questFooter:SetPoint("TOPLEFT", quests, "TOPLEFT", 24, -345)
 
     local explore = AddPage("Explore", 6)
     AddCheckbox(explore, "vignetteRadarSmartZoom", "Smart zoom", 18, -115, nil, 170)

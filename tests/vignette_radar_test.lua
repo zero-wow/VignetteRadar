@@ -63,6 +63,21 @@ assert(#targets == 1 and targets[1].name == "Live Treasure", "only usable active
 assert(targets[1].category == "treasure", "Blizzard vignette metadata must drive the visible legend category")
 assert(targets[1].worldX == 550 and targets[1].worldY == 400 and targets[1].instanceID == 42,
     "vignette positions must be converted to world yards")
+local note = { kind = "treasure", name = "Ancient chest", worldX = 550, worldY = 400 }
+assert(T.MapNoteMatchesLive(note, targets[1]),
+    "a live treasure at the same position must replace its map-pack note")
+note.worldX = 590
+assert(not T.MapNoteMatchesLive(note, targets[1]),
+    "a differently named chest forty yards away must remain visible")
+note.name = "Live Treasure"
+assert(T.MapNoteMatchesLive(note, targets[1]),
+    "a named treasure may suppress its less precise map-pack location")
+note.worldX = 640
+assert(not T.MapNoteMatchesLive(note, targets[1]),
+    "a similarly named but distant location must remain visible")
+note.kind, note.worldX = "mob", 550
+assert(not T.MapNoteMatchesLive(note, targets[1]),
+    "treasure data must not suppress an unrelated rare note")
 
 local northX, northY = T.Project(100, 0, 100, 0, 90, 450)
 assert(math.abs(northX) < 0.0001 and math.abs(northY - 20) < 0.0001,

@@ -112,6 +112,7 @@ function addon.GetSettings()
     if type(db.vignetteRadarQuestAreas) ~= "boolean" then db.vignetteRadarQuestAreas = false end
     if type(db.vignetteRadarQuestHalos) ~= "boolean" then db.vignetteRadarQuestHalos = true end
     if type(db.vignetteRadarQuestColors) ~= "boolean" then db.vignetteRadarQuestColors = true end
+    if type(db.vignetteRadarQuestAreaColors) ~= "boolean" then db.vignetteRadarQuestAreaColors = false end
     if type(db.vignetteRadarNextQuestStep) ~= "boolean" then db.vignetteRadarNextQuestStep = false end
     if type(db.vignetteRadarQuestStartBadges) ~= "boolean" then db.vignetteRadarQuestStartBadges = false end
     if type(db.vignetteRadarQuestNumbers) ~= "boolean" then db.vignetteRadarQuestNumbers = false end
