@@ -37,7 +37,6 @@ addon.VignetteRadarQuestHollowTexture = "Interface\\AddOns\\VignetteRadar\\Media
 local SQUARE_TEXTURE = "Interface\\Buttons\\WHITE8X8"
 local ROUNDED_SQUARE_TEXTURE = "Interface\\AddOns\\VignetteRadar\\Media\\radar-rounded-square.tga"
 local ROUNDED_BORDER_TEXTURE = "Interface\\AddOns\\VignetteRadar\\Media\\radar-rounded-border.tga"
-local LAUNCHER_ART_TEXTURE = "Interface\\AddOns\\VignetteRadar\\Media\\radar-launcher-instrument.tga"
 local ROUNDED_CONTROL_TEXTURE = "Interface\\AddOns\\VignetteRadar\\Media\\control-rounded-square.tga"
 local QUEST_CLIP_INSET = 4
 local QUEST_AREA_BLUE = { .34, .60, 1 }
@@ -139,6 +138,19 @@ local function DrawPlayerHeading(line, frame, facing, innerRadius, outerRadius)
     local x, y = -math.sin(angle), math.cos(angle)
     line:SetStartPoint("CENTER", frame, x * innerRadius, y * innerRadius)
     line:SetEndPoint("CENTER", frame, x * outerRadius, y * outerRadius)
+end
+
+local function DrawLauncherChevron(lines, frame, facing)
+    local angle = facing - ViewFacing(facing)
+    local forwardX, forwardY = -math.sin(angle), math.cos(angle)
+    local rightX, rightY = math.cos(angle), math.sin(angle)
+    for index = 1, 2 do
+        local side = index == 1 and -1 or 1
+        local line = lines[index]
+        line:SetStartPoint("CENTER", frame,
+            forwardX * 3 + rightX * side * 2, forwardY * 3 + rightY * side * 2)
+        line:SetEndPoint("CENTER", frame, forwardX * 6, forwardY * 6)
+    end
 end
 
 local function DrawPlayerChevron(lines, frame, facing)
@@ -2352,12 +2364,29 @@ ApplyAppearance = function()
     end
     if launcher then
         launcher.face:SetVertexColor(br, bg, bb, .98)
+        launcher.depth:SetVertexColor(ar, ag, ab, .07)
         launcher.center:SetVertexColor(ar, ag, ab, 1)
         launcher.centerGlow:SetVertexColor(ar, ag, ab, .22)
         launcher.direction:SetColorTexture(hr, hg, hb, db.vignetteRadarHeadingOpacity)
-        for _, line in ipairs(launcher.ring) do line:SetColorTexture(rr, rg, rb, .18) end
-        launcher.bezel:SetVertexColor(1, 1, 1, 1)
-        launcher.closed:SetVertexColor(.62, .64, .70, 1)
+        for _, line in ipairs(launcher.ring) do line:SetColorTexture(rr, rg, rb, .28) end
+        for index, line in ipairs(launcher.dial) do
+            local mix = .5 + .5 * math.cos((index - 1) * TWO_PI / #launcher.dial)
+            line:SetColorTexture(ar * mix + hr * (1 - mix),
+                ag * mix + hg * (1 - mix), ab * mix + hb * (1 - mix), .64)
+        end
+        for _, line in ipairs(launcher.cardinals) do
+            line:SetColorTexture(hr, hg, hb, .9)
+        end
+        for _, line in ipairs(launcher.chevron) do
+            line:SetColorTexture(hr, hg, hb, db.vignetteRadarChevronOpacity)
+        end
+        for index, facet in ipairs(launcher.facets) do
+            if index % 2 == 0 then facet.core:SetVertexColor(hr, hg, hb, 1)
+            else facet.core:SetVertexColor(ar, ag, ab, 1) end
+        end
+        launcher.chrome:SetVertexColor(.46, .48, .52, .72)
+        launcher.bezel:SetVertexColor(ar, ag, ab, 1)
+        launcher.closed:SetVertexColor(.62, .65, .70, 1)
     end
     if addon.VignetteRadarControls and addon.VignetteRadarControls.RefreshTheme then
         addon.VignetteRadarControls.RefreshTheme()
@@ -3521,9 +3550,6 @@ function Morph.Start(opening, fromX, fromY, fromWidth, fromHeight,
         Morph.shell.border = Morph.shell:CreateTexture(nil, "OVERLAY")
         Morph.shell.border:SetAllPoints()
         Morph.shell.border:SetTexture(ROUNDED_BORDER_TEXTURE)
-        Morph.shell.launcherArt = Morph.shell:CreateTexture(nil, "OVERLAY", nil, 1)
-        Morph.shell.launcherArt:SetAllPoints()
-        Morph.shell.launcherArt:SetTexture(LAUNCHER_ART_TEXTURE)
     end
     local morphShell = Morph.shell
     local style = addon.VignetteRadarStyle
@@ -3539,7 +3565,6 @@ function Morph.Start(opening, fromX, fromY, fromWidth, fromHeight,
     morphShell:ClearAllPoints()
     morphShell:SetPoint("CENTER", UIParent, "BOTTOMLEFT", fromX, fromY)
     morphShell:SetAlpha(1)
-    morphShell.launcherArt:SetAlpha(opening and 1 or 0)
     Morph.running = true
     if panel then
         panel._morphAlpha = opening and 0 or 1
@@ -3559,7 +3584,6 @@ function Morph.Start(opening, fromX, fromY, fromWidth, fromHeight,
         self:ClearAllPoints()
         self:SetPoint("CENTER", UIParent, "BOTTOMLEFT", x, y)
         self:SetAlpha(opening and 1 - eased or eased)
-        self.launcherArt:SetAlpha(opening and 1 - eased or eased)
         if panel then
             panel._morphAlpha = opening and eased or 1 - eased
             panel:SetAlpha((VisuallyQuiet() and 0.35 or 1) * panel._morphAlpha)
@@ -3652,13 +3676,14 @@ local function ToggleRadarPanel()
     if UpdateLauncher then UpdateLauncher(0, true) end
 end
 
-local function CreateLauncherRing(parent, radius, alpha)
+local function CreateLauncherRing(parent, radius, alpha, count, thickness)
     local ring = {}
-    for index = 1, 24 do
+    count = count or 24
+    for index = 1, count do
         local line = parent:CreateLine(nil, "ARTWORK")
-        local first = ((index - 1) / 24) * TWO_PI
-        local last = (index / 24) * TWO_PI
-        line:SetThickness(1)
+        local first = ((index - 1) / count) * TWO_PI
+        local last = (index / count) * TWO_PI
+        line:SetThickness(thickness or 1)
         line:SetColorTexture(ACCENT[1], ACCENT[2], ACCENT[3], alpha)
         line:SetStartPoint("CENTER", parent, math.cos(first) * radius, math.sin(first) * radius)
         line:SetEndPoint("CENTER", parent, math.cos(last) * radius, math.sin(last) * radius)
@@ -3671,6 +3696,17 @@ local function UpdateLauncherSweep(frame, elapsed)
     ApplyAppearance()
     frame:SetAlpha(VisuallyQuiet() and 0.35 or 1)
     local active = Settings().vignetteRadarEnabled == true or preview
+    if frame._activeState ~= active then
+        frame._activeState = active
+        for _, group in ipairs({ frame.dial, frame.ring, frame.cardinals }) do
+            for _, line in ipairs(group) do line:SetAlpha(active and 1 or .3) end
+        end
+        for _, facet in ipairs(frame.facets) do
+            facet.rim:SetAlpha(active and 1 or .45)
+            facet.core:SetAlpha(active and 1 or .3)
+        end
+        frame.depth:SetAlpha(active and 1 or .35)
+    end
     local now = Now()
     local alerting = active and pulseUntil > now and not Quiet()
     local animated = active and ((frame.detected or 0) > 0 or frame._hovered or alerting)
@@ -3726,10 +3762,13 @@ UpdateLauncher = function(elapsed, updateTargets)
     local shown, rares, bosses = 0, 0, 0
     local highlight = HighlightCategory()
     local player = not preview and Settings().vignetteRadarEnabled == true and PlayerSnapshot(CurrentMapID()) or nil
-    launcher.direction:SetShown(Settings().vignetteRadarNorthUp == true
-        and (preview or (player and player.headingAvailable) == true))
-    if preview or player then
-        DrawPlayerHeading(launcher.direction, launcher, preview and 0.65 or player.facing, 2, 9)
+    local hasHeading = preview or (player and player.headingAvailable) == true
+    launcher.direction:SetShown(hasHeading)
+    for _, line in ipairs(launcher.chevron) do line:SetShown(hasHeading) end
+    if hasHeading then
+        local facing = preview and 0.65 or player.facing
+        DrawPlayerHeading(launcher.direction, launcher, facing, 6, 12)
+        DrawLauncherChevron(launcher.chevron, launcher, facing)
     end
     local function ShowDot(target, x, y)
         shown = shown + 1
@@ -3778,7 +3817,13 @@ UpdateLauncher = function(elapsed, updateTargets)
     if not active then launcher.rangeLabel:SetTextColor(.72, .74, .78, .7)
     elseif bosses > 0 then launcher.rangeLabel:SetTextColor(1, 0.25, 0.18, 1)
     elseif rares > 0 then launcher.rangeLabel:SetTextColor(0.78, 0.88, 1, 1)
-    else launcher.rangeLabel:SetTextColor(0.56, 0.78, 0.74, 0.68) end
+    else
+        local style = addon.VignetteRadarStyle
+        if style and style.Color then
+            local r, g, b = style.Color("rings")
+            launcher.rangeLabel:SetTextColor(r, g, b, .72)
+        else launcher.rangeLabel:SetTextColor(.56, .78, .74, .68) end
+    end
 end
 
 EnsureLauncher = function()
@@ -3797,11 +3842,27 @@ EnsureLauncher = function()
         UIParent:GetHeight() + (savedY or -170))
 
     launcher.face = launcher:CreateTexture(nil, "BORDER")
-    launcher.face:SetSize(38, 38)
+    launcher.face:SetSize(LAUNCHER_SIZE, LAUNCHER_SIZE)
     launcher.face:SetPoint("CENTER")
-    launcher.face:SetTexture(CIRCLE_TEXTURE)
+    launcher.face:SetTexture(ROUNDED_SQUARE_TEXTURE)
     launcher.face:SetVertexColor(0.012, 0.046, 0.052, 0.98)
+    launcher.depth = launcher:CreateTexture(nil, "BORDER", nil, 1)
+    launcher.depth:SetSize(42, 42)
+    launcher.depth:SetPoint("CENTER")
+    launcher.depth:SetTexture(CIRCLE_TEXTURE)
+    launcher.depth:SetVertexColor(ACCENT[1], ACCENT[2], ACCENT[3], .07)
     launcher.ring = CreateLauncherRing(launcher, 15, 0.18)
+    launcher.dial = CreateLauncherRing(launcher, 21, .64, 32, 1.5)
+    launcher.cardinals = {}
+    for index = 1, 4 do
+        local angle = (index - 1) * math.pi / 2
+        local x, y = math.sin(angle), math.cos(angle)
+        local line = launcher:CreateLine(nil, "ARTWORK")
+        line:SetThickness(1.7)
+        line:SetStartPoint("CENTER", launcher, x * 24, y * 24)
+        line:SetEndPoint("CENTER", launcher, x * 27, y * 27)
+        launcher.cardinals[index] = line
+    end
 
     launcher.sweepLines = {}
     for index = 1, 2 do
@@ -3811,12 +3872,12 @@ EnsureLauncher = function()
         launcher.sweepLines[index] = line
     end
     launcher.centerGlow = launcher:CreateTexture(nil, "OVERLAY")
-    launcher.centerGlow:SetSize(7, 7)
+    launcher.centerGlow:SetSize(9, 9)
     launcher.centerGlow:SetPoint("CENTER")
     launcher.centerGlow:SetTexture(CIRCLE_TEXTURE)
     launcher.centerGlow:SetVertexColor(ACCENT[1], ACCENT[2], ACCENT[3], 0.22)
     launcher.center = launcher:CreateTexture(nil, "OVERLAY", nil, 1)
-    launcher.center:SetSize(3, 3)
+    launcher.center:SetSize(4, 4)
     launcher.center:SetPoint("CENTER")
     launcher.center:SetTexture(CIRCLE_TEXTURE)
     launcher.center:SetVertexColor(ACCENT[1], ACCENT[2], ACCENT[3], 1)
@@ -3824,6 +3885,13 @@ EnsureLauncher = function()
     launcher.direction:SetThickness(1.5)
     launcher.direction:SetColorTexture(ACCENT[1], ACCENT[2], ACCENT[3], 0.95)
     launcher.direction:Hide()
+    launcher.chevron = {}
+    for index = 1, 2 do
+        local line = launcher:CreateLine(nil, "OVERLAY")
+        line:SetThickness(1.3)
+        line:Hide()
+        launcher.chevron[index] = line
+    end
     launcher.miniBlips = {}
     for index = 1, 5 do
         local dot = CreateFrame("Frame", nil, launcher)
@@ -3840,15 +3908,35 @@ EnsureLauncher = function()
     launcher.rangeLabel:SetPoint("BOTTOM", launcher, "BOTTOM", 0, 16)
     launcher.rangeLabel:SetJustifyH("CENTER")
     launcher.rangeLabel:SetTextColor(0.56, 0.78, 0.74, 0.68)
+    launcher.chrome = launcher:CreateTexture(nil, "OVERLAY", nil, 2)
+    launcher.chrome:SetAllPoints()
+    launcher.chrome:SetTexture(ROUNDED_BORDER_TEXTURE)
+    launcher.chrome:SetVertexColor(.46, .48, .52, .72)
     launcher.bezel = launcher:CreateTexture(nil, "OVERLAY", nil, 3)
-    launcher.bezel:SetAllPoints()
-    launcher.bezel:SetTexture(LAUNCHER_ART_TEXTURE)
+    launcher.bezel:SetSize(LAUNCHER_SIZE - 4, LAUNCHER_SIZE - 4)
+    launcher.bezel:SetPoint("CENTER")
+    launcher.bezel:SetTexture(ROUNDED_BORDER_TEXTURE)
     launcher.bezel:SetAlpha(0.92)
     launcher.closed = launcher:CreateTexture(nil, "OVERLAY", nil, 3)
-    launcher.closed:SetAllPoints()
-    launcher.closed:SetTexture(LAUNCHER_ART_TEXTURE)
+    launcher.closed:SetSize(LAUNCHER_SIZE - 4, LAUNCHER_SIZE - 4)
+    launcher.closed:SetPoint("CENTER")
+    launcher.closed:SetTexture(ROUNDED_BORDER_TEXTURE)
     launcher.closed:SetAlpha(0.62)
     launcher.closed:Hide()
+    launcher.facets = {}
+    for index, point in ipairs({ { 0, 24 }, { 24, 0 }, { 0, -24 }, { -24, 0 } }) do
+        local size = index == 1 and 8 or 6
+        local rim = launcher:CreateTexture(nil, "OVERLAY", nil, 4)
+        rim:SetSize(size, size)
+        rim:SetPoint("CENTER", launcher, "CENTER", point[1], point[2])
+        rim:SetTexture(QUEST_DIAMOND_TEXTURE)
+        rim:SetVertexColor(.77, .79, .82, .86)
+        local core = launcher:CreateTexture(nil, "OVERLAY", nil, 5)
+        core:SetSize(size - 3, size - 3)
+        core:SetPoint("CENTER", launcher, "CENTER", point[1], point[2])
+        core:SetTexture(QUEST_DIAMOND_TEXTURE)
+        launcher.facets[index] = { rim = rim, core = core }
+    end
     launcher.shock = launcher:CreateTexture(nil, "OVERLAY", nil, 4)
     launcher.shock:SetPoint("CENTER")
     launcher.shock:SetTexture(CIRCLE_TEXTURE)

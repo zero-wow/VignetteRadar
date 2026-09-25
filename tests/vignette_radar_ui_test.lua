@@ -311,12 +311,13 @@ assert(launcher.width == 58 and launcher.height == 58 and launcher.clamped == tr
     "launcher must be a compact draggable instrument that stays on screen")
 assert(launcher.clickButtons[1] == "LeftButtonUp" and launcher.clickButtons[2] == "RightButtonUp"
     and launcher.dragButtons[1] == "LeftButton", "launcher must expose distinct click and drag gestures")
-assert(#launcher.ring == 24 and #launcher.sweepLines == 2
-    and launcher.face.texture == "Interface\\CharacterFrame\\TempPortraitAlphaMask"
-    and launcher.bezel.texture:find("radar%-launcher%-instrument%.tga$")
-    and launcher.closed.texture:find("radar%-launcher%-instrument%.tga$")
+assert(#launcher.ring == 24 and #launcher.dial == 32 and #launcher.cardinals == 4
+    and #launcher.facets == 4 and #launcher.chevron == 2 and #launcher.sweepLines == 2
+    and launcher.face.texture:find("radar%-rounded%-square%.tga$")
+    and launcher.bezel.texture:find("radar%-rounded%-border%.tga$")
+    and launcher.closed.texture:find("radar%-rounded%-border%.tga$")
     and launcher.horizontal == nil and launcher.vertical == nil,
-    "launcher needs the new instrument artwork around an uncluttered live ring")
+    "launcher must use the panel's themed face, border, compass points, and live radar rings")
 assert(launcher.rangeLabel.text == "BOSS" and #launcher.miniBlips == 5 and launcher.miniBlips[1]:IsShown(),
     "launcher preview must mirror category markers with a plain boss cue")
 launcher.scripts.OnUpdate(launcher, 0.10)
@@ -351,7 +352,8 @@ assert(addon.VignetteRadarTargetPicker.GetFocus() == nil,
     "right-clicking the reticle must restore all category-filtered vignettes")
 SlashCmdList.VIGNETTERADAR("off")
 assert(launcher.closed:IsShown() and not launcher.bezel:IsShown() and not launcher.miniBlips[1]:IsShown()
-    and launcher.rangeLabel.text == "OFF" and launcher.center.alpha < 1,
+    and launcher.rangeLabel.text == "OFF" and launcher.center.alpha < 1
+    and launcher.facets[1].core.alpha < 1 and launcher.dial[1].alpha < 1,
     "disabled tracking must dim the instrument and clearly label its dormant state")
 local idleSweepAngle = launcher._sweepAngle
 for _ = 1, 6 do launcher.scripts.OnUpdate(launcher, 0.05) end
@@ -924,12 +926,13 @@ for _, name in ipairs({ "classic", "squat", "compact" }) do
         near(launcher.miniBlips[1].point[4], miniX, "launcher must use the same fixed orientation")
         near(launcher.miniBlips[1].point[5], miniY, "launcher must use the same fixed orientation")
         assert(launcher.direction:IsShown(), "north-up launcher needs a player direction cue")
-        near(launcher.direction.endPoint[3], -math.sin(angle) * 9, "launcher player line must turn")
+        near(launcher.direction.endPoint[3], -math.sin(angle) * 12, "launcher player line must turn")
     end
     playerFacing = nil
     addon.VignetteRadarAPI.RefreshPresentation()
     assert(not panel.direction:IsShown() and not panel.headingChevron[1]:IsShown()
-        and not panel.headingChevron[2]:IsShown() and not launcher.direction:IsShown() and panel.blipByKey.rare,
+        and not panel.headingChevron[2]:IsShown() and not launcher.direction:IsShown()
+        and not launcher.chevron[1]:IsShown() and panel.blipByKey.rare,
         "unknown facing must hide its direction cue without losing north-up positions")
     playerFacing = 0
     addon.HandleVignetteClick(panel.blipByKey.rare.target, "LeftButton")
@@ -948,7 +951,9 @@ for _, name in ipairs({ "classic", "squat", "compact" }) do
     assert(not settings.vignetteRadarNorthUp and not panel.compass._selected and not northOption.checked,
         "clicking compass again must restore facing-up and synchronize the checkbox")
     near(panel.edgeArrow.point[4], panel.plotRadius, "restoring facing-up must rotate the focused edge arrow")
-    assert(not launcher.direction:IsShown(), "heading-up launcher must retain its existing appearance")
+    assert(launcher.direction:IsShown() and launcher.chevron[1]:IsShown()
+        and launcher.chevron[2]:IsShown(),
+        "heading-up launcher must show the same player direction cue as the full radar")
     addon.VignetteRadarTargetPicker.ClearFocus()
     livePositions.rare = { x = 0.507, y = 0.5 }
     addon.SetVignetteRadarRange(450)
@@ -1833,6 +1838,9 @@ quickControl("Themes", "vignetteRadarTheme", "ember").scripts.OnClick()
 assert(settings.vignetteRadarTheme == "ember" and panel.title.textColor[1] == 1
     and panel.field.background.vertexColor[1] > .04,
     "theme presets must recolor the panel and radar surface")
+assert(launcher.bezel.vertexColor[1] == 1 and launcher.dial[1].color[1] > .8
+    and launcher.facets[1].core.vertexColor[1] == 1,
+    "the launcher face, dial, and compass facets must follow the selected theme")
 ColorPickerFrame = {
     SetupColorPickerAndShow = function(self, info) self.info = info end,
     GetColorRGB = function() return .2, .4, .6 end,
@@ -1847,6 +1855,8 @@ assert(ColorPickerFrame.info, "a color swatch must open Blizzard's color picker"
 ColorPickerFrame.info.swatchFunc()
 assert(math.abs(panel.player.vertexColor[1] - .2) < .001 and quick.customLabel.text == "CUSTOM COLORS",
     "a custom accent must immediately recolor the player dot")
+assert(math.abs(launcher.facets[1].core.vertexColor[1] - .2) < .001,
+    "custom accent colors must also recolor the miniature instrument")
 quickControl("Themes", "vignetteRadarTheme", "frost").scripts.OnClick()
 assert(settings.vignetteRadarTheme == "frost" and not addon.VignetteRadarStyle.IsCustomized(),
     "choosing a preset must replace the prior custom palette")
