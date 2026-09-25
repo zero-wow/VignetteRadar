@@ -6,23 +6,23 @@
 ## OptionalDeps: WaffleHouse_EllesmereUI, EllesmereUI, HandyNotes, ZygorGuidesViewer, WaypointUI
 ## SavedVariables: VignetteRadarDB
 
-VignetteRadar_Core.lua
-VignetteRadar_LayerBudget.lua
-VignetteRadar_Style.lua
-VignetteRadar_Controls.lua
-VignetteRadar_Features.lua
-VignetteRadar_Recent.lua
-VignetteRadar_QuestData.lua
-VignetteRadar_RouteDraft.lua
-VignetteRadar_Exploration.lua
-VignetteRadar_POIs.lua
-VignetteRadar_WorldFocus.lua
-VignetteRadar_Zygor.lua
-VignetteRadar_Beacons.lua
-VignetteRadar_Legend.lua
-VignetteRadar_TargetPicker.lua
-VignetteRadar_Radar.lua
-VignetteRadar_RouteArrow.lua
-VignetteRadar_Options.lua
-VignetteRadar_QuickConfig.lua
+Core\Core.lua
+Core\LayerBudget.lua
+UI\Style.lua
+UI\Controls.lua
+Core\Features.lua
+Core\Recent.lua
+Data\QuestData.lua
+Routes\RouteDraft.lua
+Routes\Exploration.lua
+Data\POIs.lua
+Routes\WorldFocus.lua
+Data\Zygor.lua
+Routes\Beacons.lua
+UI\Legend.lua
+UI\TargetPicker.lua
+UI\Radar.lua
+Routes\RouteArrow.lua
+UI\Options.lua
+UI\QuickConfig.lua
 # WoW loads Bindings.xml from the addon root automatically.

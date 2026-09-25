@@ -1,4 +1,4 @@
-local sourcePath = arg[1] or "VignetteRadar_QuestData.lua"
+local sourcePath = arg[1] or "Data/QuestData.lua"
 local addon = {}
 local now, calls = 100, { map = 0, global = 0, text = 0, starts = 0, requests = 0 }
 GetTime = function() return now end

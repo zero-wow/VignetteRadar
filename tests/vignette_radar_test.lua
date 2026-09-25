@@ -1,4 +1,4 @@
-local sourcePath = arg[1] or "VignetteRadar_Radar.lua"
+local sourcePath = arg[1] or "UI/Radar.lua"
 
 local eventFrame = {}
 function eventFrame:RegisterEvent(event) self.events = self.events or {}; self.events[event] = true end

@@ -31,7 +31,7 @@ ZygorGuidesViewer = {
 }
 C_Timer = { After = function(_, callback) timers[#timers + 1] = callback end }
 C_Map = { GetUserWaypoint = function() return owned and {} or nil end }
-assert(loadfile("VignetteRadar_Zygor.lua"))("VignetteRadar", addon)
+assert(loadfile("Data/Zygor.lua"))("VignetteRadar", addon)
 local bridge = addon.VignetteRadarZygor
 assert(bridge.Bind(function() end, function() end, function() return 123 end,
     function() refreshes = refreshes + 1 end))

@@ -1,7 +1,7 @@
 local addon = {}
 local settings = { vignetteRadarPOIZoneSources = {} }
 addon.GetSettings = function() return settings end
-assert(loadfile("VignetteRadar_POIs.lua"))("VignetteRadar", addon)
+assert(loadfile("Data/POIs.lua"))("VignetteRadar", addon)
 local pois = addon.VignetteRadarPOIs
 assert(#pois.Sources() == 0 and #pois.Collect(123, "Missing", function() end, function() end) == 0)
 

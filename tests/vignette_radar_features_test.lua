@@ -1,5 +1,5 @@
-local corePath = arg[1] or "VignetteRadar_Core.lua"
-local featuresPath = arg[2] or "VignetteRadar_Features.lua"
+local corePath = arg[1] or "Core/Core.lua"
+local featuresPath = arg[2] or "Core/Features.lua"
 
 VignetteRadarDB, WaffleHouseDB = nil, nil
 local addon = {}

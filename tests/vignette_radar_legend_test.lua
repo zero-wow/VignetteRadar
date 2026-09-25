@@ -1,4 +1,4 @@
-local sourcePath = arg[1] or "VignetteRadar_Legend.lua"
+local sourcePath = arg[1] or "UI/Legend.lua"
 
 local objects = {}
 local methods = {}

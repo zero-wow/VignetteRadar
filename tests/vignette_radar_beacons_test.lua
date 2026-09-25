@@ -1,4 +1,4 @@
-local source = arg[1] or "VignetteRadar_Beacons.lua"
+local source = arg[1] or "Routes/Beacons.lua"
 local settings = {
     vignetteRadarEnabled = true, vignetteRadarBeaconsEnabled = false,
     vignetteRadarBeaconRares = true, vignetteRadarBeaconTreasures = false,

@@ -1,8 +1,8 @@
-local sourcePath = arg[1] or "VignetteRadar_Radar.lua"
-local legendSourcePath = arg[2] or "VignetteRadar_Legend.lua"
-local targetPickerSourcePath = arg[3] or "VignetteRadar_TargetPicker.lua"
-local optionsSourcePath = arg[4] or "VignetteRadar_Options.lua"
-local quickSourcePath = arg[5] or "VignetteRadar_QuickConfig.lua"
+local sourcePath = arg[1] or "UI/Radar.lua"
+local legendSourcePath = arg[2] or "UI/Legend.lua"
+local targetPickerSourcePath = arg[3] or "UI/TargetPicker.lua"
+local optionsSourcePath = arg[4] or "UI/Options.lua"
+local quickSourcePath = arg[5] or "UI/QuickConfig.lua"
 unpack = table.unpack
 
 local objects = {}
@@ -211,22 +211,22 @@ local settings = { vignetteRadarEnabled = true, vignetteRadarHideWhenEmpty = tru
     vignetteRadarRange = 450, vignetteRadarCircleOnly = false }
 local addon = { GetSettings = function() return settings end }
 VignetteRadarDB = settings
-assert(loadfile("VignetteRadar_Core.lua"))("VignetteRadar", addon)
-assert(loadfile("VignetteRadar_Style.lua"))("VignetteRadar", addon)
-assert(loadfile("VignetteRadar_Controls.lua"))("VignetteRadar", addon)
-assert(loadfile("VignetteRadar_Features.lua"))("VignetteRadar", addon)
-assert(loadfile("VignetteRadar_Recent.lua"))("VignetteRadar", addon)
-assert(loadfile("VignetteRadar_QuestData.lua"))("VignetteRadar", addon)
-assert(loadfile("VignetteRadar_RouteDraft.lua"))("VignetteRadar", addon)
-assert(loadfile("VignetteRadar_Exploration.lua"))("VignetteRadar", addon)
-assert(loadfile("VignetteRadar_POIs.lua"))("VignetteRadar", addon)
-assert(loadfile("VignetteRadar_WorldFocus.lua"))("VignetteRadar", addon)
-assert(loadfile("VignetteRadar_Zygor.lua"))("VignetteRadar", addon)
-assert(loadfile("VignetteRadar_Beacons.lua"))("VignetteRadar", addon)
+assert(loadfile("Core/Core.lua"))("VignetteRadar", addon)
+assert(loadfile("UI/Style.lua"))("VignetteRadar", addon)
+assert(loadfile("UI/Controls.lua"))("VignetteRadar", addon)
+assert(loadfile("Core/Features.lua"))("VignetteRadar", addon)
+assert(loadfile("Core/Recent.lua"))("VignetteRadar", addon)
+assert(loadfile("Data/QuestData.lua"))("VignetteRadar", addon)
+assert(loadfile("Routes/RouteDraft.lua"))("VignetteRadar", addon)
+assert(loadfile("Routes/Exploration.lua"))("VignetteRadar", addon)
+assert(loadfile("Data/POIs.lua"))("VignetteRadar", addon)
+assert(loadfile("Routes/WorldFocus.lua"))("VignetteRadar", addon)
+assert(loadfile("Data/Zygor.lua"))("VignetteRadar", addon)
+assert(loadfile("Routes/Beacons.lua"))("VignetteRadar", addon)
 assert(loadfile(legendSourcePath))("VignetteRadar", addon)
 assert(loadfile(targetPickerSourcePath))("VignetteRadar", addon)
 assert(loadfile(sourcePath))("VignetteRadar", addon)
-assert(loadfile("VignetteRadar_RouteArrow.lua"))("VignetteRadar", addon)
+assert(loadfile("Routes/RouteArrow.lua"))("VignetteRadar", addon)
 assert(loadfile(optionsSourcePath))("VignetteRadar", addon)
 assert(loadfile(quickSourcePath))("VignetteRadar", addon)
 
@@ -243,7 +243,7 @@ do
             if type(value) == "function" then children[#children + 1] = value end
         end
         local info = debug.getinfo(fn, "S")
-        if info and info.source and info.source:find("VignetteRadar_Radar.lua", 1, true) then
+        if info and info.source and info.source:find("UI/Radar.lua", 1, true) then
             assert(count <= 60, "WoW's 60-upvalue limit exceeded at radar line "
                 .. tostring(info.linedefined) .. ": " .. count)
         end

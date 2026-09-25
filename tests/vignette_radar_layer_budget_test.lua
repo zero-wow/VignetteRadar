@@ -4,7 +4,7 @@ local messages = {}
 GetTime = function() return now end
 debugprofilestop = function() return clock end
 DEFAULT_CHAT_FRAME = { AddMessage = function(_, message) messages[#messages + 1] = message end }
-assert(loadfile("VignetteRadar_LayerBudget.lua"))("VignetteRadar", addon)
+assert(loadfile("Core/LayerBudget.lua"))("VignetteRadar", addon)
 local B = addon.VignetteRadarLayerBudget
 
 assert(B.ShouldRun("questBlobs"))

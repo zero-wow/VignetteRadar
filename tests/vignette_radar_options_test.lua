@@ -1,4 +1,4 @@
-local sourcePath = arg[1] or "VignetteRadar_Options.lua"
+local sourcePath = arg[1] or "UI/Options.lua"
 
 local objects = {}
 local methods = {}
@@ -117,7 +117,7 @@ local addon = {
         db.vignetteRadarIgnored = {}
     end },
 }
-assert(loadfile("VignetteRadar_Controls.lua"))("VignetteRadar", addon)
+assert(loadfile("UI/Controls.lua"))("VignetteRadar", addon)
 assert(loadfile(sourcePath))("VignetteRadar", addon)
 local event
 for _, object in ipairs(objects) do

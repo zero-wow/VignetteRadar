@@ -1,7 +1,7 @@
 VignetteRadarDB, WaffleHouseDB = nil, nil
 local addon = {}
-assert(loadfile("VignetteRadar_Core.lua"))("VignetteRadar", addon)
-assert(loadfile("VignetteRadar_Exploration.lua"))("VignetteRadar", addon)
+assert(loadfile("Core/Core.lua"))("VignetteRadar", addon)
+assert(loadfile("Routes/Exploration.lua"))("VignetteRadar", addon)
 local E, db = addon.VignetteRadarExploration, addon.GetSettings()
 local current = 0
 GetTime = function() return current end

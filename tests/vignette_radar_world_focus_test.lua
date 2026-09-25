@@ -29,7 +29,7 @@ C_Map = {
     ClearUserWaypoint = function() waypoint = nil end,
 }
 C_SuperTrack = { SetSuperTrackedUserWaypoint = function() end }
-assert(loadfile("VignetteRadar_WorldFocus.lua"))("VignetteRadar", addon)
+assert(loadfile("Routes/WorldFocus.lua"))("VignetteRadar", addon)
 local focus = addon.VignetteRadarWorldFocus
 local function Step(x)
     return { mapID = 123, mapX = x / 1000, mapY = .5,

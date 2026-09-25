@@ -1,4 +1,4 @@
-local path = arg[1] or "VignetteRadar_RouteDraft.lua"
+local path = arg[1] or "Routes/RouteDraft.lua"
 local savedRoute = { { name = "Existing stop", worldX = 900, worldY = 900 } }
 local addon = { GetSettings = function() return { vignetteRadarRoute = savedRoute } end }
 assert(loadfile(path))("VignetteRadar", addon)

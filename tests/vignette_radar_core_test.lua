@@ -1,4 +1,4 @@
-local sourcePath = arg[1] or "VignetteRadar_Core.lua"
+local sourcePath = arg[1] or "Core/Core.lua"
 
 WaffleHouseDB = {
     vignetteRadarEnabled = false,

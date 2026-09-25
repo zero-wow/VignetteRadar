@@ -1,4 +1,4 @@
-local sourcePath = arg[1] or "VignetteRadar_TargetPicker.lua"
+local sourcePath = arg[1] or "UI/TargetPicker.lua"
 
 local methods = {}
 function methods:SetSize(width, height) self.width, self.height = width, height end
