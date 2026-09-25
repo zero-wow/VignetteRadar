@@ -635,15 +635,28 @@ assert(panel.trailToggle.backdrop == nil and #panel.trailToggle.strokes == 12
     and panel.compass.ignoreParentAlpha and panel.trailToggle.ignoreParentAlpha
     and panel.trailToggle.glow and panel.trailToggle.clickButtons[2] == "RightButtonUp",
     "the trail shortcut must match the toolbar and accept a style-changing right click")
-assert(panel.routeToggle.backdrop == nil and #panel.routeToggle.strokes == 2
-    and #panel.routeToggle.routeDots == 3 and panel.routeToggle.glow
+assert(panel.routeToggle.backdrop == nil and panel.routeToggle.art.texture
+        == "Interface\\AddOns\\VignetteRadar\\Media\\radar-corner-controls.tga"
+    and not panel.routeToggle.glow:IsShown()
     and panel.routeToggle.clickButtons[2] == "RightButtonUp",
-    "Auto Route must use the radar toolbar's line artwork and offer settings on right-click")
+    "Auto Route must use the shared themed icon states and accept a right-click")
 local routeHover = panel.hoverTools[8]
-assert(routeHover.toolID == "route" and #routeHover.routeRing == 16
-    and #routeHover.routeDots == 3 and #routeHover.routeStrokes == 2
-    and routeHover.routeUnderline and not routeHover.back,
-    "the radar-only route control should share the other hover icons' circular outline")
+assert(routeHover.toolID == "route" and routeHover.artColumn == 10
+    and routeHover.art.texture == panel.routeToggle.art.texture
+    and panel.hoverTools[9].artColumn == 7 and panel.hoverTools[10].artColumn == 8,
+    "Route, eye, and help must use their intended cells in the shared icon atlas")
+do
+    local normalState = panel.routeToggle.art.texCoord[3]
+    panel.routeToggle.scripts.OnEnter(panel.routeToggle)
+    assert(panel.routeToggle.art.texCoord[3] ~= normalState,
+        "the framed Auto Route icon must use its hover artwork")
+    panel.routeToggle.scripts.OnLeave(panel.routeToggle)
+    local cornerState = routeHover.art.texCoord[3]
+    routeHover.scripts.OnEnter(routeHover)
+    assert(routeHover.art.texCoord[3] ~= cornerState,
+        "the radar-only Auto Route icon must use the same hover-state family")
+    routeHover.scripts.OnLeave(routeHover)
+end
 do
     panel.routeToggle.scripts.OnClick(panel.routeToggle, "RightButton")
     local chooser = assert(_G.VignetteRadarRouteChooserPopup)
@@ -664,6 +677,15 @@ do
     addon.VignetteRadarAPI.PinZygorStep = function() pinned = true; return true end
     chooser.choices.zygor.scripts.OnClick()
     assert(pinned and not chooser:IsShown(), "the Zygor row must pin directly and dismiss the chooser")
+    addon.VignetteRadarAPI.PinZygorStep = function()
+        return false, "Zygor has no active guide waypoint"
+    end
+    panel.routeToggle.scripts.OnClick(panel.routeToggle, "RightButton")
+    chooser.choices.zygor.scripts.OnClick()
+    assert(chooser:IsShown() and chooser.status.text == "Zygor has no active guide waypoint",
+        "a failed Zygor pin must explain why instead of silently closing: "
+            .. tostring(chooser:IsShown()) .. ", " .. tostring(chooser.status.text))
+    chooser.close.scripts.OnClick()
     addon.VignetteRadarAPI.PinZygorStep = originalPin
     local focus = addon.VignetteRadarWorldFocus
     local originalNearest, chosen = focus.StartNearest, nil
@@ -1901,6 +1923,12 @@ do
     addon.VignetteRadarAPI.PinZygorStep = function() pinZygorCalled = true; return true end
     pinZygor.scripts.OnClick()
     assert(pinZygorCalled, "the Zygor action must pin the current guide step directly")
+    addon.VignetteRadarAPI.PinZygorStep = function()
+        return false, "Zygor has no active guide waypoint"
+    end
+    pinZygor.scripts.OnClick()
+    assert(quick.pages["World Focus"].status.text == "Zygor has no active guide waypoint",
+        "the settings action must show a persistent explanation when pinning fails")
     addon.VignetteRadarAPI.PinZygorStep = originalPinZygor
 end
 quick.tabs.Explore.scripts.OnClick(quick.tabs.Explore)
@@ -2004,11 +2032,10 @@ assert(panel.zoomOut.strokes[1].color[1] == themedRed
     "borderless footer icons must follow the selected color theme")
 panel.routeToggle.scripts.OnEnter(panel.routeToggle)
 routeHover.scripts.OnEnter(routeHover)
-assert(panel.routeToggle.strokes[1].color[1] == themedRed
-    and panel.routeToggle.strokes[1].color[2] == themedGreen
-    and panel.routeToggle.strokes[1].color[3] == themedBlue
-    and routeHover.routeStrokes[1].color[1] == themedRed
-    and routeHover.routeRing[1].color[1] == themedRed
+assert(panel.routeToggle.art.vertexColor[1] == themedRed
+    and panel.routeToggle.art.vertexColor[2] == themedGreen
+    and panel.routeToggle.art.vertexColor[3] == themedBlue
+    and routeHover.art.vertexColor[1] == themedRed
     and _G.VignetteRadarRouteChooserPopup.popupEdge.vertexColor[1] == themedRed,
     "Auto Route artwork and its chooser must follow the active theme")
 routeHover.scripts.OnLeave(routeHover)

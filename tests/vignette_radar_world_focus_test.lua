@@ -222,4 +222,32 @@ assert(focus.ZygorNote(123, function(_, vector)
     return vector.x * 1000, vector.y * 1000, 42
 end, function(x, y) return { x = x, y = y } end, true),
     "directly pinning Zygor should work even when its guide dot is hidden")
+local remoteGuide = focus.ZygorNote(124, function() return nil end,
+    function(x, y) return { x = x, y = y } end, true, true)
+assert(remoteGuide and remoteGuide.mapID == 123 and remoteGuide.worldX == nil
+    and focus.SelectNote(remoteGuide) and waypoint.uiMapID == 123,
+    "direct pinning should use Zygor's map even when the player is in a subzone")
+focus.Sync(124, { worldX = 300, worldY = 500, instanceID = 42 }, {}, {}, {})
+ZygorGuidesViewer.Pointer.current_waypoint = nil
+ZygorGuidesViewer.Pointer.DestinationWaypoint = { m = 123, x = .7, y = .3,
+    title = "Next guide destination" }
+assert(focus.ZygorNote(124, function() return nil end,
+    function(x, y) return { x = x, y = y } end, true, true).mapX == .7,
+    "pinning should fall back to Zygor's destination when its active arrow is absent")
+ZygorGuidesViewer.Pointer.DestinationWaypoint = nil
+ZygorGuidesViewer.CurrentStep.goals = {
+    { map = 123, x = .2, y = .8, text = "First objective" },
+    { map = 124, x = .8, y = .2, text = "Active objective" },
+}
+ZygorGuidesViewer.CurrentStep.current_waypoint_goal_num = 2
+local objective = focus.ZygorNote(123, function() return nil end,
+    function(x, y) return { x = x, y = y } end, true, true)
+assert(objective and objective.mapID == 124 and objective.mapX == .8
+    and objective.name == "Active objective",
+    "direct pinning should use the current guide objective when Zygor has no arrow")
+ZygorGuidesViewer.CurrentStep.goals = nil
+local missing, reason = focus.ZygorNote(124, function() end,
+    function(x, y) return { x = x, y = y } end, true, true)
+assert(not missing and reason == "Zygor has no active guide waypoint",
+    "an unavailable Zygor objective should produce a visible reason")
 io.write("vignette radar World Focus tests passed\n")

@@ -13,7 +13,7 @@ from pathlib import Path
 CELL = 64
 WIDTH, HEIGHT = 1024, 256
 ICONS = ("config", "target", "legend", "minus", "plus", "north",
-         "trail", "eye", "help", "close")
+         "trail", "eye", "help", "close", "route")
 STATES = (
     # Circular hover wash, edge, icon, active underline. Active art never
     # acquires a separate square tile: it belongs to the same icon family.
@@ -67,6 +67,13 @@ def icon_distance(icon, x, y):
                    segment(x, y, -5, 5, -2, 3, 1.8),
                    segment(x, y, 1, 1, 4, -1, 1.8),
                    segment(x, y, 7, -4, 10, -6, 1.8))
+    if icon == "route":
+        return min(abs(math.hypot(x + 10, y - 7) - 3) - 1.9,
+                   segment(x, y, -6, 7, -2, 7, 2.1),
+                   segment(x, y, -2, 7, -2, -7, 2.1),
+                   segment(x, y, -2, -7, 9, -7, 2.1),
+                   segment(x, y, 9, -7, 5, -10, 2.1),
+                   segment(x, y, 9, -7, 5, -4, 2.1))
     if icon == "eye":
         return min(segment(x, y, -11, 0, -6, -4, 1.7),
                    segment(x, y, -6, -4, 0, -6, 1.7),

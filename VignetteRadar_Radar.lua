@@ -2980,10 +2980,16 @@ function routeMenu.Ensure()
         local button = addon.VignetteRadarControls.Button(routeMenu.popup, label, width, 22)
         button:SetPoint("TOPLEFT", routeMenu.popup, "TOPLEFT", x, y)
         button:SetScript("OnClick", function()
-            routeMenu.Hide()
             local ok, reason = action()
-            if not ok and reason and UIErrorsFrame and UIErrorsFrame.AddMessage then
-                UIErrorsFrame:AddMessage(reason, 1, .65, .25)
+            if ok then
+                routeMenu.Hide()
+            else
+                reason = type(reason) == "string" and reason or "No waypoint could be set"
+                routeMenu.popup.status:SetText(reason)
+                routeMenu.popup.status:SetTextColor(1, .63, .38, 1)
+                if UIErrorsFrame and UIErrorsFrame.AddMessage then
+                    UIErrorsFrame:AddMessage(reason, 1, .65, .25)
+                end
             end
             if RefreshRadar then RefreshRadar(false) end
         end)
@@ -2994,12 +3000,14 @@ function routeMenu.Ensure()
         Choice(kind, kind:sub(1, 1):upper() .. kind:sub(2), 13 + (index - 1) * 77,
             -77, 69, function()
                 local focus = addon.VignetteRadarWorldFocus
-                return focus and focus.StartNearest(kind)
+                if focus then return focus.StartNearest(kind) end
+                return false, "World Focus is unavailable"
             end)
     end
     Choice("zygor", "Pin Zygor Step", 13, -117, 222, function()
         local api = addon.VignetteRadarAPI
-        return api and api.PinZygorStep()
+        if api and api.PinZygorStep then return api.PinZygorStep() end
+        return false, "World Focus is unavailable"
     end)
     Choice("previous", "Previous Point", 13, -145, 107, function()
         return addon.VignetteRadarWorldFocus.Cycle(-1)
@@ -4808,21 +4816,11 @@ local function EnsurePanel()
             button:SetFontString(button.label)
             button:SetText("N")
         elseif symbol == "route" then
-            button.routeDots = {}
-            for index, position in ipairs({ { -6, -3 }, { 0, 3 }, { 6, -3 } }) do
-                local dot = button:CreateTexture(nil, "OVERLAY")
-                dot:SetTexture(CIRCLE_TEXTURE)
-                dot:SetSize(index == 2 and 5 or 4, index == 2 and 5 or 4)
-                dot:SetPoint("CENTER", position[1], position[2])
-                button.routeDots[index] = dot
-            end
-            for index, ends in ipairs({ { -6, -3, 0, 3 }, { 0, 3, 6, -3 } }) do
-                local stroke = button:CreateLine(nil, "ARTWORK")
-                stroke:SetThickness(2)
-                stroke:SetStartPoint("CENTER", button, ends[1], ends[2])
-                stroke:SetEndPoint("CENTER", button, ends[3], ends[4])
-                button.strokes[index] = stroke
-            end
+            button.glow:Hide()
+            button.art = button:CreateTexture(nil, "OVERLAY")
+            button.art:SetTexture("Interface\\AddOns\\VignetteRadar\\Media\\radar-corner-controls.tga")
+            button.art:SetSize(22, 22)
+            button.art:SetPoint("CENTER")
         elseif symbol == "trail" then
             button.trailMarks, button.trailExtras = {}, {}
             for index = 1, 3 do
@@ -4861,11 +4859,17 @@ local function EnsurePanel()
             local r, g, b = .69, .77, .78
             if selected or hovered then r, g, b = ACCENT[1], ACCENT[2], ACCENT[3] end
             local opacity = not enabled and .32 or (hovered or selected) and 1 or .78
-            self.glow:SetVertexColor(ACCENT[1], ACCENT[2], ACCENT[3],
-                not enabled and 0 or hovered and .20 or selected and .12 or 0)
-            for _, stroke in ipairs(self.strokes) do stroke:SetColorTexture(r, g, b, opacity) end
-            for _, dot in ipairs(self.routeDots or {}) do dot:SetVertexColor(r, g, b, opacity) end
-            if self.label then self.label:SetTextColor(r, g, b, opacity) end
+            if self.art then
+                local state = (selected and 2 or 0) + (hovered and 1 or 0)
+                self.art:SetTexCoord((10 * 64 + 1) / 1024, (10 * 64 + 63) / 1024,
+                    (state * 64 + 1) / 256, (state * 64 + 63) / 256)
+                self.art:SetVertexColor(r, g, b, enabled and 1 or .38)
+            else
+                self.glow:SetVertexColor(ACCENT[1], ACCENT[2], ACCENT[3],
+                    not enabled and 0 or hovered and .20 or selected and .12 or 0)
+                for _, stroke in ipairs(self.strokes) do stroke:SetColorTexture(r, g, b, opacity) end
+                if self.label then self.label:SetTextColor(r, g, b, opacity) end
+            end
         end
         local nativeSetEnabled = button.SetEnabled
         button.SetEnabled = function(self, enabled)
@@ -4984,32 +4988,14 @@ local function EnsurePanel()
                 or id == "legend" and legend and
                     ((legend.IsShown and legend.IsShown()) or (legend.IsQuestShown and legend.IsQuestShown()))
             local state = (active and 2 or 0) + (tool._hovered and 1 or 0)
-            if tool.routeDots and (state ~= tool._artState
-                or tool._artRed ~= ACCENT[1] or tool._artGreen ~= ACCENT[2]
-                or tool._artBlue ~= ACCENT[3]) then
-                local r, g, b = .69, .77, .78
-                if active or tool._hovered then r, g, b = ACCENT[1], ACCENT[2], ACCENT[3] end
-                local opacity = (active or tool._hovered) and 1 or .78
-                for _, mark in ipairs(tool.routeDots) do mark:SetVertexColor(r, g, b, opacity) end
-                for _, stroke in ipairs(tool.routeStrokes) do stroke:SetColorTexture(r, g, b, opacity) end
-                local ringOpacity = active and .22 or tool._hovered and .18 or 0
-                for _, stroke in ipairs(tool.routeRing) do
-                    stroke:SetColorTexture(ACCENT[1], ACCENT[2], ACCENT[3], ringOpacity)
-                end
-                tool.routeUnderline:SetShown(active == true)
-                if active then
-                    tool.routeUnderline:SetColorTexture(ACCENT[1], ACCENT[2], ACCENT[3], .7)
-                end
-                tool._artState = state
-                tool._artRed, tool._artGreen, tool._artBlue = ACCENT[1], ACCENT[2], ACCENT[3]
-            elseif state ~= tool._artState then
+            if state ~= tool._artState then
                 local column = tool.artColumn
                 tool.art:SetTexCoord((column * 64 + 1) / 1024, (column * 64 + 63) / 1024,
                     (state * 64 + 1) / 256, (state * 64 + 63) / 256)
                 tool._artState = state
             end
-            if tool.art and (tool._artRed ~= ACCENT[1] or tool._artGreen ~= ACCENT[2]
-                or tool._artBlue ~= ACCENT[3]) then
+            if tool._artRed ~= ACCENT[1] or tool._artGreen ~= ACCENT[2]
+                or tool._artBlue ~= ACCENT[3] then
                 tool.art:SetVertexColor(ACCENT[1], ACCENT[2], ACCENT[3], 1)
                 tool._artRed, tool._artGreen, tool._artBlue = ACCENT[1], ACCENT[2], ACCENT[3]
             end
@@ -5022,43 +5008,14 @@ local function EnsurePanel()
         tool:SetFrameLevel(panel.field:GetFrameLevel() + 8)
         tool:SetPoint(point, panel.field, point, x, y)
         tool:RegisterForClicks("LeftButtonUp", "RightButtonUp")
-        tool.toolID, tool.reference, tool.artColumn = id, reference, #panel.hoverTools
-        if id == "route" then
-            tool.routeDots, tool.routeStrokes, tool.routeRing = {}, {}, {}
-            for index = 1, 16 do
-                local start = (index - 1) * TWO_PI / 16
-                local finish = index * TWO_PI / 16
-                local outline = tool:CreateLine(nil, "BACKGROUND")
-                outline:SetThickness(1)
-                outline:SetStartPoint("CENTER", tool, 7.5 * math.cos(start), 7.5 * math.sin(start))
-                outline:SetEndPoint("CENTER", tool, 7.5 * math.cos(finish), 7.5 * math.sin(finish))
-                tool.routeRing[index] = outline
-            end
-            tool.routeUnderline = tool:CreateLine(nil, "ARTWORK")
-            tool.routeUnderline:SetThickness(1.5)
-            tool.routeUnderline:SetStartPoint("CENTER", tool, -1.5, -8)
-            tool.routeUnderline:SetEndPoint("CENTER", tool, 1.5, -8)
-            tool.routeUnderline:Hide()
-            for index, position in ipairs({ { -5, -3 }, { 0, 3 }, { 5, -3 } }) do
-                local mark = tool:CreateTexture(nil, "OVERLAY")
-                mark:SetTexture(CIRCLE_TEXTURE)
-                mark:SetSize(index == 2 and 4 or 3.5, index == 2 and 4 or 3.5)
-                mark:SetPoint("CENTER", position[1], position[2])
-                tool.routeDots[index] = mark
-            end
-            for index, ends in ipairs({ { -5, -3, 0, 3 }, { 0, 3, 5, -3 } }) do
-                local stroke = tool:CreateLine(nil, "ARTWORK")
-                stroke:SetThickness(1.7)
-                stroke:SetStartPoint("CENTER", tool, ends[1], ends[2])
-                stroke:SetEndPoint("CENTER", tool, ends[3], ends[4])
-                tool.routeStrokes[index] = stroke
-            end
-        else
-            tool.art = tool:CreateTexture(nil, "ARTWORK")
-            tool.art:SetTexture("Interface\\AddOns\\VignetteRadar\\Media\\radar-corner-controls.tga")
-            tool.art:SetSize(18, 18)
-            tool.art:SetPoint("CENTER")
-        end
+        tool.toolID, tool.reference = id, reference
+        tool.artColumn = id == "route" and 10 or id == "eye" and 7
+            or id == "help" and 8 or id == "minimize" and 3
+            or id == "close" and 9 or #panel.hoverTools
+        tool.art = tool:CreateTexture(nil, "ARTWORK")
+        tool.art:SetTexture("Interface\\AddOns\\VignetteRadar\\Media\\radar-corner-controls.tga")
+        tool.art:SetSize(18, 18)
+        tool.art:SetPoint("CENTER")
         tool:SetScript("OnEnter", function(self)
             panel._hoverToolsShown = true
             self._hovered = true
@@ -5120,9 +5077,7 @@ local function EnsurePanel()
     HoverTool("eye", "Stay fully visible", panel.combatToggle, "BOTTOMLEFT", 30, 10)
     HoverTool("help", "Radar status", nil, "BOTTOMLEFT", 10, 30)
     HoverTool("minimize", "Minimize to launcher", panel.minimize, "BOTTOMRIGHT", -30, 10)
-    panel.hoverTools[#panel.hoverTools].artColumn = 3 -- Reuse the atlas's minus art.
     HoverTool("close", "Turn radar off", panel.close, "BOTTOMRIGHT", -10, 10)
-    panel.hoverTools[#panel.hoverTools].artColumn = 9 -- Keep the atlas's close art.
     panel.RefreshCornerTools()
     panel.field:SetScript("OnEnter", function()
         panel._hoverToolsShown = true
@@ -5519,9 +5474,9 @@ addon.VignetteRadarAPI = {
     GetCurrentMapID = CurrentMapID,
     PinZygorStep = function()
         local worldFocus, mapID = addon.VignetteRadarWorldFocus, CurrentMapID()
-        if not (worldFocus and mapID) then return false, "Current map unavailable" end
-        local guide = worldFocus.ZygorNote(mapID, MapToWorld, MapVector, true)
-        if not guide then return false, "Zygor has no current waypoint on this map" end
+        if not worldFocus then return false, "World Focus is unavailable" end
+        local guide, reason = worldFocus.ZygorNote(mapID, MapToWorld, MapVector, true, true)
+        if not guide then return false, reason or "Zygor has no active guide waypoint" end
         return worldFocus.SelectNote(guide)
     end,
     GetPlayerSnapshot = function() return PlayerSnapshot(CurrentMapID()) end,

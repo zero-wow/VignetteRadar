@@ -96,6 +96,7 @@ end
 
 local function Valid(item)
     local mapID = Position(item)
+    if item and item.kind == "guide" then return mapID ~= nil end
     return mapID and Number(item.worldX) and Number(item.worldY)
         and (not player or not (Number(player.instanceID) and Number(item.instanceID)
             and player.instanceID ~= item.instanceID))
@@ -580,6 +581,7 @@ function API.Sync(mapID, snapshot, liveTargets, questPoints, mapNotes)
             end
         end
     end
+    if not (Number(step.worldX) and Number(step.worldY)) then return end
     if not route and not addon.GetSettings().vignetteRadarWorldFocusAutoAdvance then return end
     if Number(player.instanceID) and Number(step.instanceID)
         and player.instanceID ~= step.instanceID then return end
@@ -630,27 +632,57 @@ function API.Advance()
     return ok
 end
 
-function API.ZygorNote(mapID, mapToWorld, mapVector, allowHidden)
+function API.ZygorNote(mapID, mapToWorld, mapVector, allowHidden, allowRemote)
     if not allowHidden and addon.GetSettings().vignetteRadarWorldFocusZygor ~= true then return nil end
     local zgv = _G.ZygorGuidesViewer
     local ok, waypoint, step = pcall(function()
-        return zgv and zgv.Pointer and zgv.Pointer.current_waypoint, zgv and zgv.CurrentStep
+        local pointer = zgv and zgv.Pointer
+        return pointer and (pointer.current_waypoint or pointer.ArrowFrame and pointer.ArrowFrame.waypoint
+            or pointer.DestinationWaypoint), zgv and zgv.CurrentStep
     end)
-    if not ok or not waypoint then return nil end
+    if ok and not waypoint and allowRemote and step then
+        local found, goal = pcall(function()
+            local goals = step.goals
+            if type(goals) ~= "table" then return nil end
+            local current = goals[step.current_waypoint_goal_num or 0]
+            if current and Number(current.map) and Number(current.x) and Number(current.y) then
+                return current
+            end
+            for _, candidate in ipairs(goals) do
+                if Number(candidate.map) and Number(candidate.x) and Number(candidate.y) then
+                    return candidate
+                end
+            end
+        end)
+        if found and goal then
+            waypoint = { m = goal.map, x = goal.x, y = goal.y,
+                title = goal.title or goal.text or "Zygor current objective" }
+        end
+    end
+    if not ok or not waypoint then
+        return nil, zgv and "Zygor has no active guide waypoint" or "Zygor is not loaded"
+    end
     local read, pointMapID, x, y, title = pcall(function()
         return waypoint.m, waypoint.x, waypoint.y, waypoint.title
     end)
-    if not read or Number(pointMapID) ~= mapID or not Number(x) or not Number(y)
-        or x < 0 or x > 1 or y < 0 or y > 1 then return nil end
-    local converted, worldX, worldY, instanceID = pcall(mapToWorld, mapID, mapVector(x, y))
-    if not converted or not Number(worldX) or not Number(worldY) then return nil end
+    pointMapID = Number(pointMapID)
+    if not read or not pointMapID or not Number(x) or not Number(y)
+        or x < 0 or x > 1 or y < 0 or y > 1 then
+        return nil, "Zygor's waypoint has no usable map coordinates"
+    end
+    if not allowRemote and pointMapID ~= mapID then return nil end
+    local converted, worldX, worldY, instanceID = pcall(mapToWorld, pointMapID, mapVector(x, y))
+    if not converted or not Number(worldX) or not Number(worldY) then
+        if not allowRemote then return nil end
+        worldX, worldY, instanceID = nil, nil, nil
+    end
     local name = type(title) == "string" and title ~= "" and title
         or "Zygor current step"
     local gotStep, stepNum = pcall(function() return step and step.num end)
     stepNum = gotStep and Number(stepNum) or nil
     return { key = "zygor:" .. tostring(stepNum or 0) .. ":" .. math.floor(x * 10000)
         .. ":" .. math.floor(y * 10000), kind = "guide", source = "Zygor",
-        name = name, mapID = mapID, mapX = x, mapY = y,
+        name = name, mapID = pointMapID, mapX = x, mapY = y,
         worldX = worldX, worldY = worldY, instanceID = instanceID,
         note = "Current active guide waypoint" }
 end

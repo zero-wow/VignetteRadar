@@ -543,11 +543,14 @@ local function Build()
     Check(focus, "vignetteRadarWorldFocusZygor", "Show Zygor Step", 14, -133, nil, 145)
     focus.pinZygor = Button(focus, "Pin Zygor", 202, -135, 72, function()
         local api = addon.VignetteRadarAPI
-        local ok, reason = api and api.PinZygorStep and api.PinZygorStep()
+        local ok, reason
+        if api and api.PinZygorStep then ok, reason = api.PinZygorStep()
+        else reason = "World Focus is unavailable" end
+        API.Refresh()
         if not ok and reason and UIErrorsFrame and UIErrorsFrame.AddMessage then
             UIErrorsFrame:AddMessage(reason, 1, .65, .25)
         end
-        API.Refresh()
+        if not ok and reason then focus.status:SetText(reason) end
     end)
     Section(focus, "ARRIVAL DISTANCE", -166)
     Choice(focus, "vignetteRadarWorldFocusArrivalRadius", 10, "10 yd", 14, -184, 80)
