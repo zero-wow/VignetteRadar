@@ -213,6 +213,8 @@ assert(loadfile("VignetteRadar_Style.lua"))("VignetteRadar", addon)
 assert(loadfile("VignetteRadar_Controls.lua"))("VignetteRadar", addon)
 assert(loadfile("VignetteRadar_Features.lua"))("VignetteRadar", addon)
 assert(loadfile("VignetteRadar_Recent.lua"))("VignetteRadar", addon)
+assert(loadfile("VignetteRadar_QuestData.lua"))("VignetteRadar", addon)
+assert(loadfile("VignetteRadar_RouteDraft.lua"))("VignetteRadar", addon)
 assert(loadfile("VignetteRadar_Exploration.lua"))("VignetteRadar", addon)
 assert(loadfile("VignetteRadar_POIs.lua"))("VignetteRadar", addon)
 assert(loadfile(legendSourcePath))("VignetteRadar", addon)
@@ -267,6 +269,16 @@ assert(explore:IsShown() and explore.width == 330 and explore.height == 425,
 for _, content in pairs(explore.pages) do
     assert(content.point[3] == -73 and content.height == 346 and 73 + content.height < explore.height,
         "all exploration pages must stay inside the popout")
+end
+assert(explore.pages.Route and explore.tabs.Route,
+    "route drafting needs a visible management page")
+for _, object in ipairs(objects) do
+    if object.parent == explore.pages.Route and object.kind == "Button" and object.point then
+        local x, y = object.point[2], object.point[3]
+        assert(x >= 5 and x + object.width <= explore.pages.Route.width - 5
+            and -y >= 0 and -y + object.height <= explore.pages.Route.height - 5,
+            "route controls must keep a gutter inside the compact panel")
+    end
 end
 assert(explore.pages.Modes:IsShown() and not explore.pages.Tools:IsShown())
 explore.tabs.Tools.scripts.OnClick(explore.tabs.Tools)
@@ -1130,6 +1142,9 @@ C_QuestLog.GetQuestsOnMap = function() return {
 } end
 addon.VignetteRadarAPI.Refresh(true)
 local secondQuestDot = assert(panel.questDots[2], "a second quest needs a second diamond")
+settings.vignetteRadarQuestNumbers = true
+now = now + 1
+addon.VignetteRadarAPI.Refresh(false)
 assert(secondQuestDot:IsShown() and secondQuestDot.fill.vertexColor[1] ~= questDot.fill.vertexColor[1]
     and secondQuestDot.halo.fill.vertexColor[1] == secondQuestDot.fill.vertexColor[1]
     and panel.questColorBlobs[1].drawnQuests[1] == 12345
@@ -1147,6 +1162,8 @@ for index = 1, 2 do
     local row = questKey.rows[index]
     local dot = row.entry.questID == questDot.quest.questID and questDot or secondQuestDot
     assert(row.name.text == dot.quest.name
+        and row.number.text == dot.number.text
+        and row.number.text == tostring(dot.quest.colorSlot)
         and row.fill.texture == dot.fill.texture
         and row.fill.vertexColor[1] == dot.fill.vertexColor[1]
         and row.fill.vertexColor[2] == dot.fill.vertexColor[2]
@@ -1160,6 +1177,63 @@ questKey.rows[1].scripts.OnClick(questKey.rows[1])
 assert(addon.VignetteRadarExploration.GetFocusedQuest() == nil,
     "clicking the key row again must clear its spotlight")
 questKey.close.scripts.OnClick(questKey.close)
+settings.vignetteRadarQuestNumbers = false
+settings.vignetteRadarNextQuestStep = true
+C_QuestLog.GetNextWaypointForMap = function(questID, requestedMap)
+    if questID == 12345 and requestedMap == 781 then return .54, .5 end
+end
+C_QuestLog.GetNextWaypointText = function() return "Travel to the camp" end
+addon.VignetteRadarAPI.Refresh(true)
+assert(panel.questDots[1].quest.mapX == .54
+    and panel.questDots[1].quest.nextStep.text == "Travel to the camp",
+    "opt-in next-step mode must move only a quest with a current-map Blizzard waypoint")
+settings.vignetteRadarNextQuestStep = false
+C_QuestLog.GetNextWaypointForMap = nil
+C_QuestLog.GetNextWaypointText = nil
+C_QuestLine = {
+    RequestQuestLinesForMap = function() end,
+    GetAvailableQuestLines = function() return { {
+        questID = 90001, questLineID = 90002, x = .53, y = .5,
+        questName = "New beginning", questLineName = "Campaign path",
+        isQuestStart = true, isHidden = false, isCampaign = true,
+        floorLocation = 0, startMapID = 781,
+    } } end,
+}
+settings.vignetteRadarQuestStartBadges = true
+addon.VignetteRadarQuestData.Invalidate()
+addon.VignetteRadarAPI.Refresh(true)
+assert(panel.questStartDots[1] and panel.questStartDots[1]:IsShown()
+    and panel.questStartDots[1].entry.floor == "above",
+    "available quest-line starts need a distinct projected badge and floor hint")
+settings.vignetteRadarLensEnabled = true
+settings.vignetteRadarLensCategory = "rare"
+VignetteRadar_HoldLens("down")
+assert(addon.VignetteRadarLensActive == "rare"
+    and not panel.questDots[1]:IsShown() and panel.summary.text == "RARE LENS",
+    "holding the lens key must temporarily hide quest markers")
+VignetteRadar_HoldLens("up")
+assert(addon.VignetteRadarLensActive == nil and panel.questDots[1]:IsShown(),
+    "releasing the lens key must restore the previous radar view")
+settings.vignetteRadarLensEnabled = false
+settings.vignetteRadarDataStatus = true
+addon.VignetteRadarAPI.Refresh(false)
+assert(panel.emptyHelp:IsShown()
+    and #addon.GetVignetteRadarStatusLines() > 0,
+    "data-status help must remain discoverable when quest markers are visible")
+settings.vignetteRadarDataStatus = false
+settings.vignetteRadarQuestStartBadges = false
+C_QuestLine = nil
+addon.VignetteRadarAPI.Refresh(true)
+addon.VignetteRadarExploration.OpenRouteDraft()
+assert(explore.pages.Route:IsShown() and explore.routeDraft and #explore.routeDraft > 0
+    and explore.draftRows[1].text ~= "",
+    "one-click route draft must show a bounded preview without applying it")
+assert(#settings.vignetteRadarRoute == 0,
+    "previewing a draft must leave the saved route alone")
+assert(addon.VignetteRadarExploration.ApplyRouteDraft(explore.routeDraft)
+    and #settings.vignetteRadarRoute == #explore.routeDraft,
+    "applying the reviewed draft must replace the route atomically")
+addon.VignetteRadarExploration.ClearRoute()
 assert(not questKey:IsShown() and panel:GetLeft() == beforeQuestKeyLeft,
     "closing the left key must restore a radar shifted to make room")
 addon.VignetteRadarExploration.FocusQuest(12346)
@@ -1491,8 +1565,8 @@ assert(quick:IsShown() and quick.width == 288 and quick.height == 412,
     "the settings dot must open the narrow, self-contained panel")
 local tabCount, exposed, colorSlots = 0, {}, {}
 for _ in pairs(quick.tabs) do tabCount = tabCount + 1 end
-assert(tabCount == 10 and quick.pages.Themes and quick.pages.Guides and quick.pages.Explore
-    and quick.pages["Map Data"],
+assert(tabCount == 11 and quick.pages.Themes and quick.pages.Guides and quick.pages.Explore
+    and quick.pages.Wayfinding and quick.pages["Map Data"],
     "compact settings must visibly include exploration controls")
 local escapePanels = {}
 for _, name in ipairs(UISpecialFrames) do escapePanels[name] = true end
@@ -1526,6 +1600,9 @@ for _, key in ipairs({ "vignetteRadarEnabled", "vignetteRadarHideWhenEmpty", "vi
     "vignetteRadarKeepVisibleCombat",
     "vignetteRadarQuietInstances", "vignetteRadarQuestDots", "vignetteRadarQuestAreas",
     "vignetteRadarQuestHalos", "vignetteRadarQuestHaloRadius", "vignetteRadarQuestColors",
+    "vignetteRadarNextQuestStep", "vignetteRadarQuestStartBadges",
+    "vignetteRadarQuestNumbers", "vignetteRadarDataStatus",
+    "vignetteRadarLensEnabled", "vignetteRadarLensCategory",
     "vignetteRadarRingOpacity", "vignetteRadarChevronOpacity", "vignetteRadarHeadingOpacity",
     "vignetteRadarChevronDistance", "vignetteRadarHeadingLength", "vignetteRadarFullSweep",
     "vignetteRadarTheme", "vignetteRadarSmartZoom", "vignetteRadarUntangle",

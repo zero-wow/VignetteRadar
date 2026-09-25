@@ -432,10 +432,10 @@ local function CollectVignettes(mapID)
     return targets
 end
 
-local function CollectQuests(mapID)
+local function CollectQuests(mapID, force)
     local quests = {}
     if not (mapID and C_QuestLog and C_QuestLog.GetQuestsOnMap
-        and (Settings().vignetteRadarQuestDots or Settings().vignetteRadarQuestAreas)) then
+        and (force or Settings().vignetteRadarQuestDots or Settings().vignetteRadarQuestAreas)) then
         return quests
     end
     local records = Call(C_QuestLog.GetQuestsOnMap, mapID)
@@ -447,11 +447,24 @@ local function CollectQuests(mapID)
         local x, y = SafeNumber(SafeField(record, "x")), SafeNumber(SafeField(record, "y"))
         if questID and questID > 0 and x and y and x >= 0 and x <= 1 and y >= 0 and y <= 1
             and not seen[questID] then
-            local worldX, worldY, instanceID = MapToWorld(mapID, MapVector(x, y))
+            local nextStep
+            if Settings().vignetteRadarNextQuestStep and index <= 64
+                and addon.VignetteRadarQuestData then
+                nextStep = addon.VignetteRadarQuestData.GetNextStep(questID, mapID)
+            end
+            local pointX, pointY = x, y
+            if nextStep and nextStep.onCurrentMap and nextStep.x and nextStep.y then
+                pointX, pointY = nextStep.x, nextStep.y
+            end
+            local worldX, worldY, instanceID = MapToWorld(mapID, MapVector(pointX, pointY))
+            if not worldX and (pointX ~= x or pointY ~= y) then
+                pointX, pointY = x, y
+                worldX, worldY, instanceID = MapToWorld(mapID, MapVector(x, y))
+            end
             if worldX and worldY then
                 seen[questID] = true
                 quests[#quests + 1] = {
-                    questID = questID, mapX = x, mapY = y,
+                    questID = questID, mapX = pointX, mapY = pointY, nextStep = nextStep,
                     worldX = worldX, worldY = worldY, instanceID = instanceID,
                     name = SafeString(SafeField(record, "name"))
                         or SafeString(Call(C_QuestLog.GetTitleForQuestID, questID)) or "Quest location",
@@ -617,6 +630,7 @@ end
 
 local function TargetVisible(target)
     if not (target and CategoryEnabled(target.category)) or Ignored(target) or TargetAlpha(target) <= 0 then return false end
+    if addon.VignetteRadarLensActive and target.category ~= addon.VignetteRadarLensActive then return false end
     local focusedKey = FocusedTargetKey()
     return not focusedKey or focusedKey == target.key
 end
@@ -932,11 +946,15 @@ local function MapNoteMinimumDistance(range)
 end
 local function RenderMapNotes(player, range)
     local settings = Settings()
-    if not (player and settings.vignetteRadarPOISource ~= "none") then HideMapNotes(); return 0 end
+    if not (player and settings.vignetteRadarPOISource ~= "none")
+        or addon.VignetteRadarLensActive == "quest" then HideMapNotes(); return 0 end
     local count = 0
     for _, note in ipairs(activeMapNotes) do
         if count >= MAX_MAP_NOTES then break end
         if settings.vignetteRadarPOITypes[note.kind] ~= false
+            and (not addon.VignetteRadarLensActive
+                or (addon.VignetteRadarLensActive == "rare" and note.kind == "mob")
+                or (addon.VignetteRadarLensActive == "treasure" and note.kind == "treasure"))
             and not (addon.VignetteRadarRecent and addon.VignetteRadarRecent.IsHidden(note, settings))
             and not (player.instanceID and note.instanceID and player.instanceID ~= note.instanceID) then
             local dx, dy = note.worldX - player.worldX, note.worldY - player.worldY
@@ -1037,7 +1055,10 @@ local function RenderQuestDots(player, range)
     local showDots = Settings().vignetteRadarQuestDots
     local showHalos = Settings().vignetteRadarQuestAreas and Settings().vignetteRadarQuestHalos
         and panel.questClip and panel.questClip.canClip
-    if not ((showDots or showHalos) and player) then HideQuestDots(); return 0 end
+    if not ((showDots or showHalos) and player)
+        or (addon.VignetteRadarLensActive and addon.VignetteRadarLensActive ~= "quest") then
+        HideQuestDots(); return 0
+    end
     local haloRadius = math.max(10, math.min(panel.plotRadius,
         (Settings().vignetteRadarQuestHaloRadius or 10) * panel.plotRadius / range))
     local haloRed, haloGreen, haloBlue = 1, .74, .27
@@ -1067,6 +1088,9 @@ local function RenderQuestDots(player, range)
                         dot.fill:SetSize(9, 9)
                         dot.fill:SetPoint("CENTER")
                         dot.fill:SetTexture(QUEST_DIAMOND_TEXTURE)
+                        dot.number = Text(dot, 8, "")
+                        dot.number:SetPoint("CENTER", dot, "CENTER")
+                        dot.number:SetTextColor(.03, .04, .05, 1)
                         dot:EnableMouseWheel(true)
                         dot:SetScript("OnMouseWheel", OnZoomWheel)
                         dot:SetScript("OnEnter", function(self)
@@ -1074,6 +1098,16 @@ local function RenderQuestDots(player, range)
                             GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
                             GameTooltip:SetText(self.quest.name, 1, 0.82, 0.35)
                             GameTooltip:AddLine(math.floor(self.distance + 0.5) .. " yd from you", 0.72, 0.76, 0.78)
+                            if self.quest.nextStep then
+                                GameTooltip:AddLine("Blizzard's next quest step", .58, .83, .73)
+                                if self.quest.nextStep.onCurrentMap == false then
+                                    GameTooltip:AddLine("Next waypoint is on another map; this diamond shows the current quest location.",
+                                        .72, .76, .78, true)
+                                end
+                                if self.quest.nextStep.text then
+                                    GameTooltip:AddLine(self.quest.nextStep.text, .84, .87, .83, true)
+                                end
+                            end
                             if self.halo and self.halo:IsShown() then
                                 GameTooltip:AddLine("Soft circle: estimated location, not a Blizzard quest area.", .72, .76, .78, true)
                             end
@@ -1101,6 +1135,8 @@ local function RenderQuestDots(player, range)
                     else
                         dot.fill:SetVertexColor(1, .74, .27, 1)
                     end
+                    dot.number:SetText(Settings().vignetteRadarQuestNumbers
+                        and tostring(quest.colorSlot or 1) or "")
                     local exploration = addon.VignetteRadarExploration
                     local spotlight = exploration and exploration.GetFocusedQuest()
                     dot:SetAlpha(spotlight and spotlight ~= quest.questID and .65 or 1)
@@ -1152,7 +1188,8 @@ addon.UpdateVignetteRadarQuestKey = function()
     local entries = {}
     local player = PlayerSnapshot(activeMapID)
     local range = Settings().vignetteRadarRange or 150
-    if player then
+    if player and (not addon.VignetteRadarLensActive
+        or addon.VignetteRadarLensActive == "quest") then
         for _, quest in ipairs(activeQuests) do
             if not (player.instanceID and quest.instanceID and player.instanceID ~= quest.instanceID) then
                 local dx, dy = quest.worldX - player.worldX, quest.worldY - player.worldY
@@ -1165,6 +1202,81 @@ addon.UpdateVignetteRadarQuestKey = function()
         end
     end
     legend.SetQuestEntries(entries)
+end
+
+addon.RenderVignetteRadarQuestStarts = function(player, mapID, range)
+    if not panel then return 0 end
+    panel.questStartDots = panel.questStartDots or {}
+    local count = 0
+    if player and mapID and Settings().vignetteRadarQuestStartBadges
+        and (not addon.VignetteRadarLensActive or addon.VignetteRadarLensActive == "quest")
+        and addon.VignetteRadarQuestData then
+        local starts = addon.VignetteRadarAvailableStarts or {}
+        for _, entry in ipairs(starts) do
+            if count >= 32 then break end
+            local worldX, worldY, instanceID = entry.worldX, entry.worldY, entry.instanceID
+            if worldX and worldY and not (player.instanceID and instanceID
+                and player.instanceID ~= instanceID) then
+                local dx, dy = worldX - player.worldX, worldY - player.worldY
+                local distance = math.sqrt(dx * dx + dy * dy)
+                if distance <= range then
+                    local x, y = Project(dx, dy, distance, ViewFacing(player.facing),
+                        panel.plotRadius - 9, range)
+                    if x and y then
+                        count = count + 1
+                        local dot = panel.questStartDots[count]
+                        if not dot then
+                            dot = CreateFrame("Button", nil, panel.field)
+                            dot:SetSize(19, 19)
+                            dot:SetFrameLevel(panel.field:GetFrameLevel() + 4)
+                            dot.rim = dot:CreateTexture(nil, "ARTWORK")
+                            dot.rim:SetSize(15, 15)
+                            dot.rim:SetPoint("CENTER")
+                            dot.rim:SetTexture(QUEST_DIAMOND_TEXTURE)
+                            dot.fill = dot:CreateTexture(nil, "OVERLAY")
+                            dot.fill:SetSize(11, 11)
+                            dot.fill:SetPoint("CENTER")
+                            dot.fill:SetTexture(QUEST_DIAMOND_TEXTURE)
+                            dot.fill:SetVertexColor(.03, .05, .06, .96)
+                            dot.glyph = Text(dot, 10, "!")
+                            dot.glyph:SetPoint("CENTER", dot, "CENTER", 0, 0)
+                            dot:SetScript("OnEnter", function(self)
+                                if not (GameTooltip and self.entry) then return end
+                                GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+                                GameTooltip:SetText(self.entry.questLineName or self.entry.questName
+                                    or "Available quest", 1, .87, .5)
+                                if self.entry.questName and self.entry.questName ~= self.entry.questLineName then
+                                    GameTooltip:AddLine(self.entry.questName, .85, .87, .85)
+                                end
+                                GameTooltip:AddLine(self.entry.isCampaign and "Campaign quest start"
+                                    or self.entry.isImportant and "Important quest start"
+                                    or "Available quest start", .62, .83, .77)
+                                if self.entry.floor == "above" or self.entry.floor == "below" then
+                                    GameTooltip:AddLine("Blizzard marks this " .. self.entry.floor
+                                        .. " your level.", .72, .79, .85)
+                                end
+                                GameTooltip:AddLine(math.floor(self.distance + .5) .. " yd straight-line", .7, .74, .76)
+                                GameTooltip:Show()
+                            end)
+                            dot:SetScript("OnLeave", function() if GameTooltip then GameTooltip:Hide() end end)
+                            panel.questStartDots[count] = dot
+                        end
+                        dot.entry, dot.distance = entry, distance
+                        if entry.isCampaign then dot.rim:SetVertexColor(1, .72, .28, 1)
+                        elseif entry.isImportant then dot.rim:SetVertexColor(.48, .82, 1, 1)
+                        else dot.rim:SetVertexColor(.58, .82, .72, 1) end
+                        dot.glyph:SetText(entry.floor == "above" and "↑"
+                            or entry.floor == "below" and "↓" or "!")
+                        dot:ClearAllPoints()
+                        dot:SetPoint("CENTER", panel.field, "CENTER", x, y)
+                        dot:Show()
+                    end
+                end
+            end
+        end
+    end
+    for index = count + 1, #panel.questStartDots do panel.questStartDots[index]:Hide() end
+    return count
 end
 
 local function HideQuestAreas()
@@ -1303,7 +1415,8 @@ end
 local function RenderQuestAreas(player, mapID, range)
     local blob = panel.questBlob
     if not (blob and player and mapID and Settings().vignetteRadarQuestAreas
-        and Settings().vignetteRadarNorthUp and #activeQuests > 0) then
+        and Settings().vignetteRadarNorthUp and #activeQuests > 0
+        and (not addon.VignetteRadarLensActive or addon.VignetteRadarLensActive == "quest")) then
         HideQuestAreas()
         return
     end
@@ -1428,7 +1541,7 @@ local function RenderExploration(player, range)
     for _, dot in ipairs(panel.trailDots) do dot:Hide() end
     for _, mark in ipairs(panel.trailMarks) do mark:Hide() end
     for _, mark in pairs(panel.trailExtraMarks) do mark:Hide() end
-    if not player then return end
+    if not player or addon.VignetteRadarLensActive then return end
     local lineCount, dotCount = 0, 0
     local function Position(item, clamp)
         if player.instanceID and item.instanceID and player.instanceID ~= item.instanceID then return nil end
@@ -2545,8 +2658,9 @@ function addon.ToggleVignetteRadarTrailPicker(anchor)
     return ToggleTrailPopup(anchor, true)
 end
 
-local function EmptyExplanation(player, shown, quests, notes, areas)
-    if not Settings().vignetteRadarEmptyHelp or shown > 0 or quests > 0 or notes > 0 or areas then return nil end
+local function EmptyExplanation(player, shown, quests, notes, areas, starts)
+    if not Settings().vignetteRadarEmptyHelp or shown > 0 or quests > 0 or notes > 0
+        or areas or (starts or 0) > 0 then return nil end
     if not player then return "Your position is not available from the current map yet." end
     if #activeTargets > 0 then
         local visible = 0
@@ -2563,6 +2677,59 @@ local function EmptyExplanation(player, shown, quests, notes, areas)
         return "No live detections here. Map-data packs are turned off."
     end
     return "No live detections or quest locations are available for this spot."
+end
+
+function addon.GetVignetteRadarStatusLines()
+    local settings = Settings()
+    local lines = {}
+    if not activeMapID then
+        lines[#lines + 1] = "Current map unavailable; radar positions cannot be projected yet."
+    end
+    if not PlayerSnapshot(activeMapID) then
+        lines[#lines + 1] = "Player map position unavailable here; waiting for Blizzard's map data."
+    end
+    if not settings.vignetteRadarQuestDots then
+        lines[#lines + 1] = "Quest diamonds are off in Quests settings."
+    elseif #activeQuests == 0 then
+        lines[#lines + 1] = "Blizzard supplied no positioned tracked quests on this map."
+    end
+    if not settings.vignetteRadarQuestAreas then
+        lines[#lines + 1] = "Exact quest areas are off in Quests settings."
+    elseif not settings.vignetteRadarNorthUp then
+        lines[#lines + 1] = "Exact quest areas need north-up orientation."
+    elseif panel and panel.questClip and not panel.questClip.canClip then
+        lines[#lines + 1] = "This client cannot clip the native quest-area layer."
+    elseif questMapBasis and not questMapBasis.horizontal then
+        lines[#lines + 1] = "This map's axes cannot align with Blizzard's quest-area layer yet."
+    elseif panel and panel.questColorFailed and settings.vignetteRadarQuestColors then
+        lines[#lines + 1] = "Per-quest area coloring failed; shared Blizzard area is used."
+    elseif #activeQuests > 0 then
+        lines[#lines + 1] = "Quest areas render only where Blizzard supplies shape data."
+    end
+    if settings.vignetteRadarPOISource == "none" then
+        lines[#lines + 1] = "Map-data pack is off; choose one in Map Data settings."
+    elseif #activeMapNotes == 0 then
+        lines[#lines + 1] = "Selected map-data pack has no usable notes for this map."
+    end
+    if #activeTargets == 0 then
+        lines[#lines + 1] = "No live vignette detections were supplied for this map."
+    end
+    if #lines == 0 then lines[1] = "Map, quest, pack, and live detection data are available." end
+    return lines
+end
+
+function addon.ToggleVignetteRadarStatus(anchor)
+    if not (GameTooltip and anchor) then return end
+    if GameTooltip.IsShown and GameTooltip:GetOwner() == anchor and GameTooltip:IsShown() then
+        GameTooltip:Hide()
+        return
+    end
+    GameTooltip:SetOwner(anchor, "ANCHOR_RIGHT")
+    GameTooltip:SetText("Radar data status", 1, 1, 1)
+    for _, line in ipairs(addon.GetVignetteRadarStatusLines()) do
+        GameTooltip:AddLine(line, .7, .83, .79, true)
+    end
+    GameTooltip:Show()
 end
 
 local function HideEdgeCues()
@@ -2594,7 +2761,8 @@ local function RenderEdgeCues(player, range, targets)
             Consider(target, "vignette", target.worldX, target.worldY, target.name, target.stale)
         end
     end
-    if Settings().vignetteRadarQuestDots or Settings().vignetteRadarQuestAreas then
+    if (Settings().vignetteRadarQuestDots or Settings().vignetteRadarQuestAreas)
+        and (not addon.VignetteRadarLensActive or addon.VignetteRadarLensActive == "quest") then
         for _, quest in ipairs(activeQuests) do
             if not (player.instanceID and quest.instanceID and player.instanceID ~= quest.instanceID) then
                 Consider(quest, "quest", quest.worldX, quest.worldY, quest.name, false)
@@ -2719,6 +2887,7 @@ Render = function()
         if panel.emptyHelp then panel.emptyHelp:Hide() end
         RenderExploration(nil, range)
         HideQuestDots()
+        addon.RenderVignetteRadarQuestStarts(nil)
         panel._questKeyNextAt = nil
         addon.UpdateVignetteRadarQuestKey()
         HideMapNotes()
@@ -2746,6 +2915,7 @@ Render = function()
         if panel.emptyHelp then panel.emptyHelp:SetShown(not CircleOnly() and panel.emptyReason ~= nil) end
         RenderExploration(nil, range)
         HideQuestDots()
+        addon.RenderVignetteRadarQuestStarts(nil)
         panel._questKeyNextAt = nil
         addon.UpdateVignetteRadarQuestKey()
         HideMapNotes()
@@ -2770,6 +2940,7 @@ Render = function()
     for _, line in ipairs(panel.headingChevron) do line:SetShown(player.headingAvailable) end
     local questAreasShown = RenderQuestAreas(player, mapID, range)
     local questsInRange = RenderQuestDots(player, range)
+    local startsInRange = addon.RenderVignetteRadarQuestStarts(player, mapID, range)
     addon.UpdateVignetteRadarQuestKey()
     local notesInRange = RenderMapNotes(player, range)
     local edgeCueCount = RenderEdgeCues(player, range, targets)
@@ -2851,11 +3022,20 @@ Render = function()
             or (shown == 0 and questAreasShown and "QUEST AREAS")
             or (shown == 0 and notesInRange > 0 and (notesInRange == 1 and "1 MAP NOTE"
                 or notesInRange .. " MAP NOTES"))
+            or (shown == 0 and startsInRange > 0 and (startsInRange == 1 and "1 QUEST START"
+                or startsInRange .. " QUEST STARTS"))
             or (shown == 1 and "1 IN RANGE" or shown .. " IN RANGE"))
     end
-    panel.emptyReason = EmptyExplanation(player, shown, questsInRange, notesInRange, questAreasShown)
+    panel.emptyReason = EmptyExplanation(player, shown, questsInRange, notesInRange,
+        questAreasShown, startsInRange)
     panel.edgeCueCount = edgeCueCount
-    if panel.emptyHelp then panel.emptyHelp:SetShown(not CircleOnly() and panel.emptyReason ~= nil) end
+    if addon.VignetteRadarLensActive then
+        panel.summary:SetText(string.upper(addon.VignetteRadarLensActive) .. " LENS")
+    end
+    if panel.emptyHelp then
+        panel.emptyHelp:SetShown(not CircleOnly()
+            and (panel.emptyReason ~= nil or Settings().vignetteRadarDataStatus))
+    end
     if panel.layout == "squat" and shown == 0 and panel.emptyReason then
         panel.layoutHint:SetText(panel.emptyReason)
     end
@@ -3378,12 +3558,19 @@ local function EnsurePanel()
     panel.emptyHelp:SetAllPoints(panel.summary)
     panel.emptyHelp:SetFrameLevel(panel:GetFrameLevel() + 2)
     panel.emptyHelp:SetScript("OnEnter", function(self)
-        if not (GameTooltip and panel.emptyReason) then return end
+        if not GameTooltip then return end
         GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
-        GameTooltip:SetText("Why is the radar empty?", 1, 1, 1)
-        GameTooltip:AddLine(panel.emptyReason, .7, .83, .79, true)
-        GameTooltip:AddLine("Your range, filters, and selected map-data pack are in Quick settings.",
-            .58, .68, .68, true)
+        GameTooltip:SetText(panel.emptyReason and "Why is the radar empty?"
+            or "Radar data status", 1, 1, 1)
+        if panel.emptyReason then GameTooltip:AddLine(panel.emptyReason, .7, .83, .79, true) end
+        if Settings().vignetteRadarDataStatus then
+            for _, line in ipairs(addon.GetVignetteRadarStatusLines()) do
+                GameTooltip:AddLine(line, .7, .83, .79, true)
+            end
+        else
+            GameTooltip:AddLine("Your range, filters, and selected map-data pack are in Quick settings.",
+                .58, .68, .68, true)
+        end
         GameTooltip:Show()
     end)
     panel.emptyHelp:SetScript("OnLeave", function() if GameTooltip then GameTooltip:Hide() end end)
@@ -4043,9 +4230,12 @@ local function EnsurePanel()
                 if GameTooltip then
                     GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
                     GameTooltip:SetText("Radar status", 1, 1, 1)
-                    GameTooltip:AddLine(panel.emptyReason or
-                        "The radar is showing the positions currently available from Blizzard and your selected map pack.",
-                        .7, .83, .79, true)
+                    if panel.emptyReason then
+                        GameTooltip:AddLine(panel.emptyReason, .7, .83, .79, true)
+                    end
+                    for _, line in ipairs(addon.GetVignetteRadarStatusLines()) do
+                        GameTooltip:AddLine(line, .7, .83, .79, true)
+                    end
                     GameTooltip:Show()
                 end
                 return
@@ -4183,6 +4373,22 @@ function VignetteRadar_PeekRadar(keystate)
     RefreshRadar(false)
 end
 
+function VignetteRadar_HoldLens(keystate)
+    if keystate == "up" then
+        if addon.VignetteRadarLensActive then
+            addon.VignetteRadarLensActive = nil
+            RefreshRadar(false)
+        end
+        return
+    end
+    if keystate ~= "down" or Settings().vignetteRadarLensEnabled ~= true
+        or Settings().vignetteRadarEnabled ~= true then return end
+    local category = Settings().vignetteRadarLensCategory
+    if category ~= "quest" and category ~= "rare" and category ~= "treasure" then return end
+    addon.VignetteRadarLensActive = category
+    RefreshRadar(false)
+end
+
 ScanVignettes = function(mapID)
     local changedMap = activeMapID ~= mapID
     if changedMap then questMapBasis = nil end
@@ -4192,6 +4398,38 @@ ScanVignettes = function(mapID)
     activeMapID = mapID
     activeTargets = CollectVignettes(mapID)
     activeQuests = CollectQuests(mapID)
+    local startsEnabled = Settings().vignetteRadarQuestStartBadges == true
+    local startsNow = Now()
+    if addon.VignetteRadarStartsMapID ~= mapID
+        or addon.VignetteRadarStartsEnabled ~= startsEnabled
+        or not addon.VignetteRadarStartsNextAt
+        or startsNow >= addon.VignetteRadarStartsNextAt then
+        addon.VignetteRadarAvailableStarts = {}
+        addon.VignetteRadarStartsMapID = mapID
+        addon.VignetteRadarStartsEnabled = startsEnabled
+        addon.VignetteRadarStartsNextAt = startsNow + 5
+        if mapID and startsEnabled and addon.VignetteRadarQuestData then
+            local starts = addon.VignetteRadarQuestData.GetAvailableQuestStarts(mapID)
+            local player = PlayerSnapshot(mapID)
+            for index = 1, math.min(80, #starts) do
+                local entry = starts[index]
+                local worldX, worldY, instanceID = MapToWorld(mapID, MapVector(entry.x, entry.y))
+                if worldX and worldY then
+                    entry.worldX, entry.worldY, entry.instanceID = worldX, worldY, instanceID
+                    local dx = player and worldX - player.worldX or index
+                    local dy = player and worldY - player.worldY or 0
+                    entry.startDistanceSquared = dx * dx + dy * dy
+                    addon.VignetteRadarAvailableStarts[#addon.VignetteRadarAvailableStarts + 1] = entry
+                end
+            end
+            table.sort(addon.VignetteRadarAvailableStarts, function(left, right)
+                return left.startDistanceSquared < right.startDistanceSquared
+            end)
+            while #addon.VignetteRadarAvailableStarts > 32 do
+                table.remove(addon.VignetteRadarAvailableStarts)
+            end
+        end
+    end
     local source = Settings().vignetteRadarPOISource
     local now = Now()
     if source == "none" or not mapID then
@@ -4318,6 +4556,24 @@ RefreshRadar = function(rescan)
             end
         end
     end
+    local hasQuestStarts = false
+    if settings.vignetteRadarQuestStartBadges and addon.VignetteRadarAvailableStarts
+        and #addon.VignetteRadarAvailableStarts > 0 then
+        local player = PlayerSnapshot(mapID)
+        local range = exploration and exploration.Range(player, nil) or settings.vignetteRadarRange
+        if player and type(range) == "number" then
+            for _, entry in ipairs(addon.VignetteRadarAvailableStarts) do
+                if not (player.instanceID and entry.instanceID
+                    and player.instanceID ~= entry.instanceID) then
+                    local dx, dy = entry.worldX - player.worldX, entry.worldY - player.worldY
+                    if dx * dx + dy * dy <= range * range then
+                        hasQuestStarts = true
+                        break
+                    end
+                end
+            end
+        end
+    end
     ReconcileFocusedTarget()
     local picker = TargetPickerAPI()
     if picker and type(picker.Refresh) == "function" then pcall(picker.Refresh) end
@@ -4330,7 +4586,8 @@ RefreshRadar = function(rescan)
         if panel then panel:Hide() end
     elseif manualPanelState == true or preview or settings.vignetteRadarKeepVisibleCombat == true
         or settings.vignetteRadarHideWhenEmpty == false
-        or hasExploration or #SelectableTargets() > 0 or hasMapNotes or (#activeQuests > 0 and (settings.vignetteRadarQuestDots
+        or hasExploration or #SelectableTargets() > 0 or hasMapNotes or hasQuestStarts
+        or (#activeQuests > 0 and (settings.vignetteRadarQuestDots
             or (settings.vignetteRadarQuestAreas and settings.vignetteRadarNorthUp))) then
         EnsurePanel():Show()
         Render()
@@ -4364,6 +4621,43 @@ addon.VignetteRadarAPI = {
     GetCurrentMapID = CurrentMapID,
     GetPlayerSnapshot = function() return PlayerSnapshot(CurrentMapID()) end,
     GetSelectableTargets = SelectableTargets,
+    GetRouteCandidates = function()
+        local mapID = CurrentMapID()
+        local candidates = {}
+        local quests = #activeQuests > 0 and activeQuests or CollectQuests(mapID, true)
+        for _, quest in ipairs(quests) do
+            if #candidates >= 128 then break end
+            candidates[#candidates + 1] = {
+                kind = "quest", questID = quest.questID, name = quest.name,
+                mapID = mapID, worldX = quest.worldX, worldY = quest.worldY,
+                instanceID = quest.instanceID, mapX = quest.mapX, mapY = quest.mapY,
+            }
+        end
+        for _, target in ipairs(activeTargets) do
+            if #candidates >= 224 then break end
+            if target.category == "treasure" and not target.stale
+                and CategoryEnabled("treasure") and not Ignored(target)
+                and TargetAlpha(target) > 0 then
+                candidates[#candidates + 1] = {
+                    kind = "treasure", key = target.key, name = target.name,
+                    mapID = mapID, worldX = target.worldX, worldY = target.worldY,
+                    instanceID = target.instanceID, mapX = target.mapX, mapY = target.mapY,
+                }
+            end
+        end
+        local exploration = addon.VignetteRadarExploration
+        if exploration and mapID then
+            for _, pin in ipairs(exploration.GetPins(mapID)) do
+                if #candidates >= 256 then break end
+                candidates[#candidates + 1] = {
+                    kind = "pin", id = pin.id, name = pin.name,
+                    mapID = mapID, worldX = pin.worldX, worldY = pin.worldY,
+                    instanceID = pin.instanceID, mapX = pin.mapX, mapY = pin.mapY,
+                }
+            end
+        end
+        return candidates
+    end,
     GetPanel = function() return panel end,
     GetLauncher = function() return launcher end,
     IsPreviewing = function() return preview end,
@@ -4631,6 +4925,11 @@ events:SetScript("OnEvent", function(_, event)
     end
     local mapChanged = event == "PLAYER_ENTERING_WORLD" or event == "ZONE_CHANGED_NEW_AREA"
         or event == "ZONE_CHANGED" or event == "ZONE_CHANGED_INDOORS"
+    if addon.VignetteRadarQuestData and (mapChanged or event == "QUEST_LOG_UPDATE"
+        or event == "QUEST_POI_UPDATE" or event == "QUEST_WATCH_LIST_CHANGED") then
+        addon.VignetteRadarQuestData.Invalidate()
+        addon.VignetteRadarStartsNextAt = nil
+    end
     if mapChanged then questMapBasis = nil end
     if mapChanged or event == "QUEST_LOG_UPDATE" or event == "QUEST_POI_UPDATE"
         or event == "QUEST_WATCH_LIST_CHANGED" or event == "SUPER_TRACKING_CHANGED" then

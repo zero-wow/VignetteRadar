@@ -4,6 +4,7 @@ if type(addon) ~= "table" then return end
 BINDING_HEADER_VIGNETTERADAR = "Vignette Radar"
 BINDING_NAME_VIGNETTERADAR_RAISE_LAUNCHER = "Hold to raise launcher"
 BINDING_NAME_VIGNETTERADAR_PEEK_RADAR = "Hold to peek at full radar"
+BINDING_NAME_VIGNETTERADAR_HOLD_LENS = "Hold to filter radar"
 
 addon.VignetteRadarRanges = { 10, 25, 50, 100, 150, 300, 450, 600, 1200, 2400, 4800 }
 addon.VignetteRadarLayouts = { "classic", "squat", "compact" }
@@ -111,6 +112,17 @@ function addon.GetSettings()
     if type(db.vignetteRadarQuestAreas) ~= "boolean" then db.vignetteRadarQuestAreas = false end
     if type(db.vignetteRadarQuestHalos) ~= "boolean" then db.vignetteRadarQuestHalos = true end
     if type(db.vignetteRadarQuestColors) ~= "boolean" then db.vignetteRadarQuestColors = true end
+    if type(db.vignetteRadarNextQuestStep) ~= "boolean" then db.vignetteRadarNextQuestStep = false end
+    if type(db.vignetteRadarQuestStartBadges) ~= "boolean" then db.vignetteRadarQuestStartBadges = false end
+    if type(db.vignetteRadarQuestNumbers) ~= "boolean" then db.vignetteRadarQuestNumbers = false end
+    if type(db.vignetteRadarDataStatus) ~= "boolean" then db.vignetteRadarDataStatus = false end
+    if type(db.vignetteRadarLensEnabled) ~= "boolean" then db.vignetteRadarLensEnabled = false end
+    if db.vignetteRadarLensCategory ~= "quest" and db.vignetteRadarLensCategory ~= "rare"
+        and db.vignetteRadarLensCategory ~= "treasure" then db.vignetteRadarLensCategory = "quest" end
+    if db.vignetteRadarRouteDraftStops ~= 3 and db.vignetteRadarRouteDraftStops ~= 4
+        and db.vignetteRadarRouteDraftStops ~= 5 then db.vignetteRadarRouteDraftStops = 5 end
+    if db.vignetteRadarRouteDraftRange ~= 300 and db.vignetteRadarRouteDraftRange ~= 600
+        and db.vignetteRadarRouteDraftRange ~= 1200 then db.vignetteRadarRouteDraftRange = 1200 end
     local haloRadius = db.vignetteRadarQuestHaloRadius
     if haloRadius ~= 10 and haloRadius ~= 20 and haloRadius ~= 40 and haloRadius ~= 80 then
         db.vignetteRadarQuestHaloRadius = 10

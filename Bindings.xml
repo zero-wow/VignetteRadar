@@ -5,4 +5,7 @@
     <Binding name="VIGNETTERADAR_PEEK_RADAR" category="ADDONS" runOnUp="true">
         VignetteRadar_PeekRadar(keystate)
     </Binding>
+    <Binding name="VIGNETTERADAR_HOLD_LENS" category="ADDONS" runOnUp="true">
+        VignetteRadar_HoldLens(keystate)
+    </Binding>
 </Bindings>

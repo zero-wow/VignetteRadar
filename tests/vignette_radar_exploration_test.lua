@@ -102,6 +102,19 @@ assert(E.UndoRouteEdit() and #E.GetRoute(10) == 7,
 assert(E.ClearRoute() and #E.GetRoute(10) == 0)
 E.RemovePin(pin.id)
 assert(#E.GetPins(10) == 0)
+assert(E.AddRouteStop(target))
+assert(not E.ApplyRouteDraft({ target, { name = "Broken stop" } })
+    and #E.GetRoute(10) == 1,
+    "a bad preview must leave the saved route untouched")
+assert(E.ApplyRouteDraft({
+    { name = "First", mapID = 10, worldX = 180, worldY = 180 },
+    { name = "Second", mapID = 10, worldX = 190, worldY = 190 },
+}) and #E.GetRoute(10) == 2 and E.GetRoute(10)[1].name == "First",
+    "applying a valid preview must replace the route in one edit")
+assert(E.UndoRouteEdit() and #E.GetRoute(10) == 1
+    and E.GetRoute(10)[1].name == "Rare One",
+    "the entire applied draft must undo as one action")
+assert(E.ClearRoute())
 
 db.vignetteRadarApproachAlerts = true
 db.vignetteRadarApproachDistance = 50

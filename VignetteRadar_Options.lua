@@ -339,7 +339,11 @@ local function BuildPanel()
             addon.VignetteRadarAPI.ToggleQuestKey()
         end
     end)
-    AddDescription(quests, "Opens from the radar's left side.", 258, -291, 205)
+    AddButton(quests, "Wayfinding options", 258, -285, 203, function()
+        if addon.VignetteRadarQuickConfig and addon.VignetteRadarQuickConfig.OpenPage then
+            addon.VignetteRadarQuickConfig.OpenPage("Wayfinding")
+        end
+    end)
     AddFooter(quests, "Exact blobs need north-up; estimated circles stay behind markers.")
 
     local explore = AddPage("Explore", 6)

@@ -219,6 +219,22 @@ function API.AddRouteStop(item)
     Refresh()
     return true
 end
+function API.ApplyRouteDraft(stops)
+    if type(stops) ~= "table" or #stops == 0 or #stops > 5 then
+        return false, "Draft has no valid stops"
+    end
+    local route = {}
+    for _, stop in ipairs(stops) do
+        local entry = RouteEntry(stop)
+        if not entry then return false, "A draft stop has no position" end
+        route[#route + 1] = entry
+    end
+    RememberRouteEdit()
+    Settings().vignetteRadarRoute = route
+    routeBack = {}
+    Refresh()
+    return true
+end
 function API.GetRoute(mapID)
     local result = {}
     for _, stop in ipairs(Settings().vignetteRadarRoute) do
@@ -466,8 +482,8 @@ local function BuildPanel()
     panel.title = Label(panel, "EXPLORE", 15, -12, 190, 12)
     Button(panel, "×", 297, -8, 23, function() panel:Hide() end)
     panel.pages, panel.tabs = {}, {}
-    for index, name in ipairs({ "Modes", "Tools", "Pins", "Journal" }) do
-        local tab = Button(panel, name, 10+(index-1)*79, -42, 74, function()
+    for index, name in ipairs({ "Modes", "Tools", "Pins", "Journal", "Route" }) do
+        local tab = Button(panel, name, 10+(index-1)*62, -42, 58, function()
             selectedPage = name
             API.RefreshPanel()
         end)
@@ -571,6 +587,35 @@ local function BuildPanel()
     end
     Label(panel.pages.Pins, "Click: route stop  •  Right-click: delete", 5, -325, 290, 9)
     Button(panel.pages.Journal, "Clear journal", 5, -319, 296, function() API.ClearJournal() end)
+    local routePage = panel.pages.Route
+    Label(routePage, "DRAFT NEARBY STOPS", 5, -3, 290, 9):SetTextColor(.05, .82, .62, 1)
+    panel.draftStopButtons, panel.draftRangeButtons = {}, {}
+    for index, value in ipairs({ 3, 4, 5 }) do
+        panel.draftStopButtons[index] = Button(routePage, value .. " stops",
+            5 + (index - 1) * 101, -23, 95, function()
+                Settings().vignetteRadarRouteDraftStops = value
+                API.RefreshPanel()
+            end)
+    end
+    for index, value in ipairs({ 300, 600, 1200 }) do
+        panel.draftRangeButtons[index] = Button(routePage, value .. " yd",
+            5 + (index - 1) * 101, -54, 95, function()
+                Settings().vignetteRadarRouteDraftRange = value
+                API.RefreshPanel()
+            end)
+    end
+    Button(routePage, "Preview route", 5, -86, 142, function() API.BuildRouteDraft() end)
+    Button(routePage, "Apply preview", 159, -86, 142, function()
+        local ok, reason = API.ApplyRouteDraft(panel.routeDraft)
+        Tell(ok and "Preview route applied" or reason)
+        API.RefreshPanel()
+    end)
+    panel.draftStatus = Label(routePage, "Preview to see nearby stops.", 5, -117, 296, 10)
+    panel.draftRows = {}
+    for index = 1, 5 do
+        panel.draftRows[index] = Label(routePage, "", 5, -144 - (index - 1) * 30, 296, 10)
+    end
+    Label(routePage, "Straight-line yards; this does not find walkable paths.", 5, -310, 296, 9)
     panel:Hide()
     API.RefreshPanel()
     return panel
@@ -609,6 +654,23 @@ function API.RefreshPanel()
     panel.approachValue:SetText(db.vignetteRadarApproachDistance .. " yd")
     panel.routeStatus:SetText(#db.vignetteRadarRoute .. "/" .. MAX_ROUTE
         .. " stops  •  " .. #routeBack .. " behind  •  Ctrl-click to add")
+    for index, button in ipairs(panel.draftStopButtons) do
+        if db.vignetteRadarRouteDraftStops == ({ 3, 4, 5 })[index] then
+            button:LockHighlight()
+        else button:UnlockHighlight() end
+    end
+    for index, button in ipairs(panel.draftRangeButtons) do
+        if db.vignetteRadarRouteDraftRange == ({ 300, 600, 1200 })[index] then
+            button:LockHighlight()
+        else button:UnlockHighlight() end
+    end
+    local draft = panel.routeDraft or {}
+    panel.draftStatus:SetText(panel.routeDraftStatus or "Preview to see nearby stops.")
+    for index, row in ipairs(panel.draftRows) do
+        local stop = draft[index]
+        row:SetText(stop and string.format("%d. %s  ·  %d yd", index,
+            (stop.name or "Stop"):sub(1, 25), math.floor(stop.stepDistance + .5)) or "")
+    end
     local keys = { smart="vignetteRadarSmartZoom", untangle="vignetteRadarUntangle",
         trail="vignetteRadarBreadcrumbs", approach="vignetteRadarApproachAlerts",
         journal="vignetteRadarJournalEnabled" }
@@ -634,6 +696,34 @@ function API.RefreshPanel()
             else row:Hide() end
         end
     end
+end
+
+function API.BuildRouteDraft()
+    local radar = addon.VignetteRadarAPI
+    local draft = addon.VignetteRadarRouteDraft
+    if not (radar and radar.GetRouteCandidates and radar.GetPlayerSnapshot and draft) then
+        return false, "Radar data unavailable"
+    end
+    local db = Settings()
+    local stops, status = draft.Build(radar.GetPlayerSnapshot(), radar.GetRouteCandidates(), {
+        maxStops = db.vignetteRadarRouteDraftStops,
+        maxDistance = db.vignetteRadarRouteDraftRange,
+    })
+    if panel then
+        panel.routeDraft = stops
+        panel.routeDraftStatus = #stops > 0 and (#stops .. " nearby stops. Review before applying.")
+            or (status and status.reason or "No nearby stops")
+        API.RefreshPanel()
+    end
+    return #stops > 0, panel and panel.routeDraftStatus or nil
+end
+
+function API.OpenRouteDraft()
+    local frame = BuildPanel()
+    selectedPage = "Route"
+    API.BuildRouteDraft()
+    API.RefreshPanel()
+    frame:Show()
 end
 
 function API.TogglePanel()

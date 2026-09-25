@@ -155,6 +155,15 @@ assert(defaults.vignetteRadarEdgeCues and defaults.vignetteRadarEmptyHelp
     and defaults.vignetteRadarPeekEnabled and defaults.vignetteRadarHoverTools
     and defaults.vignetteRadarFollowTrackedQuest == false,
     "new map, hover, and peek features need explicit saved defaults")
+assert(defaults.vignetteRadarNextQuestStep == false
+    and defaults.vignetteRadarQuestStartBadges == false
+    and defaults.vignetteRadarQuestNumbers == false
+    and defaults.vignetteRadarDataStatus == false
+    and defaults.vignetteRadarLensEnabled == false
+    and defaults.vignetteRadarLensCategory == "quest"
+    and defaults.vignetteRadarRouteDraftStops == 5
+    and defaults.vignetteRadarRouteDraftRange == 1200,
+    "wayfinding additions need conservative opt-in defaults")
 assert(defaults.vignetteRadarAlerts == true and defaults.vignetteRadarAlertSound == false
     and defaults.vignetteRadarAlertCategories.rare == true
     and defaults.vignetteRadarAlertCategories.treasure == true

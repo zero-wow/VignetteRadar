@@ -609,6 +609,8 @@ local function RefreshQuestRows()
         if entry then
             local r, g, b = QuestColor(entry)
             row.fill:SetVertexColor(r, g, b, 1)
+            row.number:SetText(addon.GetSettings().vignetteRadarQuestNumbers
+                and tostring(entry.colorSlot or 1) or "")
             row.halo:SetVertexColor(r, g, b, .14)
             row.name:SetText(entry.name)
             local selected = focused == entry.questID
@@ -690,6 +692,9 @@ local function EnsureQuestPanel()
         row.fill:SetSize(9, 9)
         row.fill:SetPoint("CENTER", row.halo, "CENTER")
         row.fill:SetTexture(QUEST_DIAMOND_TEXTURE)
+        row.number = Text(row, 8, "")
+        row.number:SetPoint("CENTER", row.halo, "CENTER")
+        row.number:SetTextColor(.03, .04, .05, 1)
         row.name = Text(row, 10, "")
         row.name:SetPoint("LEFT", 30, 0)
         row.name:SetWidth(164)

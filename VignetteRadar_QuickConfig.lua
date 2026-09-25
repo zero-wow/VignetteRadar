@@ -365,7 +365,7 @@ local function Build()
     close:SetScript("OnClick", function() quick:Hide() end)
     quick.close = close
 
-    local order = { "Radar", "Layout", "Explore", "Alerts", "Markers", "Guides", "Themes", "Behavior", "Quests", "Map Data" }
+    local order = { "Radar", "Layout", "Explore", "Alerts", "Markers", "Guides", "Themes", "Behavior", "Quests", "Wayfinding", "Map Data" }
     for index, name in ipairs(order) do
         local row, column = math.floor((index - 1) / 3), (index - 1) % 3
         local tab = addon.VignetteRadarControls.Button(quick, name, 84, 20)
@@ -594,6 +594,27 @@ local function Build()
             addon.VignetteRadarAPI.ToggleQuestKey()
         end
     end)
+
+    local wayfinding = quick.pages.Wayfinding
+    Check(wayfinding, "vignetteRadarNextQuestStep", "Use Blizzard's next quest step", 14, -3)
+    Check(wayfinding, "vignetteRadarQuestStartBadges", "Show available quest-line starts", 14, -31)
+    Check(wayfinding, "vignetteRadarQuestNumbers", "Number quest color diamonds", 14, -59)
+    Check(wayfinding, "vignetteRadarDataStatus", "Explain missing map data", 14, -87)
+    Check(wayfinding, "vignetteRadarLensEnabled", "Enable hold-to-filter key", 14, -115)
+    Section(wayfinding, "HOLD KEY SHOWS", -149)
+    Choice(wayfinding, "vignetteRadarLensCategory", "quest", "Quests", 14, -169, 80)
+    Choice(wayfinding, "vignetteRadarLensCategory", "rare", "Rares", 104, -169, 80)
+    Choice(wayfinding, "vignetteRadarLensCategory", "treasure", "Treasure", 194, -169, 80)
+    Label(wayfinding, "Assign the key in WoW's AddOns key bindings.", 14, -197, 9)
+    Button(wayfinding, "Data status", 14, -220, 124, function(self)
+        if addon.ToggleVignetteRadarStatus then addon.ToggleVignetteRadarStatus(self) end
+    end)
+    Button(wayfinding, "Draft route", 150, -220, 124, function()
+        if addon.VignetteRadarExploration and addon.VignetteRadarExploration.OpenRouteDraft then
+            addon.VignetteRadarExploration.OpenRouteDraft()
+        end
+    end)
+    Label(wayfinding, "Route distances are straight-line estimates.", 14, -251, 9)
 
     local mapData = quick.pages["Map Data"]
     Section(mapData, "CHOOSE ONE MAP-DATA PACK", -3)
