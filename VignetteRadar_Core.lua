@@ -171,7 +171,7 @@ function addon.GetSettings()
         -- visual choice when these two controls become independent.
         db.vignetteRadarKeepVisibleCombat = db.vignetteRadarQuietCombat == false
     end
-    if type(db.vignetteRadarCircleOnly) ~= "boolean" then db.vignetteRadarCircleOnly = false end
+    if type(db.vignetteRadarCircleOnly) ~= "boolean" then db.vignetteRadarCircleOnly = true end
     if type(db.vignetteRadarMarkerSize) ~= "number" or db.vignetteRadarMarkerSize ~= db.vignetteRadarMarkerSize then
         db.vignetteRadarMarkerSize = 7
     else

@@ -178,10 +178,14 @@ assert(type(defaults.vignetteRadarFavorites) == "table" and type(defaults.vignet
     and defaults.vignetteRadarLastSeen == true and defaults.vignetteRadarLastSeenSeconds == 10
     and defaults.vignetteRadarQuietCombat == true and defaults.vignetteRadarQuietInstances == true
     and defaults.vignetteRadarKeepVisibleCombat == false
-    and defaults.vignetteRadarCircleOnly == false
+    and defaults.vignetteRadarCircleOnly == true
     and defaults.vignetteRadarMarkerSize == 7 and defaults.vignetteRadarShapes == true
     and defaults.vignetteRadarShowHealth == true,
     "feature preferences need complete defaults")
+defaults.vignetteRadarCircleOnly = false
+fresh.GetSettings()
+assert(defaults.vignetteRadarCircleOnly == false,
+    "a saved full-frame layout must remain the user's choice")
 defaults.vignetteRadarAlertCooldown = -100
 defaults.vignetteRadarLastSeenSeconds = 10000
 defaults.vignetteRadarMarkerSize = 100

@@ -7,6 +7,9 @@ local ACCENT = { 0.05, 0.82, 0.62 }
 local CIRCLE_TEXTURE = "Interface\\CharacterFrame\\TempPortraitAlphaMask"
 local SKULL_TEXTURE = "Interface\\TargetingFrame\\UI-TargetingFrame-Skull"
 local FONT_FALLBACK = "Fonts\\FRIZQT__.TTF"
+local ROUNDED_FACE = "Interface\\AddOns\\VignetteRadar\\Media\\radar-rounded-square.tga"
+local ROUNDED_EDGE = "Interface\\AddOns\\VignetteRadar\\Media\\radar-rounded-border.tga"
+local ROUNDED_CONTROL = "Interface\\AddOns\\VignetteRadar\\Media\\control-rounded-square.tga"
 
 local panel
 local attachedTo
@@ -33,15 +36,32 @@ local function Text(parent, size, value)
     return label
 end
 
-local function Surface(frame, red, green, blue, alpha, borderAlpha)
-    if not frame.SetBackdrop then return end
-    frame:SetBackdrop({
-        bgFile = "Interface\\Buttons\\WHITE8X8",
-        edgeFile = "Interface\\Buttons\\WHITE8X8",
-        edgeSize = 1,
-    })
-    frame:SetBackdropColor(red or 0.045, green or 0.052, blue or 0.06, alpha or 0.98)
-    frame:SetBackdropBorderColor(1, 1, 1, borderAlpha or 0.13)
+local function RoundedTexture(parent, path, layer, r, g, b, alpha)
+    local art = parent:CreateTexture(nil, layer)
+    art:SetAllPoints(parent)
+    art:SetTexture(path)
+    art:SetVertexColor(r, g, b, alpha)
+    return art
+end
+
+local function ChromeButton(parent, width, height, label)
+    local button = CreateFrame("Button", nil, parent)
+    button:SetSize(width, height)
+    button.face = RoundedTexture(button, ROUNDED_CONTROL, "BACKGROUND", .12, .16, .17, .72)
+    button.label = Text(button, 9, label)
+    button.label:SetAllPoints(button)
+    button.label:SetJustifyH("CENTER")
+    button:SetScript("OnEnter", function(self)
+        self.face:SetVertexColor(ACCENT[1], ACCENT[2], ACCENT[3], .25)
+        self.label:SetTextColor(1, 1, 1, 1)
+    end)
+    button:SetScript("OnLeave", function(self)
+        self.face:SetVertexColor(.12, .16, .17, .72)
+        self.label:SetTextColor(.78, .84, .85, 1)
+        if GameTooltip then GameTooltip:Hide() end
+    end)
+    button.label:SetTextColor(.78, .84, .85, 1)
+    return button
 end
 
 local function Targets()
@@ -166,23 +186,18 @@ local function AddPressState(button)
 end
 
 local function CreateRow(parent, index)
-    local row = CreateFrame("Button", nil, parent, "BackdropTemplate")
+    local row = CreateFrame("Button", nil, parent)
     if row.RegisterForClicks then row:RegisterForClicks("LeftButtonUp", "RightButtonUp") end
     row:SetSize(PANEL_W - 18, 34)
     row:SetPoint("TOPLEFT", 9, -45 - ((index - 1) * 37))
-    Surface(row, 0.06, 0.069, 0.078, 0.98, 0.09)
+    row.face = RoundedTexture(row, ROUNDED_FACE, "BACKGROUND", .12, .15, .16, .40)
 
-    row.selection = row:CreateTexture(nil, "BACKGROUND")
-    row.selection:SetPoint("TOPLEFT", 1, -1)
-    row.selection:SetPoint("BOTTOMRIGHT", -1, 1)
-    row.selection:SetColorTexture(ACCENT[1], ACCENT[2], ACCENT[3], 0.10)
+    row.selection = RoundedTexture(row, ROUNDED_FACE, "ARTWORK",
+        ACCENT[1], ACCENT[2], ACCENT[3], .16)
     row.selection:Hide()
-    row.accent = row:CreateTexture(nil, "OVERLAY")
-    row.accent:SetWidth(2)
-    row.accent:SetPoint("TOPLEFT", 1, -1)
-    row.accent:SetPoint("BOTTOMLEFT", 1, 1)
-    row.accent:SetColorTexture(ACCENT[1], ACCENT[2], ACCENT[3], 0.9)
-    row.accent:Hide()
+    row.hover = RoundedTexture(row, ROUNDED_FACE, "ARTWORK",
+        ACCENT[1], ACCENT[2], ACCENT[3], .07)
+    row.hover:Hide()
 
     row.reticle = row:CreateTexture(nil, "ARTWORK")
     row.reticle:SetSize(19, 19)
@@ -228,11 +243,11 @@ local function CreateRow(parent, index)
         if focusKey == target.key then API.ClearFocus() else API.SetFocus(target.key, target.name) end
     end)
     row:SetScript("OnEnter", function(self)
-        self:SetBackdropBorderColor(ACCENT[1], ACCENT[2], ACCENT[3], 0.36)
+        self.hover:Show()
         Tooltip(self, self.target)
     end)
     row:SetScript("OnLeave", function(self)
-        self:SetBackdropBorderColor(1, 1, 1, 0.09)
+        self.hover:Hide()
         if GameTooltip then GameTooltip:Hide() end
     end)
     return row
@@ -266,6 +281,14 @@ local function Attach(anchor)
     elseif anchor and top and screenHeight and screenHeight - top >= PANEL_H + 12 then
         panel:SetPoint("BOTTOM", anchor, "TOP", 0, 8)
     else
+        local radarField = _G.VignetteRadarPanel and _G.VignetteRadarPanel.field
+        if anchor == radarField then
+            -- The field is a child of the radar. Moving it would detach the plot
+            -- from its saved panel layout when the screen has no clear side.
+            panel:SetPoint("CENTER", UIParent, "CENTER", 0, 0)
+            attachedTo = anchor
+            return
+        end
         local anchorWidth = left and right and right - left
             or ((FrameValue(anchor, "GetWidth") or 0) * anchorScale)
         -- A centered Squat panel can leave no side or vertical space. Move the
@@ -291,17 +314,13 @@ local function EnsurePanel()
     if panel then return panel end
     if type(CreateFrame) ~= "function" or not UIParent then return nil end
 
-    panel = CreateFrame("Frame", "VignetteRadarTargetPickerPanel", UIParent, "BackdropTemplate")
+    panel = CreateFrame("Frame", "VignetteRadarTargetPickerPanel", UIParent)
     panel:SetSize(PANEL_W, PANEL_H)
     if panel.SetFrameStrata then panel:SetFrameStrata("DIALOG") end
     if panel.SetClampedToScreen then panel:SetClampedToScreen(true) end
-    Surface(panel)
-
-    panel.accent = panel:CreateTexture(nil, "OVERLAY")
-    panel.accent:SetPoint("TOPLEFT", 1, -1)
-    panel.accent:SetPoint("BOTTOMLEFT", 1, 1)
-    panel.accent:SetWidth(2)
-    panel.accent:SetColorTexture(ACCENT[1], ACCENT[2], ACCENT[3], 0.8)
+    panel.face = RoundedTexture(panel, ROUNDED_FACE, "BACKGROUND", .04, .05, .06, .98)
+    panel.edge = RoundedTexture(panel, ROUNDED_EDGE, "BORDER",
+        ACCENT[1], ACCENT[2], ACCENT[3], .27)
     panel.title = Text(panel, 11, "VIGNETTE FOCUS")
     panel.title:SetPoint("TOPLEFT", 10, -9)
     panel.title:SetTextColor(ACCENT[1], ACCENT[2], ACCENT[3], 1)
@@ -311,23 +330,29 @@ local function EnsurePanel()
     if panel.subtitle.SetMaxLines then panel.subtitle:SetMaxLines(1) end
     panel.subtitle:SetTextColor(0.48, 0.56, 0.57, 1)
 
-    panel.clear = CreateFrame("Button", nil, panel, "BackdropTemplate")
-    panel.clear:SetSize(58, 20)
+    panel.rule = panel:CreateTexture(nil, "ARTWORK")
+    panel.rule:SetPoint("TOPLEFT", 10, -40)
+    panel.rule:SetSize(PANEL_W - 20, 1)
+    panel.rule:SetColorTexture(ACCENT[1], ACCENT[2], ACCENT[3], .15)
+
+    panel.clear = ChromeButton(panel, 58, 20, "SHOW ALL")
     panel.clear:SetPoint("TOPRIGHT", -9, -8)
-    Surface(panel.clear, 0.03, 0.038, 0.043, 0.96, 0.16)
-    panel.clear.label = Text(panel.clear, 8, "SHOW ALL")
-    panel.clear.label:SetAllPoints()
-    panel.clear.label:SetJustifyH("CENTER")
     AddPressState(panel.clear)
     panel.clear:SetScript("OnClick", function() API.ClearFocus() end)
     panel.clear:SetScript("OnEnter", function(self)
+        self.face:SetVertexColor(ACCENT[1], ACCENT[2], ACCENT[3], .25)
+        self.label:SetTextColor(1, 1, 1, 1)
         if not GameTooltip then return end
         GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
         GameTooltip:SetText("Show all vignettes", 1, 1, 1)
         GameTooltip:AddLine("Clear the specific target filter while keeping category filters active.", 0.55, 0.86, 0.76, true)
         GameTooltip:Show()
     end)
-    panel.clear:SetScript("OnLeave", function() if GameTooltip then GameTooltip:Hide() end end)
+    panel.clear:SetScript("OnLeave", function(self)
+        self.face:SetVertexColor(.12, .16, .17, .72)
+        self.label:SetTextColor(.78, .84, .85, 1)
+        if GameTooltip then GameTooltip:Hide() end
+    end)
 
     panel.rows = {}
     for index = 1, ROWS_PER_PAGE do panel.rows[index] = CreateRow(panel, index) end
@@ -336,21 +361,11 @@ local function EnsurePanel()
     panel.empty:SetJustifyH("CENTER")
     panel.empty:SetTextColor(0.50, 0.56, 0.57, 1)
 
-    panel.previous = CreateFrame("Button", nil, panel, "BackdropTemplate")
-    panel.previous:SetSize(24, 18)
+    panel.previous = ChromeButton(panel, 24, 18, "<")
     panel.previous:SetPoint("BOTTOMLEFT", 9, 7)
-    Surface(panel.previous, 0.03, 0.038, 0.043, 0.96, 0.14)
-    panel.previous.label = Text(panel.previous, 10, "‹")
-    panel.previous.label:SetAllPoints()
-    panel.previous.label:SetJustifyH("CENTER")
     panel.previous:SetScript("OnClick", function() page = math.max(1, page - 1); API.Refresh() end)
-    panel.next = CreateFrame("Button", nil, panel, "BackdropTemplate")
-    panel.next:SetSize(24, 18)
+    panel.next = ChromeButton(panel, 24, 18, ">")
     panel.next:SetPoint("BOTTOMRIGHT", -9, 7)
-    Surface(panel.next, 0.03, 0.038, 0.043, 0.96, 0.14)
-    panel.next.label = Text(panel.next, 10, "›")
-    panel.next.label:SetAllPoints()
-    panel.next.label:SetJustifyH("CENTER")
     panel.next:SetScript("OnClick", function() page = page + 1; API.Refresh() end)
     panel.page = Text(panel, 8, "1 / 1")
     panel.page:SetPoint("BOTTOM", 0, 11)
@@ -362,6 +377,16 @@ end
 
 function API.Refresh()
     if not panel then return end
+    local style = addon.VignetteRadarStyle
+    if style then
+        ACCENT[1], ACCENT[2], ACCENT[3] = style.Color("accent")
+        local br, bg, bb = style.Color("background")
+        panel.face:SetVertexColor(math.min(.14, br * 2.7), math.min(.14, bg * 2.7),
+            math.min(.14, bb * 2.7), .98)
+    end
+    panel.edge:SetVertexColor(ACCENT[1], ACCENT[2], ACCENT[3], .27)
+    panel.rule:SetColorTexture(ACCENT[1], ACCENT[2], ACCENT[3], .15)
+    panel.title:SetTextColor(ACCENT[1], ACCENT[2], ACCENT[3], 1)
     local targets = Targets()
     local pageCount = math.max(1, math.ceil(#targets / ROWS_PER_PAGE))
     page = math.max(1, math.min(page, pageCount))
@@ -395,7 +420,9 @@ function API.Refresh()
             row.action:SetText(selected and "ACTIVE" or "FOCUS")
             row.action:SetTextColor(selected and ACCENT[1] or 0.56, selected and ACCENT[2] or 0.64,
                 selected and ACCENT[3] or 0.65, 1)
-            if selected then row.selection:Show(); row.accent:Show() else row.selection:Hide(); row.accent:Hide() end
+            row.selection:SetVertexColor(ACCENT[1], ACCENT[2], ACCENT[3], .16)
+            row.hover:SetVertexColor(ACCENT[1], ACCENT[2], ACCENT[3], .07)
+            row.selection:SetShown(selected)
             row:Show()
         else
             row:Hide()

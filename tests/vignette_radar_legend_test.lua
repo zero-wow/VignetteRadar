@@ -284,11 +284,13 @@ assert(questPanel.rows[1].name.text == "Quest 1" and questPanel.rows[1].fill.ver
     and questPanel.rows[1].fill.vertexColor[3] == 87/255,
     "quest names and diamonds must use the exact quest marker palette")
 assert(questPanel.rows[1].rim.texture == "Interface\\AddOns\\VignetteRadar\\Media\\quest-diamond-hollow.tga"
+    and math.abs(questPanel.rows[1].rim.width - 13 * 26 / 30) < .001
     and not questPanel.rows[1].fill:IsShown(),
     "the quest key must show an unfinished quest with a hollow diamond")
 entries[1].completed = true
 legend.SetQuestEntries(entries)
 assert(questPanel.rows[1].rim.texture == "Interface\\AddOns\\VignetteRadar\\Media\\quest-diamond.tga"
+    and questPanel.rows[1].rim.width == 13
     and questPanel.rows[1].fill:IsShown(),
     "the quest key must use a solid diamond for a complete quest")
 assert(questPanel.scrollTrack:IsShown() and questPanel.rows[8]:IsShown()

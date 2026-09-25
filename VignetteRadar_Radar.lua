@@ -1204,12 +1204,15 @@ local function RenderQuestDots(player, range)
                     dot.fill:SetVertexColor(red, green, blue, 1)
                     if quest.completed then
                         dot.rim:SetTexture(QUEST_DIAMOND_TEXTURE)
+                        dot.rim:SetSize(13, 13)
                         dot.rim:SetVertexColor(tracked and .95 or .04,
                             tracked and .97 or .05, tracked and .93 or .06, .98)
                         dot.fill:Show()
                         dot.number:SetTextColor(.03, .04, .05, 1)
                     else
                         dot.rim:SetTexture(addon.VignetteRadarQuestHollowTexture)
+                        -- Match the visible 26px solid silhouette to the hollow file's 30px one.
+                        dot.rim:SetSize(13 * 26 / 30, 13 * 26 / 30)
                         dot.rim:SetVertexColor(tracked and .95 or red,
                             tracked and .97 or green, tracked and .93 or blue, 1)
                         dot.fill:Hide()
@@ -2068,7 +2071,7 @@ local function ApplyPanelLayout(focused)
         if legend and legend.ReanchorQuest and legend.IsQuestShown and legend.IsQuestShown() then
             legend.ReanchorQuest(CircleOnly() and panel.field or panel, panel)
         end
-        if picker and picker.Reanchor then picker.Reanchor(panel) end
+        if picker and picker.Reanchor then picker.Reanchor(CircleOnly() and panel.field or panel) end
     end
     local quick = addon.VignetteRadarQuickConfig
     if quick and quick.Reanchor then quick.Reanchor(CircleOnly() and panel.field or panel) end
@@ -2158,8 +2161,8 @@ local function UpdatePanelChrome()
     end
     if panel.emptyHelp then panel.emptyHelp:SetShown(not circleOnly and panel.emptyReason ~= nil) end
     if panel.hoverTools then
-        local showTools = circleOnly and panel.squarePlot
-            and Settings().vignetteRadarHoverTools ~= false and panel._hoverToolsShown == true
+        local showTools = circleOnly and Settings().vignetteRadarHoverTools ~= false
+            and panel._hoverToolsShown == true
         if panel._hoverToolsVisible ~= showTools then
             panel._hoverToolsVisible = showTools
             for _, tool in ipairs(panel.hoverTools) do tool:SetShown(showTools) end
@@ -3800,7 +3803,7 @@ local function EnsurePanel()
         if button == "RightButton" then
             if type(picker.ClearFocus) == "function" then pcall(picker.ClearFocus) end
         elseif type(picker.Toggle) == "function" then
-            pcall(picker.Toggle, panel)
+            pcall(picker.Toggle, CircleOnly() and panel.field or panel)
         end
         UpdateTargetButton()
     end)

@@ -83,6 +83,13 @@ assert(picker.Toggle(anchor) and picker.IsShown(), "focus button must open the a
 local panel = assert(_G.VignetteRadarTargetPickerPanel, "target list needs a stable global frame name")
 assert(panel.width == 250 and panel.height == 258 and panel.clamped == true,
     "specific target picker must stay compact and screen-safe")
+assert(panel.face.texture == "Interface\\AddOns\\VignetteRadar\\Media\\radar-rounded-square.tga"
+    and panel.edge.texture == "Interface\\AddOns\\VignetteRadar\\Media\\radar-rounded-border.tga"
+    and panel.rows[1].face.texture == panel.face.texture
+    and panel.rows[1].selection.texture == panel.face.texture
+    and panel.clear.face.texture == "Interface\\AddOns\\VignetteRadar\\Media\\control-rounded-square.tga"
+    and panel.backdrop == nil and panel.rows[1].backdrop == nil,
+    "the focus picker must use the radar's rounded image surfaces instead of square backdrops")
 assert(panel.point[1] == "TOPLEFT" and panel.point[3] == "TOPRIGHT" and panel.point[4] == 8,
     "specific target picker must open outside the radar with a gutter")
 assert(panel.rows[1].target.key == "a" and panel.rows[5].target.key == "e" and panel.next:IsShown(),
@@ -94,6 +101,14 @@ assert(panel.rows[1].registeredClicks[2] == "RightButtonUp",
 assert(panel.rows[1].name.width == 121 and panel.rows[1].meta.width == 132
     and panel.rows[1].action.width == 49 and panel.subtitle.width == 165,
     "names and metadata must be bounded away from row actions and the panel header")
+addon.VignetteRadarStyle = { Color = function(slot)
+    if slot == "accent" then return .7, .4, 1 end
+    return .02, .03, .04
+end }
+picker.Refresh()
+assert(panel.edge.vertexColor[1] == .7 and panel.title.textColor[2] == .4
+    and panel.face.vertexColor[3] == .04 * 2.7,
+    "the rounded focus popup must follow the active radar palette")
 
 panel.rows[1].scripts.OnClick(panel.rows[1])
 assert(picker.GetFocus() == "a" and picker.GetFocusName() == "Alpha Rare" and changes == 1,
@@ -235,5 +250,16 @@ assert(picker.Reanchor(squat) and panel.point[1] == "TOPLEFT" and panel.point[2]
     and panel.point[3] == "TOPRIGHT" and panel.point[4] == 8,
     "an open target picker must reanchor against the shifted Squat panel")
 assert(picker.Toggle(squat) == false, "target picker Squat toggle must close")
+
+local radarField = CreateFrame("Frame", nil, UIParent)
+radarField:SetSize(200, 200)
+radarField.left, radarField.right, radarField.top, radarField.bottom = 150, 350, 325, 125
+radarField:SetPoint("CENTER", UIParent, "CENTER", 0, 0)
+_G.VignetteRadarPanel = { field = radarField }
+UIParent:SetSize(500, 450)
+assert(picker.Toggle(radarField), "focus popup must still open from a tightly placed radar-only field")
+assert(radarField.point[1] == "CENTER" and panel.point[2] == UIParent,
+    "a cramped focus popup must center itself without detaching the radar field")
+picker.Hide()
 
 io.write("vignette radar target picker tests passed\n")

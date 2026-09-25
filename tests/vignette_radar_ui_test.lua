@@ -205,7 +205,8 @@ Settings = {
     OpenToCategory = function(categoryID) openedCategory = categoryID end,
 }
 
-local settings = { vignetteRadarEnabled = true, vignetteRadarHideWhenEmpty = true, vignetteRadarRange = 450 }
+local settings = { vignetteRadarEnabled = true, vignetteRadarHideWhenEmpty = true,
+    vignetteRadarRange = 450, vignetteRadarCircleOnly = false }
 local addon = { GetSettings = function() return settings end }
 VignetteRadarDB = settings
 assert(loadfile("VignetteRadar_Core.lua"))("VignetteRadar", addon)
@@ -1069,11 +1070,13 @@ local questDot = assert(panel.questDots[1], "quest locations must create a disti
 assert(questDot.halo and questDot.halo:IsShown() and questDot.halo.parent == panel.questClip
     and questDot.halo.level < questDot.level and questDot.halo:GetWidth() == 20
     and questDot.rim.texture == "Interface\\AddOns\\VignetteRadar\\Media\\quest-diamond-hollow.tga"
+    and math.abs(questDot.rim.width - 13 * 26 / 30) < .001
     and not questDot.fill:IsShown(),
     "quest dots should get a subtle clipped location circle behind the dot")
 completedQuestIDs[12345] = true
 addon.VignetteRadarAPI.Refresh(true)
 assert(questDot.quest.completed and questDot.rim.texture == "Interface\\AddOns\\VignetteRadar\\Media\\quest-diamond.tga"
+    and questDot.rim.width == 13
     and questDot.fill:IsShown(),
     "a quest ready to turn in must use a solid diamond")
 completedQuestIDs[12345] = nil
@@ -1598,6 +1601,11 @@ assert(settings.vignetteRadarCircleOnly == true and panel.backdropColor[4] == 0
     and panel.frameToggle:IsShown() and panel.field.point == savedFieldPoint
     and panel.frameToggle.chevron[1].endPoint[3] > panel.frameToggle.chevron[1].startPoint[3],
     "circle-only view must hide the rectangular frame without moving the radar or its restore chevron")
+panel.field.scripts.OnEnter(panel.field)
+assert(panel.hoverTools[1]:IsShown() and not panel.squarePlot,
+    "a new radar-only circle must still reveal its settings and focus controls on hover")
+panel.field.hovered = false
+panel.field.scripts.OnLeave(panel.field)
 panel.frameToggle.scripts.OnClick(panel.frameToggle)
 assert(settings.vignetteRadarCircleOnly == false and panel.backdropColor[4] == .98
     and panel.title:IsShown() and panel.combatToggle:IsShown() and panel.trailToggle:IsShown()

@@ -6,6 +6,7 @@ local QUEST_PANEL_W, QUEST_VISIBLE_ROWS = 224, 8
 local QUEST_ROW_H, QUEST_ROW_STEP = 22, 26
 local QUEST_DIAMOND_TEXTURE = "Interface\\AddOns\\VignetteRadar\\Media\\quest-diamond.tga"
 local QUEST_HOLLOW_DIAMOND_TEXTURE = "Interface\\AddOns\\VignetteRadar\\Media\\quest-diamond-hollow.tga"
+local QUEST_HOLLOW_SIZE = 13 * 26 / 30
 local ACCENT = { 0.05, 0.82, 0.62 }
 local FONT_FALLBACK = "Fonts\\FRIZQT__.TTF"
 local SKULL_TEXTURE = "Interface\\TargetingFrame\\UI-TargetingFrame-Skull"
@@ -612,11 +613,13 @@ local function RefreshQuestRows()
             row.fill:SetVertexColor(r, g, b, 1)
             if entry.completed then
                 row.rim:SetTexture(QUEST_DIAMOND_TEXTURE)
+                row.rim:SetSize(13, 13)
                 row.rim:SetVertexColor(.04, .05, .06, .98)
                 row.fill:Show()
                 row.number:SetTextColor(.03, .04, .05, 1)
             else
                 row.rim:SetTexture(QUEST_HOLLOW_DIAMOND_TEXTURE)
+                row.rim:SetSize(QUEST_HOLLOW_SIZE, QUEST_HOLLOW_SIZE)
                 row.rim:SetVertexColor(r, g, b, 1)
                 row.fill:Hide()
                 row.number:SetTextColor(r, g, b, 1)
