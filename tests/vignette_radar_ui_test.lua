@@ -262,7 +262,7 @@ assert(panel:GetScale() == 1.35, "a saved frame size must be restored when the r
 settings.vignetteRadarScale = 1
 panel:SetScale(1)
 assert(settings.vignetteRadarEnabled == false, "layout preview must not silently enable live tracking")
-assert(panel:IsShown() and panel.width == 220 and panel.height == 278, "preview must reserve space for zoom controls")
+assert(panel:IsShown() and panel.width == 246 and panel.height == 278, "preview must reserve space for zoom controls")
 SlashCmdList.VIGNETTERADAR("explore")
 local explore = assert(_G.VignetteRadarExplorePanel)
 assert(explore:IsShown() and explore.width == 330 and explore.height == 425
@@ -287,8 +287,9 @@ assert(explore.pages.Tools:IsShown() and not explore.pages.Modes:IsShown())
 assert(panel.field.width == 200 and panel.field.height == 200 and panel.field.point[1] == "BOTTOM"
     and panel.field.point[3] == 35, "radar field must fit between header and zoom controls with visible gutters")
 assert(panel.drag.width == 106 and panel.target.point[1] == "TOPRIGHT"
-    and panel.legend.point[1] == "TOPRIGHT" and panel.close.point[1] == "TOPRIGHT",
-    "drag target must stop before the focus, legend, and close controls")
+    and panel.legend.point[1] == "TOPRIGHT" and panel.minimize.point[1] == "TOPRIGHT"
+    and panel.close.point[1] == "TOPRIGHT",
+    "drag target must stop before the focus, legend, minimize, and close controls")
 assert(panel.title.font[1] == STANDARD_TEXT_FONT, "radar must work with the standard client font")
 assert(panel.summary.text == "PREVIEW" and #panel.blips == 4,
     "preview must explicitly show rare, boss, treasure, and event samples")
@@ -306,22 +307,22 @@ assert(panel.blips[1] == firstBlip and panel.blips[2] == secondBlip and firstBli
 assert(#panel.outerRing == 64 and #panel.middleRing == 64 and #panel.innerRing == 64,
     "all radar rings must be complete and bounded")
 assert(panel.clamped == true and panel.movable == true, "panel must remain movable and clamped to screen")
-assert(launcher.width == 44 and launcher.height == 44 and launcher.clamped == true and launcher.movable == true,
+assert(launcher.width == 58 and launcher.height == 58 and launcher.clamped == true and launcher.movable == true,
     "launcher must be a compact draggable instrument that stays on screen")
 assert(launcher.clickButtons[1] == "LeftButtonUp" and launcher.clickButtons[2] == "RightButtonUp"
     and launcher.dragButtons[1] == "LeftButton", "launcher must expose distinct click and drag gestures")
 assert(#launcher.ring == 24 and #launcher.sweepLines == 2
-    and launcher.face.texture:find("radar%-rounded%-square%.tga$")
-    and launcher.bezel.texture:find("radar%-rounded%-border%.tga$")
-    and launcher.closed.texture:find("radar%-rounded%-border%.tga$")
+    and launcher.face.texture == "Interface\\CharacterFrame\\TempPortraitAlphaMask"
+    and launcher.bezel.texture:find("radar%-launcher%-instrument%.tga$")
+    and launcher.closed.texture:find("radar%-launcher%-instrument%.tga$")
     and launcher.horizontal == nil and launcher.vertical == nil,
-    "launcher needs the radar's rounded surface and uncluttered live ring")
+    "launcher needs the new instrument artwork around an uncluttered live ring")
 assert(launcher.rangeLabel.text == "BOSS" and #launcher.miniBlips == 5 and launcher.miniBlips[1]:IsShown(),
     "launcher preview must mirror category markers with a plain boss cue")
 launcher.scripts.OnUpdate(launcher, 0.10)
-assert(launcher.bezel.alpha >= 0.5 and launcher.bezel.alpha <= 0.8
+assert(launcher.bezel.alpha >= 0.82 and launcher.bezel.alpha <= 1
     and launcher.shadow == nil and launcher.halo == nil and launcher.alert == nil,
-    "detection feedback must stay on the rounded border without offset shadow or alert layers")
+    "detection feedback must preserve the crafted rim without offset shadow or alert layers")
 
 panel.legend.scripts.OnClick(panel.legend)
 local legendPanel = assert(_G.VignetteRadarLegendPanel, "radar header must open its attached legend")
@@ -349,8 +350,9 @@ panel.target.scripts.OnClick(panel.target, "RightButton")
 assert(addon.VignetteRadarTargetPicker.GetFocus() == nil,
     "right-clicking the reticle must restore all category-filtered vignettes")
 SlashCmdList.VIGNETTERADAR("off")
-assert(launcher.closed:IsShown() and not launcher.bezel:IsShown() and not launcher.miniBlips[1]:IsShown(),
-    "disabled tracking must dim the rounded outline and hide live markers")
+assert(launcher.closed:IsShown() and not launcher.bezel:IsShown() and not launcher.miniBlips[1]:IsShown()
+    and launcher.rangeLabel.text == "OFF" and launcher.center.alpha < 1,
+    "disabled tracking must dim the instrument and clearly label its dormant state")
 local idleSweepAngle = launcher._sweepAngle
 for _ = 1, 6 do launcher.scripts.OnUpdate(launcher, 0.05) end
 assert(launcher._sweepAngle == idleSweepAngle and not launcher.sweepLines[1]:IsShown(),
@@ -392,7 +394,7 @@ assert(panel.focusReadout:IsShown() and panel.height == 324 and panel.field.poin
     "focusing must reserve exactly the footer space without moving the radar into its header")
 assert(panel.focusMeta.text:find("350 yd", 1, true) and panel.focusMeta.text:find("42% HP", 1, true),
     "focused live rare must show distance and available health")
-assert(panel.focusName.width == 172 and panel.focusMeta.width == 172,
+assert(panel.focusName.width == 198 and panel.focusMeta.width == 198,
     "long target text must stay bounded within the focus footer")
 addon.SetVignetteRadarCircleOnly(true)
 assert(panel.focusCard:IsShown() and panel.focusCard.name.text == liveInfo.rare.name
@@ -641,7 +643,8 @@ end
 local function separate(first, second, gap, label)
     local a, b = bounds(first), bounds(second)
     assert(a[3] + gap <= b[1] or b[3] + gap <= a[1]
-        or a[4] + gap <= b[2] or b[4] + gap <= a[2], "layout gutter: " .. label)
+        or a[4] + gap <= b[2] or b[4] + gap <= a[2], "layout gutter: " .. label
+            .. " [" .. table.concat(a, ",") .. "] [" .. table.concat(b, ",") .. "]")
 end
 local function inside(region, parent, gutter)
     local a, b = bounds(region), bounds(parent or panel)
@@ -650,7 +653,7 @@ local function inside(region, parent, gutter)
         "layout region escapes its parent: " .. tostring(region.text or region.kind))
 end
 local function checkLayout(focused)
-    local controls = { panel.target, panel.legend, panel.close, panel.zoomOut, panel.zoomIn, panel.zoomLabel,
+    local controls = { panel.target, panel.legend, panel.minimize, panel.close, panel.zoomOut, panel.zoomIn, panel.zoomLabel,
         panel.compass, panel.combatToggle, panel.trailToggle }
     inside(panel.settingsDot, panel, 4)
     separate(panel.settingsDot, panel.title, 2, "settings/title")
@@ -1390,7 +1393,9 @@ for _, layoutName in ipairs({ "classic", "compact", "squat" }) do
     addon.SetVignetteRadarCircleOnly(true)
     panel.field.hovered = true
     panel.field.scripts.OnEnter(panel.field)
-    assert(#panel.hoverTools == 10 and panel.hoverTools[1]:IsShown()
+    assert(#panel.hoverTools == 11 and panel.hoverTools[10].toolID == "minimize"
+        and panel.hoverTools[10].artColumn == 3 and panel.hoverTools[11].toolID == "close"
+        and panel.hoverTools[1]:IsShown()
         and not panel.settingsDot:IsShown(),
         "square radar-only view must reveal its corner controls on hover")
     assert(panel.hoverTools[1].glow == nil
@@ -1985,13 +1990,13 @@ for _, circleOnly in ipairs({ false, true }) do
 end
 
 -- Explicit close and disable still take priority over automatic visibility.
-panel.close.scripts.OnClick(panel.close)
+panel.minimize.scripts.OnClick(panel.minimize)
 addon.VignetteRadarAPI.Refresh(true)
 local morph = assert(_G.VignetteRadarMorphShell, "minimizing must animate into the mini radar")
 assert(panel:IsShown() and morph:IsShown() and not launcher:IsShown() and settings.vignetteRadarEnabled,
     "the radar must remain live while its surface shrinks into the launcher")
 morph.scripts.OnUpdate(morph, .09)
-assert(morph.width > 44 and morph.width < morph.from[3] and morph.alpha > 0
+assert(morph.width > 58 and morph.width < morph.from[3] and morph.alpha > 0
     and morph.alpha < 1 and panel:GetAlpha() > 0 and panel:GetAlpha() < 1,
     "the compacting surface must animate its size and crossfade with the live radar")
 morph.scripts.OnUpdate(morph, .11)
@@ -2002,14 +2007,15 @@ assert(panel:IsShown(), "the launcher must reopen a manually closed radar")
 assert(morph:IsShown() and not launcher:IsShown() and panel:GetAlpha() == 0,
     "opening the compact radar must grow its surface into the full panel")
 morph.scripts.OnUpdate(morph, .09)
-assert(morph.width > 44 and morph.width < morph.to[3] and panel:GetAlpha() > 0
+assert(morph.width > 58 and morph.width < morph.to[3] and panel:GetAlpha() > 0
     and panel:GetAlpha() < 1, "expansion must reveal the full radar as the compact surface grows")
 morph.scripts.OnUpdate(morph, .11)
 assert(not morph:IsShown() and panel:GetAlpha() > 0 and not launcher:IsShown(),
     "the expanded panel must replace the compact launcher after the transition")
-addon.SetVignetteRadarEnabled(false)
+panel.close.scripts.OnClick(panel.close)
 addon.VignetteRadarAPI.Refresh(true)
-assert(not panel:IsShown(), "disabled tracking must keep the panel closed even with stay visible enabled")
+assert(not panel:IsShown() and not settings.vignetteRadarEnabled and launcher.closed:IsShown(),
+    "close must turn tracking off while retaining the launcher for reopening")
 
 -- With the setting off, the original hide-when-empty behavior still applies.
 settings.vignetteRadarKeepVisibleCombat = false

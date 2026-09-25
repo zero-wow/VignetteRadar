@@ -1,17 +1,17 @@
 local _, addon = ...
 if type(addon) ~= "table" then return end
 
-local PANEL_W, PANEL_H = 220, 278
+local PANEL_W, PANEL_H = 246, 278
 local ZOOM_FOOTER_H = 26
 local HEADER_H, FIELD_SIZE = 34, 200
 local FIELD_RADIUS = (FIELD_SIZE / 2) - 9
 local PLOT_RADIUS = FIELD_RADIUS - 15
 local LAYOUTS = {
-    classic = { width = 220, height = 278, field = 200, footer = 26, focus = 46 },
+    classic = { width = 246, height = 278, field = 200, footer = 26, focus = 46 },
     squat = { width = 374, height = 230, field = 184 },
-    compact = { width = 184, height = 260, field = 164, footer = 50, focus = 64 },
+    compact = { width = 210, height = 260, field = 164, footer = 50, focus = 64 },
 }
-local LAUNCHER_SIZE, LAUNCHER_RADIUS, LAUNCHER_RANGE = 44, 13, 150
+local LAUNCHER_SIZE, LAUNCHER_RADIUS, LAUNCHER_RANGE = 58, 16, 150
 local HEADING_HALF_WIDTH = 4
 local UPDATE_SECONDS, RESCAN_SECONDS = 0.05, 1
 local SLOW_UPDATE_MS, STALLED_UPDATE_MS = 50, 250
@@ -37,6 +37,7 @@ addon.VignetteRadarQuestHollowTexture = "Interface\\AddOns\\VignetteRadar\\Media
 local SQUARE_TEXTURE = "Interface\\Buttons\\WHITE8X8"
 local ROUNDED_SQUARE_TEXTURE = "Interface\\AddOns\\VignetteRadar\\Media\\radar-rounded-square.tga"
 local ROUNDED_BORDER_TEXTURE = "Interface\\AddOns\\VignetteRadar\\Media\\radar-rounded-border.tga"
+local LAUNCHER_ART_TEXTURE = "Interface\\AddOns\\VignetteRadar\\Media\\radar-launcher-instrument.tga"
 local ROUNDED_CONTROL_TEXTURE = "Interface\\AddOns\\VignetteRadar\\Media\\control-rounded-square.tga"
 local QUEST_CLIP_INSET = 4
 local QUEST_AREA_BLUE = { .34, .60, 1 }
@@ -2014,7 +2015,7 @@ local function ApplyPanelLayout(focused)
     panel.layout, panel.layoutFocused, panel.squarePlot = name, focused, square
     local highlightTexture = square and ROUNDED_CONTROL_TEXTURE or CIRCLE_TEXTURE
     for _, control in ipairs({ panel.zoomOut, panel.zoomIn, panel.compass, panel.trailToggle,
-        panel.combatToggle, panel.target, panel.legend, panel.close, panel.frameToggle }) do
+        panel.combatToggle, panel.target, panel.legend, panel.minimize, panel.close, panel.frameToggle }) do
         if control and control.glow then control.glow:SetTexture(highlightTexture) end
     end
     panel.fieldRadius = layout.field / 2 - 9
@@ -2077,14 +2078,15 @@ local function ApplyPanelLayout(focused)
         Place(panel.layoutHint, "TOPLEFT", 214, -91, 148, 54)
         Place(panel.sideGuide, "TOPLEFT", 214, -173, 148, 14)
         Place(panel.zoomOut, "BOTTOMLEFT", 12, 8)
-        Place(panel.zoomLabel, "BOTTOMLEFT", 42, 12, 110, 12)
-        Place(panel.zoomIn, "BOTTOMLEFT", 160, 8)
-        Place(panel.combatToggle, "BOTTOMLEFT", 192, 9)
-        Place(panel.compass, "BOTTOMLEFT", 214, 8)
-        Place(panel.trailToggle, "BOTTOMLEFT", 246, 8)
-        Place(panel.target, "BOTTOMRIGHT", -74, 8)
-        Place(panel.legend, "BOTTOMRIGHT", -42, 8)
-        Place(panel.close, "BOTTOMRIGHT", -10, 8)
+        Place(panel.zoomLabel, "BOTTOMLEFT", 42, 12, 95, 12)
+        Place(panel.zoomIn, "BOTTOMLEFT", 145, 8)
+        Place(panel.combatToggle, "BOTTOMLEFT", 174, 9)
+        Place(panel.compass, "BOTTOMLEFT", 198, 8)
+        Place(panel.trailToggle, "BOTTOMLEFT", 226, 8)
+        Place(panel.target, "BOTTOMLEFT", 254, 8)
+        Place(panel.legend, "BOTTOMLEFT", 282, 8)
+        Place(panel.minimize, "BOTTOMLEFT", 310, 8)
+        Place(panel.close, "BOTTOMLEFT", 338, 8)
     else
         local compact = name == "compact"
         local footer = layout.footer
@@ -2092,12 +2094,12 @@ local function ApplyPanelLayout(focused)
         Place(panel.title, "TOPLEFT", 12, -6, compact and 136 or 100, 13)
         Place(panel.summary, "TOPLEFT", 12, -21, compact and 136 or 100, 10)
         Place(panel.drag, "TOPLEFT", 4, -3, compact and 144 or 106, 28)
-        Place(panel.settingsDot, "TOPRIGHT", compact and -10 or -85, -6)
+        Place(panel.settingsDot, "TOPRIGHT", compact and -10 or -111, -6)
         Place(panel.focusDivider, "BOTTOM", 0, footer + layout.focus, layout.width - 24, 1)
         Place(panel.focusReadout, "BOTTOMLEFT", 12, footer + 8, layout.width - 24, compact and 50 or 32)
         if compact then
             Place(panel.zoomLabel, "BOTTOM", 0, 38, 92, 12)
-            Place(panel.combatToggle, "BOTTOMLEFT", 146, 32)
+            Place(panel.combatToggle, "BOTTOMLEFT", 176, 32)
             Place(panel.trailToggle, "BOTTOMLEFT", 18, 30)
         else
             Place(panel.zoomLabel, "BOTTOMLEFT", 118, 10, 62, 12)
@@ -2113,12 +2115,14 @@ local function ApplyPanelLayout(focused)
             Place(panel.target, "BOTTOMLEFT", 64, 6)
             Place(panel.legend, "BOTTOMLEFT", 92, 6)
             Place(panel.compass, "BOTTOMLEFT", 120, 8)
-            Place(panel.close, "BOTTOMLEFT", 148, 6)
+            Place(panel.minimize, "BOTTOMLEFT", 148, 6)
+            Place(panel.close, "BOTTOMLEFT", 174, 6)
         else
             panel.zoomIn:SetPoint("BOTTOMRIGHT", panel, "BOTTOMRIGHT", -12, 6)
             Place(panel.compass, "BOTTOMLEFT", 42, 6)
-            Place(panel.target, "TOPRIGHT", -57, -5)
-            Place(panel.legend, "TOPRIGHT", -31, -5)
+            Place(panel.target, "TOPRIGHT", -83, -5)
+            Place(panel.legend, "TOPRIGHT", -57, -5)
+            Place(panel.minimize, "TOPRIGHT", -31, -5)
             Place(panel.close, "TOPRIGHT", -5, -5)
         end
     end
@@ -2245,7 +2249,7 @@ local function UpdatePanelChrome()
     end
     local showButtons = not circleOnly and Settings().vignetteRadarControlsVisible ~= false
     for _, control in ipairs({ panel.zoomOut, panel.zoomIn, panel.combatToggle,
-        panel.trailToggle, panel.compass, panel.target, panel.legend, panel.close }) do
+        panel.trailToggle, panel.compass, panel.target, panel.legend, panel.minimize, panel.close }) do
         control:SetShown(showButtons)
     end
     if panel.emptyHelp then panel.emptyHelp:SetShown(not circleOnly and panel.emptyReason ~= nil) end
@@ -2333,6 +2337,8 @@ ApplyAppearance = function()
         panel.settingsDot.inner:SetVertexColor(br, bg, bb, 1)
         panel.legend.glow:SetVertexColor(ar, ag, ab,
             panel.legend._hovered and .18 or panel.legend._open and .12 or 0)
+        panel.minimize.line:SetColorTexture(ar, ag, ab, .86)
+        panel.minimize.glow:SetVertexColor(ar, ag, ab, panel.minimize._hovered and .18 or 0)
         panel.close.glow:SetVertexColor(ar, ag, ab, panel.close._hovered and .18 or 0)
         for _, button in ipairs({ panel.zoomOut, panel.zoomIn, panel.compass, panel.trailToggle }) do
             if button and button.RefreshAppearance then button:RefreshAppearance() end
@@ -2350,8 +2356,8 @@ ApplyAppearance = function()
         launcher.centerGlow:SetVertexColor(ar, ag, ab, .22)
         launcher.direction:SetColorTexture(hr, hg, hb, db.vignetteRadarHeadingOpacity)
         for _, line in ipairs(launcher.ring) do line:SetColorTexture(rr, rg, rb, .18) end
-        launcher.bezel:SetVertexColor(ar, ag, ab, 1)
-        launcher.closed:SetVertexColor(rr, rg, rb, 1)
+        launcher.bezel:SetVertexColor(1, 1, 1, 1)
+        launcher.closed:SetVertexColor(.62, .64, .70, 1)
     end
     if addon.VignetteRadarControls and addon.VignetteRadarControls.RefreshTheme then
         addon.VignetteRadarControls.RefreshTheme()
@@ -3515,6 +3521,9 @@ function Morph.Start(opening, fromX, fromY, fromWidth, fromHeight,
         Morph.shell.border = Morph.shell:CreateTexture(nil, "OVERLAY")
         Morph.shell.border:SetAllPoints()
         Morph.shell.border:SetTexture(ROUNDED_BORDER_TEXTURE)
+        Morph.shell.launcherArt = Morph.shell:CreateTexture(nil, "OVERLAY", nil, 1)
+        Morph.shell.launcherArt:SetAllPoints()
+        Morph.shell.launcherArt:SetTexture(LAUNCHER_ART_TEXTURE)
     end
     local morphShell = Morph.shell
     local style = addon.VignetteRadarStyle
@@ -3530,6 +3539,7 @@ function Morph.Start(opening, fromX, fromY, fromWidth, fromHeight,
     morphShell:ClearAllPoints()
     morphShell:SetPoint("CENTER", UIParent, "BOTTOMLEFT", fromX, fromY)
     morphShell:SetAlpha(1)
+    morphShell.launcherArt:SetAlpha(opening and 1 or 0)
     Morph.running = true
     if panel then
         panel._morphAlpha = opening and 0 or 1
@@ -3549,6 +3559,7 @@ function Morph.Start(opening, fromX, fromY, fromWidth, fromHeight,
         self:ClearAllPoints()
         self:SetPoint("CENTER", UIParent, "BOTTOMLEFT", x, y)
         self:SetAlpha(opening and 1 - eased or eased)
+        self.launcherArt:SetAlpha(opening and 1 - eased or eased)
         if panel then
             panel._morphAlpha = opening and eased or 1 - eased
             panel:SetAlpha((VisuallyQuiet() and 0.35 or 1) * panel._morphAlpha)
@@ -3586,7 +3597,10 @@ local function LauncherTooltip(owner)
     if not GameTooltip then return end
     GameTooltip:SetOwner(owner, "ANCHOR_RIGHT")
     GameTooltip:SetText("Vignette Radar", 1, 1, 1)
-    GameTooltip:AddLine("This mini radar shows live detections within 150 yards.", 0.55, 0.86, 0.76, true)
+    GameTooltip:AddLine((Settings().vignetteRadarEnabled == true or preview)
+        and "This mini radar shows live detections within 150 yards."
+        or "Tracking is off. Click to reopen the radar and resume detection.",
+        0.55, 0.86, 0.76, true)
     if (owner.bosses or 0) > 0 then GameTooltip:AddLine(owner.bosses .. " world boss nearby", 1, 0.18, 0.12) end
     if (owner.rares or 0) > 0 then GameTooltip:AddLine(owner.rares .. " rare enemy nearby", 0.78, 0.88, 1) end
     GameTooltip:AddLine("Silver skull: rare enemy. Larger red skull: world boss.", 0.78, 0.88, 1, true)
@@ -3667,25 +3681,27 @@ local function UpdateLauncherSweep(frame, elapsed)
         if animated then
             local angle = frame._sweepAngle - ((index - 1) * 0.13)
             line:SetColorTexture(ACCENT[1], ACCENT[2], ACCENT[3], 0.22 / index)
-            line:SetEndPoint("CENTER", frame, math.sin(angle) * 11,
-                math.cos(angle) * 11)
+            line:SetEndPoint("CENTER", frame, math.sin(angle) * 14,
+                math.cos(angle) * 14)
         end
     end
 
     frame.bezel:SetShown(active)
     frame.closed:SetShown(not active)
     local stateTexture = active and frame.bezel or frame.closed
-    local stateAlpha = active and 0.38 or 0.20
+    local stateAlpha = active and 0.92 or 0.62
     if frame._pressed then
-        stateAlpha = 0.28
+        stateAlpha = 0.76
     elseif frame._hovered then
-        stateAlpha = 0.78
+        stateAlpha = 1
     elseif (frame.detected or 0) > 0 then
-        stateAlpha = 0.52
+        stateAlpha = 1
     end
-    if alerting then stateAlpha = 0.68 + 0.25 * math.abs(math.sin(now * 6)) end
+    if alerting then stateAlpha = 0.82 + 0.18 * math.abs(math.sin(now * 6)) end
     stateTexture:SetAlpha(stateAlpha)
     frame.face:SetAlpha(frame._pressed and 0.82 or 1)
+    frame.center:SetAlpha(active and 1 or .34)
+    frame.centerGlow:SetAlpha(active and 1 or .22)
 
     if frame._shock then
         frame._shock = frame._shock + elapsed / 0.24
@@ -3756,8 +3772,11 @@ UpdateLauncher = function(elapsed, updateTargets)
     for index = shown + 1, #launcher.miniBlips do launcher.miniBlips[index]:Hide() end
     launcher.detected = shown
     launcher.rares, launcher.bosses = rares, bosses
-    launcher.rangeLabel:SetText(bosses > 0 and "BOSS" or (rares > 0 and "RARE" or "150"))
-    if bosses > 0 then launcher.rangeLabel:SetTextColor(1, 0.25, 0.18, 1)
+    local active = Settings().vignetteRadarEnabled == true or preview
+    launcher.rangeLabel:SetText(not active and "OFF" or (bosses > 0 and "BOSS"
+        or (rares > 0 and "RARE" or "150")))
+    if not active then launcher.rangeLabel:SetTextColor(.72, .74, .78, .7)
+    elseif bosses > 0 then launcher.rangeLabel:SetTextColor(1, 0.25, 0.18, 1)
     elseif rares > 0 then launcher.rangeLabel:SetTextColor(0.78, 0.88, 1, 1)
     else launcher.rangeLabel:SetTextColor(0.56, 0.78, 0.74, 0.68) end
 end
@@ -3778,11 +3797,11 @@ EnsureLauncher = function()
         UIParent:GetHeight() + (savedY or -170))
 
     launcher.face = launcher:CreateTexture(nil, "BORDER")
-    launcher.face:SetSize(LAUNCHER_SIZE, LAUNCHER_SIZE)
+    launcher.face:SetSize(38, 38)
     launcher.face:SetPoint("CENTER")
-    launcher.face:SetTexture(ROUNDED_SQUARE_TEXTURE)
+    launcher.face:SetTexture(CIRCLE_TEXTURE)
     launcher.face:SetVertexColor(0.012, 0.046, 0.052, 0.98)
-    launcher.ring = CreateLauncherRing(launcher, 11, 0.18)
+    launcher.ring = CreateLauncherRing(launcher, 15, 0.18)
 
     launcher.sweepLines = {}
     for index = 1, 2 do
@@ -3817,18 +3836,18 @@ EnsureLauncher = function()
         dot:Hide()
         launcher.miniBlips[index] = dot
     end
-    launcher.rangeLabel = Text(launcher, 7, "150")
-    launcher.rangeLabel:SetPoint("BOTTOM", launcher, "BOTTOM", 0, 8)
+    launcher.rangeLabel = Text(launcher, 8, "150")
+    launcher.rangeLabel:SetPoint("BOTTOM", launcher, "BOTTOM", 0, 16)
     launcher.rangeLabel:SetJustifyH("CENTER")
     launcher.rangeLabel:SetTextColor(0.56, 0.78, 0.74, 0.68)
     launcher.bezel = launcher:CreateTexture(nil, "OVERLAY", nil, 3)
     launcher.bezel:SetAllPoints()
-    launcher.bezel:SetTexture(ROUNDED_BORDER_TEXTURE)
-    launcher.bezel:SetAlpha(0.38)
+    launcher.bezel:SetTexture(LAUNCHER_ART_TEXTURE)
+    launcher.bezel:SetAlpha(0.92)
     launcher.closed = launcher:CreateTexture(nil, "OVERLAY", nil, 3)
     launcher.closed:SetAllPoints()
-    launcher.closed:SetTexture(ROUNDED_BORDER_TEXTURE)
-    launcher.closed:SetAlpha(0.20)
+    launcher.closed:SetTexture(LAUNCHER_ART_TEXTURE)
+    launcher.closed:SetAlpha(0.62)
     launcher.closed:Hide()
     launcher.shock = launcher:CreateTexture(nil, "OVERLAY", nil, 4)
     launcher.shock:SetPoint("CENTER")
@@ -3895,7 +3914,8 @@ EnsureLauncher = function()
             self._targetElapsed = 0
             UpdateLauncher(0, true)
         end
-        if self._scanElapsed >= RESCAN_SECONDS and (not panel or not panel:IsShown()) then
+        if self._scanElapsed >= RESCAN_SECONDS and Settings().vignetteRadarEnabled == true
+            and (not panel or not panel:IsShown()) then
             self._scanElapsed = 0
             RefreshRadar(true)
         end
@@ -4161,6 +4181,36 @@ local function EnsurePanel()
         if GameTooltip then GameTooltip:Hide() end
     end)
 
+    panel.minimize = CreateFrame("Button", nil, panel)
+    panel.minimize:SetSize(24, 24)
+    panel.minimize.line = panel.minimize:CreateTexture(nil, "OVERLAY")
+    panel.minimize.line:SetSize(9, 2)
+    panel.minimize.line:SetPoint("CENTER")
+    panel.minimize.line:SetColorTexture(0.68, 0.72, 0.74, 0.86)
+    panel.minimize.glow = panel.minimize:CreateTexture(nil, "BACKGROUND")
+    panel.minimize.glow:SetSize(18, 18)
+    panel.minimize.glow:SetPoint("CENTER")
+    panel.minimize.glow:SetTexture(CIRCLE_TEXTURE)
+    panel.minimize.glow:SetVertexColor(ACCENT[1], ACCENT[2], ACCENT[3], 0)
+    panel.minimize:SetScript("OnClick", function()
+        if addon.VignetteRadarQuickConfig then addon.VignetteRadarQuickConfig.Hide() end
+        ToggleRadarPanel()
+    end)
+    panel.minimize:SetScript("OnEnter", function(self)
+        self._hovered = true
+        self.glow:SetVertexColor(ACCENT[1], ACCENT[2], ACCENT[3], .18)
+        if not GameTooltip then return end
+        GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+        GameTooltip:SetText("Minimize to launcher", 1, 1, 1)
+        GameTooltip:AddLine("Keep detection active in the live mini radar.", .72, .76, .78, true)
+        GameTooltip:Show()
+    end)
+    panel.minimize:SetScript("OnLeave", function(self)
+        self._hovered = false
+        self.glow:SetVertexColor(ACCENT[1], ACCENT[2], ACCENT[3], 0)
+        if GameTooltip then GameTooltip:Hide() end
+    end)
+
     panel.close = CreateFrame("Button", nil, panel)
     panel.close:SetSize(24, 24)
     panel.close:SetPoint("TOPRIGHT", -5, -5)
@@ -4174,15 +4224,21 @@ local function EnsurePanel()
     panel.close.glow:SetVertexColor(ACCENT[1], ACCENT[2], ACCENT[3], 0)
     panel.close:SetScript("OnClick", function()
         if addon.VignetteRadarQuickConfig then addon.VignetteRadarQuickConfig.Hide() end
-        ToggleRadarPanel()
+        if HideTrailPopup then HideTrailPopup() end
+        local legend = LegendAPI()
+        if legend and legend.Hide then pcall(legend.Hide) end
+        if legend and legend.HideQuest then pcall(legend.HideQuest) end
+        local picker = TargetPickerAPI()
+        if picker and picker.Hide then pcall(picker.Hide) end
+        addon.SetVignetteRadarEnabled(false)
     end)
     panel.close:SetScript("OnEnter", function(self)
         self._hovered = true
         self.glow:SetVertexColor(ACCENT[1], ACCENT[2], ACCENT[3], .18)
         if not GameTooltip then return end
         GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
-        GameTooltip:SetText("Tuck away radar", 1, 1, 1)
-        GameTooltip:AddLine("The launcher stays ready so you can bring the radar back without disabling detection.",
+        GameTooltip:SetText("Turn radar off", 1, 1, 1)
+        GameTooltip:AddLine("Stops detection until you click the launcher again.",
             0.72, 0.76, 0.78, true)
         GameTooltip:Show()
     end)
@@ -4702,7 +4758,10 @@ local function EnsurePanel()
     HoverTool("trail", "Trail: left toggle, right style", panel.trailToggle, "BOTTOMLEFT", 10, 10)
     HoverTool("eye", "Stay fully visible", panel.combatToggle, "BOTTOMLEFT", 30, 10)
     HoverTool("help", "Radar status", nil, "BOTTOMLEFT", 10, 30)
-    HoverTool("close", "Tuck away radar", panel.close, "BOTTOMRIGHT", -10, 10)
+    HoverTool("minimize", "Minimize to launcher", panel.minimize, "BOTTOMRIGHT", -30, 10)
+    panel.hoverTools[#panel.hoverTools].artColumn = 3 -- Reuse the atlas's minus art.
+    HoverTool("close", "Turn radar off", panel.close, "BOTTOMRIGHT", -10, 10)
+    panel.hoverTools[#panel.hoverTools].artColumn = 9 -- Keep the atlas's close art.
     panel.RefreshCornerTools()
     panel.field:SetScript("OnEnter", function()
         panel._hoverToolsShown = true
