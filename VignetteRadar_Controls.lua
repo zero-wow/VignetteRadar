@@ -35,6 +35,63 @@ function Controls.PopupSurface(frame)
     Controls.RefreshPopupSurface(frame)
 end
 
+-- Keep the small corner radius circular when a status block is much wider
+-- than it is tall; stretching the full square artwork distorts its corners.
+function Controls.RoundedStatusSurface(frame)
+    if frame.statusSurface then return end
+    frame.statusSurface = { face = {}, edge = {} }
+    local cut = 8 / 256
+    local uv = { 0, cut, 1 - cut, 1 }
+    for kind, path in pairs({ face = POPUP_FACE, edge = POPUP_EDGE }) do
+        for row = 1, 3 do
+            for column = 1, 3 do
+                local texture = frame:CreateTexture(nil, kind == "face" and "BACKGROUND" or "BORDER")
+                texture:SetTexture(path)
+                texture:SetTexCoord(uv[column], uv[column + 1], uv[row], uv[row + 1])
+                if column == 1 then
+                    texture:SetPoint("LEFT", frame, "LEFT", 0, 0)
+                    texture:SetWidth(8)
+                elseif column == 2 then
+                    texture:SetPoint("LEFT", frame, "LEFT", 8, 0)
+                    texture:SetPoint("RIGHT", frame, "RIGHT", -8, 0)
+                else
+                    texture:SetPoint("RIGHT", frame, "RIGHT", 0, 0)
+                    texture:SetWidth(8)
+                end
+                if row == 1 then
+                    texture:SetPoint("TOP", frame, "TOP", 0, 0)
+                    texture:SetHeight(8)
+                elseif row == 2 then
+                    texture:SetPoint("TOP", frame, "TOP", 0, -8)
+                    texture:SetPoint("BOTTOM", frame, "BOTTOM", 0, 8)
+                else
+                    texture:SetPoint("BOTTOM", frame, "BOTTOM", 0, 0)
+                    texture:SetHeight(8)
+                end
+                frame.statusSurface[kind][#frame.statusSurface[kind] + 1] = texture
+            end
+        end
+    end
+    Controls.RefreshRoundedStatusSurface(frame)
+end
+
+function Controls.RefreshRoundedStatusSurface(frame)
+    if not (frame and frame.statusSurface) then return end
+    local style = addon.VignetteRadarStyle
+    local br, bg, bb, ar, ag, ab = .025, .032, .038, ACCENT[1], ACCENT[2], ACCENT[3]
+    if style then
+        br, bg, bb = style.Color("background")
+        ar, ag, ab = style.Color("accent")
+    end
+    for _, texture in ipairs(frame.statusSurface.face) do
+        texture:SetVertexColor(math.min(.14, br * 2.7), math.min(.14, bg * 2.7),
+            math.min(.14, bb * 2.7), .97)
+    end
+    for _, texture in ipairs(frame.statusSurface.edge) do
+        texture:SetVertexColor(ar, ag, ab, .64)
+    end
+end
+
 function Controls.RefreshTheme()
     if addon.VignetteRadarStyle then
         ACCENT[1], ACCENT[2], ACCENT[3] = addon.VignetteRadarStyle.Color("accent")

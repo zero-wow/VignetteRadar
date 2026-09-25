@@ -2936,6 +2936,40 @@ do
         "a click outside must dismiss the chooser without adding another event loop")
 end
 
+do
+    panel:Show()
+    panel.bottom = 180
+    addon.ShowVignetteRadarRouteNote("ZYGOR STEP", "Find the cave entrance")
+    local toast = assert(_G.VignetteRadarRouteNote)
+    assert(toast:IsShown() and toast.heading:GetText() == "ZYGOR STEP"
+        and toast.message:GetText() == "Find the cave entrance"
+        and toast.point[1] == "TOP" and #toast.statusSurface.face == 9
+        and #toast.statusSurface.edge == 9,
+        "route notes should appear below the radar with an unstretched rounded surface")
+    toast.scripts.OnUpdate(toast, 2.9)
+    assert(toast:IsShown() and toast:GetAlpha() < 1,
+        "route notes should begin fading after a short reading interval")
+    toast.scripts.OnUpdate(toast, .6)
+    assert(not toast:IsShown() and toast.scripts.OnUpdate == nil,
+        "the route note should fully hide and stop updating after its fade")
+    panel.bottom = 5
+    panel.field.bottom = 5
+    addon.ShowVignetteRadarRouteNote("NEXT STEP", "Reach the treasure")
+    assert(toast:IsShown() and toast.point[1] == "BOTTOM",
+        "a radar near the screen bottom should keep the note on screen")
+    local originalWidth = panel:GetWidth()
+    panel:SetWidth(164)
+    UIParent:SetSize(800, 600)
+    addon.ShowVignetteRadarRouteNote("AUTO ROUTE", "Next stop")
+    assert(toast:GetWidth() == 260 and toast.message:GetWidth() == 232,
+        "the smallest radar layout must retain readable text and 14-pixel side gutters")
+    panel:SetWidth(originalWidth)
+    UIParent:SetSize(1600, 900)
+    toast:Hide()
+    panel.bottom = nil
+    panel.field.bottom = nil
+end
+
 local profileClock, performanceWarning = 0, nil
 debugprofilestop = function() profileClock = profileClock + 300; return profileClock end
 DEFAULT_CHAT_FRAME = { AddMessage = function(_, message) performanceWarning = message end }

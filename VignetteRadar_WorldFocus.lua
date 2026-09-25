@@ -340,6 +340,12 @@ local function ArmArrival()
         step.worldX, step.worldY) > radius + margin
 end
 
+local function RouteNote(label, message)
+    if type(addon.ShowVignetteRadarRouteNote) == "function" then
+        addon.ShowVignetteRadarRouteNote(label, message)
+    end
+end
+
 local function Activate(item)
     local steps = { item }
     if item.kind == "treasure" and addon.GetSettings().vignetteRadarWorldFocusRoutes
@@ -350,6 +356,10 @@ local function Activate(item)
         kind = item.kind, questID = item.questID, item = item, steps = steps, index = 1,
         wasOutside = false }
     ArmArrival()
+    local detail = type(item.note) == "string" and item.note ~= "" and item.kind ~= "guide"
+        and (" · " .. item.note) or ""
+    RouteNote(item.kind == "guide" and "ZYGOR STEP" or route and "AUTO ROUTE" or "WORLD FOCUS",
+        active.name .. (#steps > 1 and (" · 1/" .. #steps) or "") .. detail)
     return true
 end
 
@@ -365,9 +375,12 @@ local function AdvanceRoute()
         return ok, reason
     end
     route.waiting = route.kind == "quest" and route.questID ~= nil
-    if not route.waiting then
+    if route.waiting then
+        RouteNote("AUTO ROUTE", "Waiting for the next quest objective")
+    else
         route = nil
-        if API.Clear then API.Clear() else active = nil end
+        if API.Clear then API.Clear(true) else active = nil end
+        RouteNote("AUTO ROUTE", "Route complete")
     end
     return false
 end
@@ -394,6 +407,7 @@ end
 function API.ToggleRoute()
     if route then
         pausedRoute, route = route, nil
+        RouteNote("AUTO ROUTE", "Paused · " .. (active and active.name or "Waypoint kept"))
         return false, "Auto Route paused; waypoint kept"
     end
     if pausedRoute then
@@ -404,6 +418,7 @@ function API.ToggleRoute()
         end
         route, pausedRoute = pausedRoute, nil
         ArmArrival()
+        RouteNote("AUTO ROUTE", "Resumed · " .. (active and active.name or "Current waypoint"))
         return true, "Auto Route resumed"
     end
     local item = active and active.item or lastSelected
@@ -421,6 +436,7 @@ function API.ToggleRoute()
         visited = {}, visitedPlaces = {}, waiting = false,
         progress = kind == "quest" and QuestProgress(item.questID) or nil }
     ArmArrival()
+    RouteNote("AUTO ROUTE", "Started · " .. (active and active.name or item.name or kind))
     return true, "Auto Route: " .. kind
 end
 
@@ -432,8 +448,9 @@ function API.GetFocusedStep()
     return active and active.steps[active.index] or nil
 end
 
-function API.Clear()
+function API.Clear(silent)
     if not active then return false, "No focused waypoint" end
+    local name = active.name
     local step = active.steps[active.index]
     if step and SameWaypoint(step) then
         if not (C_Map and type(C_Map.ClearUserWaypoint) == "function") then
@@ -449,6 +466,7 @@ function API.Clear()
         if not cleared then return false, "Waypoint could not be cleared" end
     end
     active, route, pausedRoute, lastSelected = nil, nil, nil, nil
+    if not silent then RouteNote("WORLD FOCUS", "Cleared · " .. (name or "Waypoint")) end
     return true
 end
 
@@ -627,6 +645,7 @@ function API.Sync(mapID, snapshot, liveTargets, questPoints, mapNotes)
             end
             MarkVisited(active.item)
             route.waiting = true
+            RouteNote("AUTO ROUTE", "Waiting for the next quest objective")
         else route.progress = progress or route.progress end
         if route.waiting then
             local nextItem = NextRouteStop()
@@ -655,9 +674,15 @@ function API.Sync(mapID, snapshot, liveTargets, questPoints, mapNotes)
     if active.index < #active.steps then
         local nextStep = active.steps[active.index + 1]
         local ok = Place(nextStep, active.item)
-        if ok then active.index, active.wasOutside = active.index + 1, false end
+        if ok then
+            active.index, active.wasOutside = active.index + 1, false
+            RouteNote("NEXT STEP", active.name .. " · " .. active.index .. "/" .. #active.steps)
+        end
     elseif route then AdvanceRoute()
-    else active = nil end
+    else
+        RouteNote("ARRIVED", active.name)
+        active = nil
+    end
 end
 
 function API.Cycle(direction)
@@ -697,7 +722,10 @@ function API.Advance()
     if not SameWaypoint(active.steps[active.index]) then active, route = nil, nil; return false end
     local nextStep = active.steps[active.index + 1]
     local ok = Place(nextStep, active.item)
-    if ok then active.index, active.wasOutside = active.index + 1, false end
+    if ok then
+        active.index, active.wasOutside = active.index + 1, false
+        RouteNote("NEXT STEP", active.name .. " · " .. active.index .. "/" .. #active.steps)
+    end
     return ok
 end
 

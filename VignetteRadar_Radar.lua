@@ -2924,6 +2924,69 @@ routeMenu.Hide = function()
     if routeMenu.popup and routeMenu.popup:IsShown() then routeMenu.popup:Hide() end
 end
 
+function routeMenu.Note(label, message)
+    if type(message) ~= "string" or message == "" then return end
+    local anchor = panel and panel:IsShown() and (CircleOnly() and panel.field or panel)
+        or launcher and launcher:IsShown() and launcher
+    if not anchor then return end
+    if not routeMenu.toast then
+        local toast = CreateFrame("Frame", "VignetteRadarRouteNote", UIParent)
+        toast:SetSize(304, 62)
+        toast:SetFrameStrata("DIALOG")
+        toast:SetClampedToScreen(true)
+        toast:EnableMouse(false)
+        addon.VignetteRadarControls.RoundedStatusSurface(toast)
+        toast.heading = Text(toast, 9, "WORLD FOCUS", true)
+        toast.heading:SetPoint("TOPLEFT", toast, "TOPLEFT", 14, -9)
+        toast.message = Text(toast, 11, "")
+        toast.message:SetPoint("TOPLEFT", toast, "TOPLEFT", 14, -23)
+        toast.message:SetHeight(30)
+        toast.message:SetWordWrap(true)
+        if toast.message.SetMaxLines then toast.message:SetMaxLines(2) end
+        toast:SetScript("OnUpdate", function(self, elapsed)
+            self.elapsed = (self.elapsed or 0) + elapsed
+            if self.elapsed >= 3.4 then
+                self:SetScript("OnUpdate", nil)
+                self:Hide()
+            elseif self.elapsed > 2.8 then
+                self:SetAlpha(math.max(0, (3.4 - self.elapsed) / .6))
+            end
+        end)
+        toast.update = toast:GetScript("OnUpdate")
+        toast:Hide()
+        routeMenu.toast = toast
+    end
+    local toast = routeMenu.toast
+    local style = addon.VignetteRadarStyle
+    local ar, ag, ab = ACCENT[1], ACCENT[2], ACCENT[3]
+    if style then ar, ag, ab = style.Color("accent") end
+    addon.VignetteRadarControls.RefreshRoundedStatusSurface(toast)
+    toast.heading:SetText(type(label) == "string" and label or "WORLD FOCUS")
+    toast.heading:SetTextColor(ar, ag, ab, 1)
+    toast.message:SetText(message:gsub("|c%x%x%x%x%x%x%x%x", ""):gsub("|r", "")
+        :gsub("|T.-|t", ""):gsub("[%c]", " "))
+    toast.message:SetTextColor(.91, .95, .96, 1)
+    toast:SetWidth(math.max(260, math.min(380, (anchor:GetWidth() or 304) - 12)))
+    toast.message:SetWidth(toast:GetWidth() - 28)
+    toast:ClearAllPoints()
+    local bottom = anchor.GetBottom and anchor:GetBottom()
+    local anchorScale = anchor.GetEffectiveScale and anchor:GetEffectiveScale() or 1
+    local uiScale = UIParent.GetEffectiveScale and UIParent:GetEffectiveScale() or 1
+    if bottom and bottom * anchorScale / math.max(.01, uiScale) < toast:GetHeight() + 12 then
+        toast:SetPoint("BOTTOM", anchor, "TOP", 0, 7)
+    else
+        toast:SetPoint("TOP", anchor, "BOTTOM", 0, -7)
+    end
+    toast.elapsed = 0
+    toast:SetAlpha(1)
+    toast:SetScript("OnUpdate", toast.update)
+    toast:Show()
+end
+
+function addon.ShowVignetteRadarRouteNote(label, message)
+    routeMenu.Note(label, message)
+end
+
 routeMenu.Refresh = function()
     if not routeMenu.popup then return end
     local style, focus = addon.VignetteRadarStyle, addon.VignetteRadarWorldFocus

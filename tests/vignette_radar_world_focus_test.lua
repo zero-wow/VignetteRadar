@@ -10,6 +10,10 @@ local settings = {
     vignetteRadarAutoRouteMapNotes = true,
 }
 addon.GetSettings = function() return settings end
+local routeNotes = {}
+addon.ShowVignetteRadarRouteNote = function(label, message)
+    routeNotes[#routeNotes + 1] = { label, message }
+end
 local waypoint, placed = nil, {}
 UiMapPoint = { CreateFromCoordinates = function(mapID, x, y)
     return { uiMapID = mapID, position = { x = x, y = y } }
@@ -42,13 +46,21 @@ assert(focus.SelectNote(entrance) and placed[1] == .4
     and focus.Status():find("100 yd", 1, true)
     and focus.Status():find("1/3", 1, true),
     "clicking a linked entrance should begin the parent treasure's complete path")
+assert(routeNotes[#routeNotes][1] == "WORLD FOCUS"
+    and routeNotes[#routeNotes][2]:find("Hidden cache", 1, true),
+    "focusing a mapped route should announce its destination")
 player.worldX = 400
 focus.Sync(123, player, {}, {}, { treasure, entrance })
 assert(placed[2] == .45 and focus.Status():find("2/3", 1, true),
     "arrival should advance exactly one explicitly supplied pack step")
+assert(routeNotes[#routeNotes][1] == "NEXT STEP"
+    and routeNotes[#routeNotes][2]:find("2/3", 1, true),
+    "route notes should describe automatic step changes")
 player.worldX = 410
+local routeNoteCount = #routeNotes
 focus.Sync(123, player, {}, {}, { treasure, entrance })
-assert(#placed == 2, "remaining inside the arrival radius must not skip stops")
+assert(#placed == 2 and #routeNotes == routeNoteCount,
+    "remaining inside the arrival radius must not skip stops or repeat the note")
 player.worldX = 450
 focus.Sync(123, player, {}, {}, { treasure, entrance })
 assert(placed[3] == .5 and focus.Status():find("3/3", 1, true),
@@ -78,6 +90,8 @@ assert(not pauseOk and pauseReason:find("paused", 1, true)
     and focus.IsRoutePaused() and not focus.IsRouteActive()
     and focus.Status():find("paused", 1, true),
     "pausing should keep the route's visited state and explain its status")
+assert(routeNotes[#routeNotes][2]:find("Paused", 1, true),
+    "pausing should show a brief route note")
 player.worldX = 600
 focus.Sync(123, player, { rareA, rareB }, {}, { rareNote })
 assert(waypoint.position.x == .6 and focus.IsRoutePaused(),
@@ -272,6 +286,9 @@ settings.vignetteRadarWorldFocusEnabled = false
 assert(remoteGuide and remoteGuide.mapID == 124 and remoteGuide.worldX == nil
     and focus.SelectNote(remoteGuide, true) and waypoint.uiMapID == 124,
     "direct pinning should use the selected step's map even when marker focus is disabled")
+assert(routeNotes[#routeNotes][1] == "ZYGOR STEP"
+    and routeNotes[#routeNotes][2] == "Selected objective",
+    "pinning the active Zygor objective should announce its text")
 settings.vignetteRadarWorldFocusEnabled = true
 focus.Sync(124, { worldX = 300, worldY = 500, instanceID = 42 }, {}, {}, {})
 activeZygorStep.goals[2].x = nil
