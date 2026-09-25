@@ -226,6 +226,28 @@ assert(loadfile(sourcePath))("VignetteRadar", addon)
 assert(loadfile(optionsSourcePath))("VignetteRadar", addon)
 assert(loadfile(quickSourcePath))("VignetteRadar", addon)
 
+do
+    local seen = {}
+    local function CheckUpvalues(fn)
+        if type(fn) ~= "function" or seen[fn] then return end
+        seen[fn] = true
+        local count, children = 0, {}
+        while true do
+            local name, value = debug.getupvalue(fn, count + 1)
+            if not name then break end
+            count = count + 1
+            if type(value) == "function" then children[#children + 1] = value end
+        end
+        local info = debug.getinfo(fn, "S")
+        if info and info.source and info.source:find("VignetteRadar_Radar.lua", 1, true) then
+            assert(count <= 60, "WoW's 60-upvalue limit exceeded at radar line "
+                .. tostring(info.linedefined) .. ": " .. count)
+        end
+        for _, child in ipairs(children) do CheckUpvalues(child) end
+    end
+    for _, entry in pairs(addon.VignetteRadarAPI) do CheckUpvalues(entry) end
+end
+
 local optionsEvent
 for _, object in ipairs(objects) do
     if object.events and object.events.PLAYER_LOGIN then optionsEvent = object end

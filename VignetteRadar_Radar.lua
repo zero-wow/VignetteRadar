@@ -3052,6 +3052,63 @@ routeMenu.Toggle = function(anchor)
     return true
 end
 
+function routeMenu.SetupButtons(panel, ToolbarIcon)
+    panel.trailToggle = ToolbarIcon("trail", 22)
+    panel.trailToggle:RegisterForClicks("LeftButtonUp", "RightButtonUp")
+    panel.trailToggle:SetScript("OnClick", function(_, mouseButton)
+        if mouseButton == "RightButton" then
+            if GameTooltip then GameTooltip:Hide() end
+            ToggleTrailPopup(panel._trailPopupAnchor or panel.trailToggle)
+        else
+            HideTrailPopup()
+            routeMenu.Hide()
+            addon.SetVignetteRadarTrailEnabled(Settings().vignetteRadarBreadcrumbs ~= true)
+        end
+    end)
+    panel.trailToggle:HookScript("OnEnter", function(self)
+        if not GameTooltip then return end
+        local style = Settings().vignetteRadarTrailStyle or "dashes"
+        local name = (TRAIL_STYLE_BY_ID[style] or TRAIL_STYLES[1]).label
+        GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+        GameTooltip:SetText("Travel trail: " .. (Settings().vignetteRadarBreadcrumbs and "ON" or "OFF"), 1, 1, 1)
+        GameTooltip:AddLine("Style: " .. name .. ". Left-click to toggle; right-click to choose from moving previews.",
+            .7, .8, .8, true)
+        GameTooltip:Show()
+    end)
+    panel.trailToggle:HookScript("OnLeave", function() if GameTooltip then GameTooltip:Hide() end end)
+    UpdateTrailToggle()
+
+    panel.routeToggle = ToolbarIcon("route", 22)
+    panel.routeToggle:RegisterForClicks("LeftButtonUp", "RightButtonUp")
+    panel.routeToggle:SetScript("OnClick", function(self, button)
+        if button == "RightButton" then
+            if GameTooltip then GameTooltip:Hide() end
+            routeMenu.Toggle(panel._routePopupAnchor or self)
+            return
+        end
+        routeMenu.Hide()
+        local focus = addon.VignetteRadarWorldFocus
+        if not focus then return end
+        local ok, reason = focus.ToggleRoute()
+        self._selected = focus.IsRouteActive()
+        self:RefreshAppearance()
+        if panel.RefreshCornerTools then panel.RefreshCornerTools() end
+        if reason and not ok and UIErrorsFrame and UIErrorsFrame.AddMessage then
+            UIErrorsFrame:AddMessage(reason, 1, .65, .25)
+        end
+    end)
+    panel.routeToggle:HookScript("OnEnter", function(self)
+        if not GameTooltip then return end
+        local focus = addon.VignetteRadarWorldFocus
+        GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+        GameTooltip:SetText(focus and focus.IsRouteActive() and "Pause Auto Route" or "Start Auto Route", 1, 1, 1)
+        GameTooltip:AddLine("Click a rare, treasure, or quest first. The route chooses the next stop as you arrive.", .7, .8, .8, true)
+        GameTooltip:AddLine("Right-click to choose a route, pin Zygor, or manage stops.", .55, .86, .76, true)
+        GameTooltip:Show()
+    end)
+    panel.routeToggle:HookScript("OnLeave", function() if GameTooltip then GameTooltip:Hide() end end)
+end
+
 local function EmptyExplanation(player, shown, quests, notes, areas, starts)
     if not Settings().vignetteRadarEmptyHelp or shown > 0 or quests > 0 or notes > 0
         or areas or (starts or 0) > 0 then return nil end
@@ -4858,60 +4915,7 @@ local function EnsurePanel()
     end)
     panel.compass:HookScript("OnLeave", function() if GameTooltip then GameTooltip:Hide() end end)
 
-    panel.trailToggle = ToolbarIcon("trail", 22)
-    panel.trailToggle:RegisterForClicks("LeftButtonUp", "RightButtonUp")
-    panel.trailToggle:SetScript("OnClick", function(_, mouseButton)
-        if mouseButton == "RightButton" then
-            if GameTooltip then GameTooltip:Hide() end
-            ToggleTrailPopup(panel._trailPopupAnchor or panel.trailToggle)
-        else
-            HideTrailPopup()
-            routeMenu.Hide()
-            addon.SetVignetteRadarTrailEnabled(Settings().vignetteRadarBreadcrumbs ~= true)
-        end
-    end)
-    panel.trailToggle:HookScript("OnEnter", function(self)
-        if not GameTooltip then return end
-        local style = Settings().vignetteRadarTrailStyle or "dashes"
-        local name = (TRAIL_STYLE_BY_ID[style] or TRAIL_STYLES[1]).label
-        GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
-        GameTooltip:SetText("Travel trail: " .. (Settings().vignetteRadarBreadcrumbs and "ON" or "OFF"), 1, 1, 1)
-        GameTooltip:AddLine("Style: " .. name .. ". Left-click to toggle; right-click to choose from moving previews.",
-            .7, .8, .8, true)
-        GameTooltip:Show()
-    end)
-    panel.trailToggle:HookScript("OnLeave", function() if GameTooltip then GameTooltip:Hide() end end)
-    UpdateTrailToggle()
-
-    panel.routeToggle = ToolbarIcon("route", 22)
-    panel.routeToggle:RegisterForClicks("LeftButtonUp", "RightButtonUp")
-    panel.routeToggle:SetScript("OnClick", function(self, button)
-        if button == "RightButton" then
-            if GameTooltip then GameTooltip:Hide() end
-            routeMenu.Toggle(panel._routePopupAnchor or self)
-            return
-        end
-        routeMenu.Hide()
-        local focus = addon.VignetteRadarWorldFocus
-        if not focus then return end
-        local ok, reason = focus.ToggleRoute()
-        self._selected = focus.IsRouteActive()
-        self:RefreshAppearance()
-        if panel.RefreshCornerTools then panel.RefreshCornerTools() end
-        if reason and not ok and UIErrorsFrame and UIErrorsFrame.AddMessage then
-            UIErrorsFrame:AddMessage(reason, 1, .65, .25)
-        end
-    end)
-    panel.routeToggle:HookScript("OnEnter", function(self)
-        if not GameTooltip then return end
-        local focus = addon.VignetteRadarWorldFocus
-        GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
-        GameTooltip:SetText(focus and focus.IsRouteActive() and "Pause Auto Route" or "Start Auto Route", 1, 1, 1)
-        GameTooltip:AddLine("Click a rare, treasure, or quest first. The route chooses the next stop as you arrive.", .7, .8, .8, true)
-        GameTooltip:AddLine("Right-click to choose a route, pin Zygor, or manage stops.", .55, .86, .76, true)
-        GameTooltip:Show()
-    end)
-    panel.routeToggle:HookScript("OnLeave", function() if GameTooltip then GameTooltip:Hide() end end)
+    routeMenu.SetupButtons(panel, ToolbarIcon)
 
     panel.combatToggle = CreateFrame("Button", nil, panel)
     panel.combatToggle:SetSize(18, 18)
