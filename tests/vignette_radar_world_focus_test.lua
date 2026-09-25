@@ -49,10 +49,14 @@ assert(focus.SelectNote(entrance) and placed[1] == .4
 assert(routeNotes[#routeNotes][1] == "WORLD FOCUS"
     and routeNotes[#routeNotes][2]:find("Hidden cache", 1, true),
     "focusing a mapped route should announce its destination")
-player.worldX = 400
+player.worldX = 396.9
+focus.Sync(123, player, {}, {}, { treasure, entrance })
+assert(#placed == 1,
+    "a linked treasure path must wait until the player is within 3 yards of its stop")
+player.worldX = 397.1
 focus.Sync(123, player, {}, {}, { treasure, entrance })
 assert(placed[2] == .45 and focus.Status():find("2/3", 1, true),
-    "arrival should advance exactly one explicitly supplied pack step")
+    "entering 3 yards should advance exactly one explicitly supplied treasure-path step")
 assert(routeNotes[#routeNotes][1] == "NEXT STEP"
     and routeNotes[#routeNotes][2]:find("2/3", 1, true),
     "route notes should describe automatic step changes")
@@ -144,6 +148,12 @@ C_QuestLog = {
 player.worldX = 300
 focus.Sync(123, player, {}, { questA, questNext, questB }, {})
 local questSelected = focus.SelectQuest(11)
+player.worldX = 350
+focus.Sync(123, player, {}, { questA, questNext, questB }, {})
+assert(waypoint.position.x == .35 and focus.HasFocus(),
+    "a focused quest point must not clear merely because the player reached its coordinates")
+player.worldX = 300
+focus.Sync(123, player, {}, { questA, questNext, questB }, {})
 local questStarted, questReason = focus.ToggleRoute()
 assert(questSelected and questStarted, "a clicked quest should anchor the quest route: " .. tostring(questReason))
 player.worldX = 350
@@ -422,12 +432,30 @@ do
         "incomplete map notes must not break duplicate checking or valid rare routes")
 end
 do
+    local first, second = Step(500), Step(600)
+    first.kind, first.key, first.name = "treasure", "range:first", "First cache"
+    second.kind, second.key, second.name = "treasure", "range:second", "Second cache"
+    player.worldX = 480
+    focus.Sync(123, player, {}, {}, { first, second })
+    assert(focus.SelectNote(first) and focus.ToggleRoute() and waypoint.position.x == .5,
+        "treasure Auto Route should start at the selected cache")
+    player.worldX = 496.9
+    focus.Sync(123, player, {}, {}, { first, second })
+    assert(waypoint.position.x == .5,
+        "treasure Auto Route must keep its stop at 3.1 yards even with rare distance set to 10")
+    player.worldX = 497.1
+    focus.Sync(123, player, {}, {}, { first, second })
+    assert(waypoint.position.x == .6,
+        "treasure Auto Route should continue after entering 3 yards")
+    assert(focus.Clear())
+end
+do
     local looted, nextChest = Step(500), Step(600)
     looted.kind, looted.key, looted.name, looted.objectID =
         "treasure", "loot:first", "First cache", 777
     nextChest.kind, nextChest.key, nextChest.name =
         "treasure", "loot:second", "Second cache"
-    player.worldX = 489
+    player.worldX = 496
     focus.Sync(123, player, {}, {}, { looted, nextChest })
     assert(focus.SelectNote(looted) and focus.ToggleRoute()
         and waypoint.position.x == .5)
@@ -444,6 +472,6 @@ do
     GetLootSourceInfo = function() return "GameObject-0-1-1-1-777-000" end
     focus.OnLootEvent("LOOT_OPENED")
     assert(focus.OnLootEvent("LOOT_SLOT_CLEARED") and waypoint.position.x == .6,
-        "looting the matched nearby treasure should advance even outside 10 yards")
+        "looting the matched nearby treasure should advance even outside 3 yards")
 end
 io.write("vignette radar World Focus tests passed\n")

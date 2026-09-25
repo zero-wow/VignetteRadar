@@ -338,6 +338,9 @@ end
 
 local function ArrivalRadius()
     local settings = addon.GetSettings()
+    if (route and route.kind == "treasure") or (active and active.kind == "treasure") then
+        return 3
+    end
     return route and (settings.vignetteRadarAutoRouteArrivalRadius or 10)
         or (settings.vignetteRadarWorldFocusArrivalRadius or 20)
 end
@@ -716,7 +719,7 @@ function API.Sync(mapID, snapshot, liveTargets, questPoints, mapNotes)
     if not (Number(step.worldX) and Number(step.worldY)
         and Number(player.worldX) and Number(player.worldY)) then return end
     if pausedRoute or (not route and not addon.GetSettings().vignetteRadarWorldFocusAutoAdvance) then return end
-    if route and route.kind == "quest" then return end -- Objective events, not proximity, move quest routes.
+    if active.kind == "quest" then return end -- Quest points wait for objective or quest progress.
     if Number(player.instanceID) and Number(step.instanceID)
         and player.instanceID ~= step.instanceID then return end
     local dx, dy = player.worldX - step.worldX, player.worldY - step.worldY
