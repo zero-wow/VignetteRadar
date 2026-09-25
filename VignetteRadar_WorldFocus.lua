@@ -43,7 +43,8 @@ end
 local function WaypointColor(item)
     if not item then return nil end
     local kind = item.kind == "mob" and "rare" or item.kind
-    if kind ~= "rare" and kind ~= "treasure" and kind ~= "quest" then return nil end
+    if kind ~= "rare" and kind ~= "treasure" and kind ~= "quest"
+        and kind ~= "guide" then return nil end
     local r, g, b
     local style = addon.VignetteRadarStyle
     if kind == "quest" then
@@ -54,7 +55,8 @@ local function WaypointColor(item)
         end
     end
     if not r and style and type(style.Color) == "function" then
-        r, g, b = style.Color(kind == "rare" and item.isWorldBoss and "boss" or kind)
+        r, g, b = style.Color(kind == "rare" and item.isWorldBoss and "boss"
+            or kind == "guide" and "accent" or kind)
     end
     if not (Number(r) and Number(g) and Number(b)) then r, g, b = .55, .88, .82 end
     return r, g, b
@@ -370,8 +372,8 @@ local function AdvanceRoute()
     return false
 end
 
-local function Select(item)
-    if not (addon.GetSettings().vignetteRadarWorldFocusEnabled and Valid(item)) then
+local function Select(item, directPin)
+    if not ((directPin or addon.GetSettings().vignetteRadarWorldFocusEnabled) and Valid(item)) then
         return false, "No usable location"
     end
     AttachKnownTreasurePath(item)
@@ -511,17 +513,17 @@ function API.SelectQuest(questID)
     return false, "Quest point unavailable"
 end
 
-function API.SelectNote(note)
+function API.SelectNote(note, directPin)
     if not note then return false, "No map note" end
     if note.kind == "entrance" and note.parentCoord and type(note.source) == "string" then
         for _, candidate in ipairs(notes) do
             if candidate.kind == "treasure" and candidate.mapID == note.mapID
                 and candidate.key == note.source .. ":" .. note.mapID .. ":" .. note.parentCoord then
-                return Select(candidate)
+                return Select(candidate, directPin)
             end
         end
     end
-    return Select(note)
+    return Select(note, directPin)
 end
 
 function API.SelectPoint(point)
@@ -699,57 +701,107 @@ function API.Advance()
     return ok
 end
 
+local function ZygorPoint(source, step)
+    if type(source) ~= "table" then return nil end
+    local pointMapID = Number(source.map) or Number(source.m) or Number(step and step.map)
+    local x, y = Number(source.x), Number(source.y)
+    if not (pointMapID and x and y and x >= 0 and x <= 1 and y >= 0 and y <= 1) then
+        return nil
+    end
+    return { m = pointMapID, x = x, y = y, title = source.title or source.text }
+end
+
+local function ZygorGoalPoint(goal, step, directPin)
+    if not goal or goal.force_noway or goal.action == "mapmarker" then return nil end
+    local point
+    if directPin and type(goal.GetWaypoint) == "function" then
+        local ok, native = pcall(goal.GetWaypoint, goal)
+        if ok then point = ZygorPoint(native, step) end
+    end
+    point = point or ZygorPoint(goal, step)
+    if not point then return nil end
+    if type(goal.IsVisible) == "function" then
+        local ok, visible = pcall(goal.IsVisible, goal)
+        if not ok or visible == false or (issecretvalue and issecretvalue(visible)) then
+            return nil
+        end
+    end
+    if directPin and type(goal.GetText) == "function" then
+        local ok, title = pcall(goal.GetText, goal, false, true, false, true)
+        if ok and type(title) == "string" and title ~= "" then point.title = title end
+    end
+    return point
+end
+
 function API.ZygorNote(mapID, mapToWorld, mapVector, allowHidden, allowRemote)
     if not allowHidden and addon.GetSettings().vignetteRadarWorldFocusZygor ~= true then return nil end
     local zgv = _G.ZygorGuidesViewer
-    local ok, waypoint, step = pcall(function()
-        local pointer = zgv and zgv.Pointer
-        return pointer and (pointer.current_waypoint or pointer.ArrowFrame and pointer.ArrowFrame.waypoint
-            or pointer.DestinationWaypoint), zgv and zgv.CurrentStep
-    end)
-    if ok and not waypoint and allowRemote and step then
-        local found, goal = pcall(function()
-            local goals = step.goals
-            if type(goals) ~= "table" then return nil end
-            local current = goals[step.current_waypoint_goal_num or 0]
-            if current and Number(current.map) and Number(current.x) and Number(current.y) then
-                return current
-            end
-            for _, candidate in ipairs(goals) do
-                if Number(candidate.map) and Number(candidate.x) and Number(candidate.y) then
-                    return candidate
+    if not zgv then return nil, "Zygor is not loaded" end
+    local read, step, pointer = pcall(function() return zgv.CurrentStep, zgv.Pointer end)
+    if not read or not step then return nil, "Zygor has no active guide step" end
+
+    -- Zygor's arrow can point at a travel hop or a manual POI. Read the
+    -- selected objective from the active guide step instead.
+    local selected, waypoint
+    local goals = type(step.goals) == "table" and step.goals or nil
+    if goals then
+        local goalNum = Number(step.current_waypoint_goal_num)
+        if goalNum and goalNum >= 1 and goalNum <= 64 then
+            selected = goals[goalNum]
+            waypoint = ZygorGoalPoint(selected, step, allowRemote)
+        end
+        if not waypoint then
+            for index = 1, math.min(#goals, 64) do
+                local goal = goals[index]
+                if goal and goal.status == "incomplete" then
+                    waypoint = ZygorGoalPoint(goal, step, allowRemote)
+                    if waypoint then selected = goal; break end
                 end
             end
-        end)
-        if found and goal then
-            waypoint = { m = goal.map, x = goal.x, y = goal.y,
-                title = goal.title or goal.text or "Zygor current objective" }
+        end
+        if not waypoint then
+            for index = 1, math.min(#goals, 64) do
+                local goal = goals[index]
+                waypoint = ZygorGoalPoint(goal, step, allowRemote)
+                if waypoint then selected = goal; break end
+            end
         end
     end
-    if not ok or not waypoint then
-        return nil, zgv and "Zygor has no active guide waypoint" or "Zygor is not loaded"
+    if not waypoint and type(step.waypath) == "table"
+        and type(step.waypath.coords) == "table" then
+        for index = 1, math.min(#step.waypath.coords, 64) do
+            waypoint = ZygorPoint(step.waypath.coords[index], step)
+            if waypoint then break end
+        end
     end
-    local read, pointMapID, x, y, title = pcall(function()
-        return waypoint.m, waypoint.x, waypoint.y, waypoint.title
-    end)
-    pointMapID = Number(pointMapID)
-    if not read or not pointMapID or not Number(x) or not Number(y)
-        or x < 0 or x > 1 or y < 0 or y > 1 then
-        return nil, "Zygor's waypoint has no usable map coordinates"
+    if not waypoint and pointer then
+        local possible = { pointer.DestinationWaypoint, pointer.current_waypoint,
+            pointer.ArrowFrame and pointer.ArrowFrame.waypoint }
+        for index = 1, 3 do
+            local candidate = possible[index]
+            if candidate and candidate.goal and candidate.goal.parentStep == step then
+                waypoint = ZygorPoint(candidate, step)
+                if waypoint then selected = candidate.goal; break end
+            end
+        end
     end
-    if not allowRemote and pointMapID ~= mapID then return nil end
-    local converted, worldX, worldY, instanceID = pcall(mapToWorld, pointMapID, mapVector(x, y))
+    if not waypoint then return nil, "Current Zygor step has no mapped location" end
+    if not allowRemote and waypoint.m ~= mapID then return nil end
+    local converted, worldX, worldY, instanceID = pcall(mapToWorld, waypoint.m,
+        mapVector(waypoint.x, waypoint.y))
     if not converted or not Number(worldX) or not Number(worldY) then
         if not allowRemote then return nil end
         worldX, worldY, instanceID = nil, nil, nil
     end
-    local name = type(title) == "string" and title ~= "" and title
-        or "Zygor current step"
-    local gotStep, stepNum = pcall(function() return step and step.num end)
-    stepNum = gotStep and Number(stepNum) or nil
-    return { key = "zygor:" .. tostring(stepNum or 0) .. ":" .. math.floor(x * 10000)
-        .. ":" .. math.floor(y * 10000), kind = "guide", source = "Zygor",
-        name = name, mapID = pointMapID, mapX = x, mapY = y,
-        worldX = worldX, worldY = worldY, instanceID = instanceID,
-        note = "Current active guide waypoint" }
+    local stepNum = Number(step.num)
+    local title = waypoint.title
+    if type(title) ~= "string" or title == "" then
+        title = "Zygor Step " .. tostring(stepNum or "?")
+    end
+    return { key = "zygor:" .. tostring(stepNum or 0) .. ":" .. waypoint.m
+        .. ":" .. math.floor(waypoint.x * 10000) .. ":" .. math.floor(waypoint.y * 10000),
+        kind = "guide", source = "Zygor", name = title, mapID = waypoint.m,
+        mapX = waypoint.x, mapY = waypoint.y, worldX = worldX, worldY = worldY,
+        instanceID = instanceID, note = selected and "Selected Zygor guide objective"
+            or "Current Zygor guide path" }
 end

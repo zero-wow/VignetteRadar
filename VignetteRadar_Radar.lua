@@ -5519,7 +5519,7 @@ addon.VignetteRadarAPI = {
         if not worldFocus then return false, "World Focus is unavailable" end
         local guide, reason = worldFocus.ZygorNote(mapID, MapToWorld, MapVector, true, true)
         if not guide then return false, reason or "Zygor has no active guide waypoint" end
-        return worldFocus.SelectNote(guide)
+        return worldFocus.SelectNote(guide, true)
     end,
     GetPlayerSnapshot = function() return PlayerSnapshot(CurrentMapID()) end,
     GetSelectableTargets = SelectableTargets,

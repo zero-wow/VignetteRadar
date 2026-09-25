@@ -235,16 +235,21 @@ do
         "the chooser should explain when a route category has no point here")
 end
 
-ZygorGuidesViewer = { CurrentStep = { num = 5 }, Pointer = {
-    current_waypoint = { m = 123, x = .6, y = .4, title = "Find the quest giver" },
+local activeZygorStep = { num = 5, map = 123, current_waypoint_goal_num = 2,
+    goals = {
+        { map = 123, x = .5, y = .5, text = "First objective", status = "incomplete" },
+        { map = 123, x = .6, y = .4, text = "Selected objective", status = "incomplete" },
+    } }
+ZygorGuidesViewer = { CurrentStep = activeZygorStep, Pointer = {
+    current_waypoint = { m = 123, x = .9, y = .9, title = "Unrelated manual point" },
 } }
 local guide = focus.ZygorNote(123, function(_, vector)
     return vector.x * 1000, vector.y * 1000, 42
 end, function(x, y) return { x = x, y = y } end)
 assert(guide and guide.kind == "guide" and guide.worldX == 600
-    and guide.name == "Find the quest giver"
+    and guide.name == "Selected objective"
     and not focus.ZygorNote(124, function() error("wrong map") end, function() end),
-    "only Zygor's current, same-map waypoint should become an optional guide dot")
+    "the selected, same-map guide objective should win over Zygor's manual arrow")
 settings.vignetteRadarWorldFocusZygor = false
 assert(not focus.ZygorNote(123, function() error("hidden guide") end, function() end),
     "the guide dot toggle should still hide Zygor from the radar")
@@ -252,34 +257,51 @@ assert(focus.ZygorNote(123, function(_, vector)
     return vector.x * 1000, vector.y * 1000, 42
 end, function(x, y) return { x = x, y = y } end, true),
     "directly pinning Zygor should work even when its guide dot is hidden")
-local remoteGuide = focus.ZygorNote(124, function() return nil end,
+activeZygorStep.goals[2].GetWaypoint = function()
+    return { m = 125, x = .61, y = .41 }
+end
+local normalized = focus.ZygorNote(123, function() return nil end,
     function(x, y) return { x = x, y = y } end, true, true)
-assert(remoteGuide and remoteGuide.mapID == 123 and remoteGuide.worldX == nil
-    and focus.SelectNote(remoteGuide) and waypoint.uiMapID == 123,
-    "direct pinning should use Zygor's map even when the player is in a subzone")
+assert(normalized and normalized.mapID == 125 and normalized.mapX == .61,
+    "direct pinning should honor Zygor's resolved waypoint for the selected goal")
+activeZygorStep.goals[2].GetWaypoint = nil
+activeZygorStep.goals[2].map = 124
+local remoteGuide = focus.ZygorNote(123, function() return nil end,
+    function(x, y) return { x = x, y = y } end, true, true)
+settings.vignetteRadarWorldFocusEnabled = false
+assert(remoteGuide and remoteGuide.mapID == 124 and remoteGuide.worldX == nil
+    and focus.SelectNote(remoteGuide, true) and waypoint.uiMapID == 124,
+    "direct pinning should use the selected step's map even when marker focus is disabled")
+settings.vignetteRadarWorldFocusEnabled = true
 focus.Sync(124, { worldX = 300, worldY = 500, instanceID = 42 }, {}, {}, {})
-ZygorGuidesViewer.Pointer.current_waypoint = nil
-ZygorGuidesViewer.Pointer.DestinationWaypoint = { m = 123, x = .7, y = .3,
-    title = "Next guide destination" }
-assert(focus.ZygorNote(124, function() return nil end,
-    function(x, y) return { x = x, y = y } end, true, true).mapX == .7,
-    "pinning should fall back to Zygor's destination when its active arrow is absent")
-ZygorGuidesViewer.Pointer.DestinationWaypoint = nil
-ZygorGuidesViewer.CurrentStep.goals = {
-    { map = 123, x = .2, y = .8, text = "First objective" },
-    { map = 124, x = .8, y = .2, text = "Active objective" },
-}
-ZygorGuidesViewer.CurrentStep.current_waypoint_goal_num = 2
+activeZygorStep.goals[2].x = nil
+activeZygorStep.goals[1].map = nil
 local objective = focus.ZygorNote(123, function() return nil end,
     function(x, y) return { x = x, y = y } end, true, true)
-assert(objective and objective.mapID == 124 and objective.mapX == .8
-    and objective.name == "Active objective",
-    "direct pinning should use the current guide objective when Zygor has no arrow")
-ZygorGuidesViewer.CurrentStep.goals = nil
+assert(objective and objective.mapID == 123 and objective.mapX == .5,
+    "an unmapped selected goal should use another incomplete goal and inherit its step map")
+activeZygorStep.goals = {}
+activeZygorStep.waypath = { coords = { { map = 124, x = .7, y = .3 } } }
+assert(focus.ZygorNote(123, function() return nil end,
+    function(x, y) return { x = x, y = y } end, true, true).mapX == .7,
+    "a guide step with no goal coordinates should use its own travel path")
+activeZygorStep.waypath = nil
+ZygorGuidesViewer.Pointer.current_waypoint = { m = 124, x = .8, y = .2,
+    goal = { parentStep = activeZygorStep } }
+assert(focus.ZygorNote(123, function() return nil end,
+    function(x, y) return { x = x, y = y } end, true, true).mapX == .8,
+    "a goal-owned pointer remains a last fallback for this guide step")
+ZygorGuidesViewer.Pointer.current_waypoint = { m = 123, x = .9, y = .9,
+    title = "Unrelated manual point" }
 local missing, reason = focus.ZygorNote(124, function() end,
     function(x, y) return { x = x, y = y } end, true, true)
-assert(not missing and reason == "Zygor has no active guide waypoint",
-    "an unavailable Zygor objective should produce a visible reason")
+assert(not missing and reason == "Current Zygor step has no mapped location",
+    "an unrelated manual arrow must not masquerade as the selected guide step")
+ZygorGuidesViewer.CurrentStep = nil
+local noStep, noStepReason = focus.ZygorNote(124, function() end,
+    function(x, y) return { x = x, y = y } end, true, true)
+assert(not noStep and noStepReason == "Zygor has no active guide step",
+    "a missing guide step should explain why pinning cannot proceed")
 local remoteQuest = Step(650)
 remoteQuest.questID, remoteQuest.name, remoteQuest.mapID = 81, "Nearby map quest", 124
 focus.Sync(123, player, {}, { remoteQuest }, {})
