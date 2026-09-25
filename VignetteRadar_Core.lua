@@ -98,6 +98,11 @@ function addon.GetSettings()
     if type(db.vignetteRadarWorldFocusRoutes) ~= "boolean" then db.vignetteRadarWorldFocusRoutes = true end
     if type(db.vignetteRadarWorldFocusSavedNotes) ~= "boolean" then db.vignetteRadarWorldFocusSavedNotes = false end
     if type(db.vignetteRadarWorldFocusZygor) ~= "boolean" then db.vignetteRadarWorldFocusZygor = false end
+    if type(db.vignetteRadarAutoRouteOnSelect) ~= "boolean" then db.vignetteRadarAutoRouteOnSelect = false end
+    if type(db.vignetteRadarAutoRouteMapNotes) ~= "boolean" then db.vignetteRadarAutoRouteMapNotes = true end
+    if type(db.vignetteRadarWorldFocusThemedWaypoint) ~= "boolean" then db.vignetteRadarWorldFocusThemedWaypoint = true end
+    if db.vignetteRadarAutoRouteTravel ~= "auto" and db.vignetteRadarAutoRouteTravel ~= "ground"
+        and db.vignetteRadarAutoRouteTravel ~= "flying" then db.vignetteRadarAutoRouteTravel = "auto" end
     if db.vignetteRadarWorldFocusArrivalRadius ~= 10 and db.vignetteRadarWorldFocusArrivalRadius ~= 20
         and db.vignetteRadarWorldFocusArrivalRadius ~= 40 then db.vignetteRadarWorldFocusArrivalRadius = 20 end
     if type(db.vignetteRadarBeaconRares) ~= "boolean" then db.vignetteRadarBeaconRares = true end

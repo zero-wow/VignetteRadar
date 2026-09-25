@@ -2067,7 +2067,7 @@ local function ApplyPanelLayout(focused)
     local left, top = PanelPosition()
     panel.layout, panel.layoutFocused, panel.squarePlot = name, focused, square
     local highlightTexture = square and ROUNDED_CONTROL_TEXTURE or CIRCLE_TEXTURE
-    for _, control in ipairs({ panel.zoomOut, panel.zoomIn, panel.compass, panel.trailToggle,
+    for _, control in ipairs({ panel.zoomOut, panel.zoomIn, panel.compass, panel.trailToggle, panel.routeToggle,
         panel.combatToggle, panel.target, panel.legend, panel.minimize, panel.close, panel.frameToggle }) do
         if control and control.glow then control.glow:SetTexture(highlightTexture) end
     end
@@ -2132,14 +2132,15 @@ local function ApplyPanelLayout(focused)
         Place(panel.sideGuide, "TOPLEFT", 214, -173, 148, 14)
         Place(panel.zoomOut, "BOTTOMLEFT", 12, 8)
         Place(panel.zoomLabel, "BOTTOMLEFT", 42, 12, 95, 12)
-        Place(panel.zoomIn, "BOTTOMLEFT", 145, 8)
-        Place(panel.combatToggle, "BOTTOMLEFT", 174, 9)
-        Place(panel.compass, "BOTTOMLEFT", 198, 8)
-        Place(panel.trailToggle, "BOTTOMLEFT", 226, 8)
-        Place(panel.target, "BOTTOMLEFT", 254, 8)
-        Place(panel.legend, "BOTTOMLEFT", 282, 8)
-        Place(panel.minimize, "BOTTOMLEFT", 310, 8)
-        Place(panel.close, "BOTTOMLEFT", 338, 8)
+        Place(panel.zoomIn, "BOTTOMLEFT", 139, 8)
+        Place(panel.combatToggle, "BOTTOMLEFT", 164, 9)
+        Place(panel.compass, "BOTTOMLEFT", 185, 8)
+        Place(panel.trailToggle, "BOTTOMLEFT", 211, 8)
+        Place(panel.routeToggle, "BOTTOMLEFT", 235, 8, 22, 20)
+        Place(panel.target, "BOTTOMLEFT", 259, 8)
+        Place(panel.legend, "BOTTOMLEFT", 285, 8)
+        Place(panel.minimize, "BOTTOMLEFT", 311, 8)
+        Place(panel.close, "BOTTOMLEFT", 337, 8)
     else
         local compact = name == "compact"
         local footer = layout.footer
@@ -2152,8 +2153,9 @@ local function ApplyPanelLayout(focused)
         Place(panel.focusReadout, "BOTTOMLEFT", 12, footer + 8, layout.width - 24, compact and 50 or 32)
         if compact then
             Place(panel.zoomLabel, "BOTTOM", 0, 38, 92, 12)
-            Place(panel.combatToggle, "BOTTOMLEFT", 176, 32)
+            Place(panel.combatToggle, "BOTTOMLEFT", 178, 32)
             Place(panel.trailToggle, "BOTTOMLEFT", 18, 30)
+            Place(panel.routeToggle, "BOTTOMLEFT", 153, 32, 22, 18)
         else
             Place(panel.zoomLabel, "BOTTOMLEFT", 118, 10, 62, 12)
             Place(panel.combatToggle, "BOTTOMLEFT", 72, 7)
@@ -2173,6 +2175,7 @@ local function ApplyPanelLayout(focused)
         else
             panel.zoomIn:SetPoint("BOTTOMRIGHT", panel, "BOTTOMRIGHT", -12, 6)
             Place(panel.compass, "BOTTOMLEFT", 42, 6)
+            Place(panel.routeToggle, "BOTTOMLEFT", 185, 6, 22, 20)
             Place(panel.target, "TOPRIGHT", -83, -5)
             Place(panel.legend, "TOPRIGHT", -57, -5)
             Place(panel.minimize, "TOPRIGHT", -31, -5)
@@ -2302,7 +2305,7 @@ local function UpdatePanelChrome()
     end
     local showButtons = not circleOnly and Settings().vignetteRadarControlsVisible ~= false
     for _, control in ipairs({ panel.zoomOut, panel.zoomIn, panel.combatToggle,
-        panel.trailToggle, panel.compass, panel.target, panel.legend, panel.minimize, panel.close }) do
+        panel.trailToggle, panel.routeToggle, panel.compass, panel.target, panel.legend, panel.minimize, panel.close }) do
         control:SetShown(showButtons)
     end
     if panel.emptyHelp then panel.emptyHelp:SetShown(not circleOnly and panel.emptyReason ~= nil) end
@@ -3166,6 +3169,12 @@ Render = function()
     ApplyAppearance()
     UpdateCombatToggle()
     UpdateTrailToggle()
+    local routing = addon.VignetteRadarWorldFocus
+        and addon.VignetteRadarWorldFocus.IsRouteActive() or false
+    if panel.routeToggle and panel.routeToggle._selected ~= routing then
+        panel.routeToggle._selected = routing
+        panel.routeToggle:RefreshAppearance()
+    end
     UpdateFullSweep(0)
     BeginBlips()
     local mapID = CurrentMapID()
@@ -4656,6 +4665,22 @@ local function EnsurePanel()
             button.label:SetJustifyH("CENTER")
             button:SetFontString(button.label)
             button:SetText("N")
+        elseif symbol == "route" then
+            button.routeDots = {}
+            for index, position in ipairs({ { -6, -3 }, { 0, 3 }, { 6, -3 } }) do
+                local dot = button:CreateTexture(nil, "OVERLAY")
+                dot:SetTexture(CIRCLE_TEXTURE)
+                dot:SetSize(index == 2 and 4 or 3, index == 2 and 4 or 3)
+                dot:SetPoint("CENTER", position[1], position[2])
+                button.routeDots[index] = dot
+            end
+            for index, ends in ipairs({ { -6, -3, 0, 3 }, { 0, 3, 6, -3 } }) do
+                local stroke = button:CreateLine(nil, "ARTWORK")
+                stroke:SetThickness(1.5)
+                stroke:SetStartPoint("CENTER", button, ends[1], ends[2])
+                stroke:SetEndPoint("CENTER", button, ends[3], ends[4])
+                button.strokes[index] = stroke
+            end
         elseif symbol == "trail" then
             button.trailMarks, button.trailExtras = {}, {}
             for index = 1, 3 do
@@ -4697,6 +4722,7 @@ local function EnsurePanel()
             self.glow:SetVertexColor(ACCENT[1], ACCENT[2], ACCENT[3],
                 not enabled and 0 or hovered and .20 or selected and .12 or 0)
             for _, stroke in ipairs(self.strokes) do stroke:SetColorTexture(r, g, b, opacity) end
+            for _, dot in ipairs(self.routeDots or {}) do dot:SetVertexColor(r, g, b, opacity) end
             if self.label then self.label:SetTextColor(r, g, b, opacity) end
         end
         local nativeSetEnabled = button.SetEnabled
@@ -4771,6 +4797,35 @@ local function EnsurePanel()
     panel.trailToggle:HookScript("OnLeave", function() if GameTooltip then GameTooltip:Hide() end end)
     UpdateTrailToggle()
 
+    panel.routeToggle = ToolbarIcon("route", 22)
+    panel.routeToggle:RegisterForClicks("LeftButtonUp", "RightButtonUp")
+    panel.routeToggle:SetScript("OnClick", function(self, button)
+        if button == "RightButton" then
+            local quick = addon.VignetteRadarQuickConfig
+            if quick and quick.OpenPage then quick.OpenPage("Auto Route", self) end
+            return
+        end
+        local focus = addon.VignetteRadarWorldFocus
+        if not focus then return end
+        local ok, reason = focus.ToggleRoute()
+        self._selected = focus.IsRouteActive()
+        self:RefreshAppearance()
+        if panel.RefreshCornerTools then panel.RefreshCornerTools() end
+        if reason and not ok and UIErrorsFrame and UIErrorsFrame.AddMessage then
+            UIErrorsFrame:AddMessage(reason, 1, .65, .25)
+        end
+    end)
+    panel.routeToggle:HookScript("OnEnter", function(self)
+        if not GameTooltip then return end
+        local focus = addon.VignetteRadarWorldFocus
+        GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+        GameTooltip:SetText(focus and focus.IsRouteActive() and "Pause Auto Route" or "Start Auto Route", 1, 1, 1)
+        GameTooltip:AddLine("Click a rare, treasure, or quest first. The route chooses the next stop as you arrive.", .7, .8, .8, true)
+        GameTooltip:AddLine("Right-click for route settings.", .55, .86, .76, true)
+        GameTooltip:Show()
+    end)
+    panel.routeToggle:HookScript("OnLeave", function() if GameTooltip then GameTooltip:Hide() end end)
+
     panel.combatToggle = CreateFrame("Button", nil, panel)
     panel.combatToggle:SetSize(18, 18)
     if type(panel.combatToggle.SetIgnoreParentAlpha) == "function" then
@@ -4830,20 +4885,34 @@ local function EnsurePanel()
             local id = tool.toolID
             local active = id == "north" and settings.vignetteRadarNorthUp == true
                 or id == "trail" and settings.vignetteRadarBreadcrumbs == true
+                or id == "route" and addon.VignetteRadarWorldFocus
+                    and addon.VignetteRadarWorldFocus.IsRouteActive()
                 or id == "eye" and settings.vignetteRadarKeepVisibleCombat == true
                 or id == "target" and focused ~= nil
                 or id == "config" and quick and quick.IsShown and quick.IsShown()
                 or id == "legend" and legend and
                     ((legend.IsShown and legend.IsShown()) or (legend.IsQuestShown and legend.IsQuestShown()))
             local state = (active and 2 or 0) + (tool._hovered and 1 or 0)
-            if state ~= tool._artState then
+            if tool.routeDots and (state ~= tool._artState
+                or tool._artRed ~= ACCENT[1] or tool._artGreen ~= ACCENT[2]
+                or tool._artBlue ~= ACCENT[3]) then
+                local r, g, b = .69, .77, .78
+                if active or tool._hovered then r, g, b = ACCENT[1], ACCENT[2], ACCENT[3] end
+                local opacity = (active or tool._hovered) and 1 or .78
+                for _, mark in ipairs(tool.routeDots) do mark:SetVertexColor(r, g, b, opacity) end
+                for _, stroke in ipairs(tool.routeStrokes) do stroke:SetColorTexture(r, g, b, opacity) end
+                tool.back:SetVertexColor(ACCENT[1], ACCENT[2], ACCENT[3],
+                    active and .17 or tool._hovered and .12 or 0)
+                tool._artState = state
+                tool._artRed, tool._artGreen, tool._artBlue = ACCENT[1], ACCENT[2], ACCENT[3]
+            elseif state ~= tool._artState then
                 local column = tool.artColumn
                 tool.art:SetTexCoord((column * 64 + 1) / 1024, (column * 64 + 63) / 1024,
                     (state * 64 + 1) / 256, (state * 64 + 63) / 256)
                 tool._artState = state
             end
-            if tool._artRed ~= ACCENT[1] or tool._artGreen ~= ACCENT[2]
-                or tool._artBlue ~= ACCENT[3] then
+            if tool.art and (tool._artRed ~= ACCENT[1] or tool._artGreen ~= ACCENT[2]
+                or tool._artBlue ~= ACCENT[3]) then
                 tool.art:SetVertexColor(ACCENT[1], ACCENT[2], ACCENT[3], 1)
                 tool._artRed, tool._artGreen, tool._artBlue = ACCENT[1], ACCENT[2], ACCENT[3]
             end
@@ -4857,10 +4926,32 @@ local function EnsurePanel()
         tool:SetPoint(point, panel.field, point, x, y)
         tool:RegisterForClicks("LeftButtonUp", "RightButtonUp")
         tool.toolID, tool.reference, tool.artColumn = id, reference, #panel.hoverTools
-        tool.art = tool:CreateTexture(nil, "ARTWORK")
-        tool.art:SetTexture("Interface\\AddOns\\VignetteRadar\\Media\\radar-corner-controls.tga")
-        tool.art:SetSize(18, 18)
-        tool.art:SetPoint("CENTER")
+        if id == "route" then
+            tool.back = tool:CreateTexture(nil, "BACKGROUND")
+            tool.back:SetTexture(ROUNDED_CONTROL_TEXTURE)
+            tool.back:SetSize(18, 18)
+            tool.back:SetPoint("CENTER")
+            tool.routeDots, tool.routeStrokes = {}, {}
+            for index, position in ipairs({ { -5, -3 }, { 0, 3 }, { 5, -3 } }) do
+                local mark = tool:CreateTexture(nil, "OVERLAY")
+                mark:SetTexture(CIRCLE_TEXTURE)
+                mark:SetSize(3, 3)
+                mark:SetPoint("CENTER", position[1], position[2])
+                tool.routeDots[index] = mark
+            end
+            for index, ends in ipairs({ { -5, -3, 0, 3 }, { 0, 3, 5, -3 } }) do
+                local stroke = tool:CreateLine(nil, "ARTWORK")
+                stroke:SetThickness(1.3)
+                stroke:SetStartPoint("CENTER", tool, ends[1], ends[2])
+                stroke:SetEndPoint("CENTER", tool, ends[3], ends[4])
+                tool.routeStrokes[index] = stroke
+            end
+        else
+            tool.art = tool:CreateTexture(nil, "ARTWORK")
+            tool.art:SetTexture("Interface\\AddOns\\VignetteRadar\\Media\\radar-corner-controls.tga")
+            tool.art:SetSize(18, 18)
+            tool.art:SetPoint("CENTER")
+        end
         tool:SetScript("OnEnter", function(self)
             panel._hoverToolsShown = true
             self._hovered = true
@@ -4915,6 +5006,8 @@ local function EnsurePanel()
     HoverTool("plus", "Zoom in", panel.zoomIn, "TOPRIGHT", -30, -10)
     HoverTool("north", "North up / facing up", panel.compass, "TOPRIGHT", -10, -30)
     HoverTool("trail", "Trail: left toggle, right style", panel.trailToggle, "BOTTOMLEFT", 10, 10)
+    HoverTool("route", "Auto Route: click to start or pause; right-click settings",
+        panel.routeToggle, "BOTTOMRIGHT", -10, 30)
     HoverTool("eye", "Stay fully visible", panel.combatToggle, "BOTTOMLEFT", 30, 10)
     HoverTool("help", "Radar status", nil, "BOTTOMLEFT", 10, 30)
     HoverTool("minimize", "Minimize to launcher", panel.minimize, "BOTTOMRIGHT", -30, 10)

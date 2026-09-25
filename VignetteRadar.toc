@@ -2,8 +2,8 @@
 ## Title: Vignette Radar
 ## Notes: A radar for live vignettes, quests, and optional HandyNotes map notes.
 ## Author: Zero
-## Version: 0.1.0-dev.69
-## OptionalDeps: WaffleHouse_EllesmereUI, EllesmereUI, HandyNotes, ZygorGuidesViewer
+## Version: 0.1.0-dev.70
+## OptionalDeps: WaffleHouse_EllesmereUI, EllesmereUI, HandyNotes, ZygorGuidesViewer, WaypointUI
 ## SavedVariables: VignetteRadarDB
 
 VignetteRadar_Core.lua

@@ -613,6 +613,10 @@ assert(panel.trailToggle.backdrop == nil and #panel.trailToggle.strokes == 12
     and panel.compass.ignoreParentAlpha and panel.trailToggle.ignoreParentAlpha
     and panel.trailToggle.glow and panel.trailToggle.clickButtons[2] == "RightButtonUp",
     "the trail shortcut must match the toolbar and accept a style-changing right click")
+assert(panel.routeToggle.backdrop == nil and #panel.routeToggle.strokes == 2
+    and #panel.routeToggle.routeDots == 3 and panel.routeToggle.glow
+    and panel.routeToggle.clickButtons[2] == "RightButtonUp",
+    "Auto Route must use the radar toolbar's line artwork and offer settings on right-click")
 assert(not panel.zoomIn._enabled and panel.zoomIn.strokes[1].color[4] < .4,
     "the zoom-in icon must visibly dim at the closest range")
 panel.zoomOut.scripts.OnEnter(panel.zoomOut)
@@ -659,7 +663,7 @@ local function inside(region, parent, gutter)
 end
 local function checkLayout(focused)
     local controls = { panel.target, panel.legend, panel.minimize, panel.close, panel.zoomOut, panel.zoomIn, panel.zoomLabel,
-        panel.compass, panel.combatToggle, panel.trailToggle }
+        panel.compass, panel.combatToggle, panel.trailToggle, panel.routeToggle }
     inside(panel.settingsDot, panel, 4)
     separate(panel.settingsDot, panel.title, 2, "settings/title")
     separate(panel.settingsDot, panel.summary, 2, "settings/status")
@@ -1401,8 +1405,9 @@ for _, layoutName in ipairs({ "classic", "compact", "squat" }) do
     addon.SetVignetteRadarCircleOnly(true)
     panel.field.hovered = true
     panel.field.scripts.OnEnter(panel.field)
-    assert(#panel.hoverTools == 11 and panel.hoverTools[10].toolID == "minimize"
-        and panel.hoverTools[10].artColumn == 3 and panel.hoverTools[11].toolID == "close"
+    assert(#panel.hoverTools == 12 and panel.hoverTools[8].toolID == "route"
+        and panel.hoverTools[11].toolID == "minimize"
+        and panel.hoverTools[11].artColumn == 3 and panel.hoverTools[12].toolID == "close"
         and panel.hoverTools[1]:IsShown()
         and not panel.settingsDot:IsShown(),
         "square radar-only view must reveal its corner controls on hover")
@@ -1703,7 +1708,7 @@ assert(quick.tabs.Radar.backdrop == nil
     and quick.tabs.Radar.edge.height == 1 and quick.find.width == 44,
     "settings buttons need quiet flat artwork and an untruncated Find control")
 assert(quick.pages.Status and quick.pages.Search and quick.pages.Beacons
-    and quick.pages["World Focus"] and quick.find,
+    and quick.pages["World Focus"] and quick.pages["Auto Route"] and quick.find,
     "diagnostics and search must be reachable from the compact settings panel")
 quick.find.scripts.OnClick(quick.find)
 quick.searchInput:SetText("arrival")

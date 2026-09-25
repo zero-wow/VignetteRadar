@@ -65,7 +65,8 @@ function API.FocusQuest(questID, point)
     if focusedQuestID and addon.VignetteRadarWorldFocus then
         if point and Number(point.mapID) and Number(point.mapX) and Number(point.mapY) then
             addon.VignetteRadarWorldFocus.SelectPoint({ kind = "quest", questID = focusedQuestID,
-                name = point.name, mapID = point.mapID, mapX = point.mapX, mapY = point.mapY,
+                name = point.name, colorSlot = point.colorSlot,
+                mapID = point.mapID, mapX = point.mapX, mapY = point.mapY,
                 worldX = point.worldX, worldY = point.worldY, instanceID = point.instanceID })
         else addon.VignetteRadarWorldFocus.SelectQuest(focusedQuestID) end
     end

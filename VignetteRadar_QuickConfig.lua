@@ -292,6 +292,9 @@ function API.Refresh()
     if quick.pages["World Focus"] and quick.pages["World Focus"].status then
         local focus = addon.VignetteRadarWorldFocus
         quick.pages["World Focus"].status:SetText(focus and focus.Status() or "Waypoint data unavailable")
+        if quick.pages["Auto Route"] and quick.pages["Auto Route"].status then
+            quick.pages["Auto Route"].status:SetText(focus and focus.Status() or "Waypoint data unavailable")
+        end
     end
     for _, box in ipairs(checks) do
         local value = db[box.optionKey]
@@ -551,11 +554,45 @@ local function Build()
         API.Refresh()
     end)
     Button(focus, "Back", 194, -218, 80, function() SelectPage("Markers") end)
-    Button(focus, "Next Route Step", 14, -246, 260, function()
+    Button(focus, "Next Route Step", 14, -246, 124, function()
         if addon.VignetteRadarWorldFocus then addon.VignetteRadarWorldFocus.Advance() end
         API.Refresh()
     end)
+    Button(focus, "Auto Route...", 150, -246, 124, function() SelectPage("Auto Route") end)
     focus.status = Label(focus, "", 14, -277, 9, 260)
+
+    local autoRoute = CreateFrame("Frame", nil, quick)
+    autoRoute:SetSize(WIDTH, HEIGHT - 137)
+    autoRoute:SetPoint("TOPLEFT", quick, "TOPLEFT", 0, -137)
+    autoRoute.searchPage = "Auto Route"
+    autoRoute:Hide()
+    quick.pages["Auto Route"] = autoRoute
+    Section(autoRoute, "AUTO ROUTE", -3)
+    Check(autoRoute, "vignetteRadarAutoRouteOnSelect", "Start When I Click a Point", 14, -21)
+    Check(autoRoute, "vignetteRadarAutoRouteMapNotes", "Include Current Map Data Pack", 14, -49)
+    Check(autoRoute, "vignetteRadarWorldFocusThemedWaypoint", "Theme WaypointUI's World Marker", 14, -77)
+    Section(autoRoute, "TRAVEL MODE", -111)
+    Choice(autoRoute, "vignetteRadarAutoRouteTravel", "auto", "Auto", 14, -129, 80)
+    Choice(autoRoute, "vignetteRadarAutoRouteTravel", "ground", "Ground", 104, -129, 80)
+    Choice(autoRoute, "vignetteRadarAutoRouteTravel", "flying", "Flying", 194, -129, 80)
+    Label(autoRoute, "Known entrances guide ground routes; Auto detects flight.", 14, -163, 9, 260)
+    Section(autoRoute, "ROUTE CONTROL", -187)
+    Button(autoRoute, "Start / Pause", 14, -205, 124, function()
+        local focusAPI = addon.VignetteRadarWorldFocus
+        if focusAPI then focusAPI.ToggleRoute() end
+        API.Refresh()
+    end)
+    Button(autoRoute, "Skip Stop", 150, -205, 124, function()
+        local focusAPI = addon.VignetteRadarWorldFocus
+        if focusAPI then focusAPI.SkipRouteStop() end
+        API.Refresh()
+    end)
+    Button(autoRoute, "Back to World Focus", 14, -235, 260, function()
+        SelectPage("World Focus")
+    end)
+    autoRoute.status = Label(autoRoute, "", 14, -270, 9, 260)
+    autoRoute.status:SetHeight(18)
+    autoRoute.status:SetWordWrap(true)
 
     local beacons = CreateFrame("Frame", nil, quick)
     beacons:SetSize(WIDTH, HEIGHT - 137)
