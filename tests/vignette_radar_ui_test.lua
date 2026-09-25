@@ -1677,6 +1677,10 @@ panel.settingsDot.scripts.OnClick(panel.settingsDot)
 local quick = assert(addon.VignetteRadarQuickConfig.GetPanel())
 assert(quick:IsShown() and quick.width == 288 and quick.height == 432,
     "the settings dot must open the narrow, self-contained panel")
+assert(quick.tabs.Radar.backdrop == nil
+    and quick.tabs.Radar.face.texture == "Interface\\Buttons\\WHITE8X8"
+    and quick.tabs.Radar.edge.height == 1 and quick.find.width == 44,
+    "settings buttons need quiet flat artwork and an untruncated Find control")
 assert(quick.pages.Status and quick.pages.Search and quick.find,
     "diagnostics and search must be reachable from the compact settings panel")
 quick.find.scripts.OnClick(quick.find)
@@ -2054,8 +2058,11 @@ local firstTrailMark = panel.trailMarks[1]
 local trail = exploration.GetTrail()
 local currentPlayer = addon.VignetteRadarAPI.GetPlayerSnapshot()
 for index = 1, 16 do
-    trail[#trail + 1] = { x = currentPlayer.worldX + (index % 2 == 0 and 180 or -180),
-        y = currentPlayer.worldY, at = now, instanceID = currentPlayer.instanceID }
+    local x = currentPlayer.worldX + (index % 2 == 0 and 180 or -180)
+    local previous = trail[#trail]
+    trail[#trail + 1] = { x = x, y = currentPlayer.worldY, at = now,
+        arc = (previous.arc or 0) + math.abs(x - previous.x),
+        instanceID = currentPlayer.instanceID }
 end
 addon.VignetteRadarAPI.Refresh(false)
 local markCount = #panel.trailMarks
@@ -2070,6 +2077,7 @@ panel.trailToggle.scripts.OnClick(panel.trailToggle, "RightButton")
 local trailPopup = assert(_G.VignetteRadarTrailStylePopup)
 assert(trailPopup:IsShown() and trailPopup.width == 244 and trailPopup.height == 360
     and trailPopup.clamped and settings.vignetteRadarTrailStyle == "dashes"
+    and not trailPopup.rail
     and trailPopup.point[1] == "BOTTOMLEFT" and trailPopup.point[2] == panel
     and trailPopup.point[3] == "BOTTOMRIGHT" and trailPopup.point[4] == 8
     and #trailPopup.rows == 12 and UISpecialFrames[#UISpecialFrames] == trailPopup.name,
@@ -2080,7 +2088,7 @@ assert(trailPopup.rows[4].style == "squares" and trailPopup.rows[5].style == "ho
 local previewRed, previewGreen, previewBlue = addon.VignetteRadarStyle.Color("accent")
 assert(trailPopup.title.textColor[1] == previewRed and trailPopup.title.textColor[2] == previewGreen
     and trailPopup.title.textColor[3] == previewBlue
-    and trailPopup.rows[1].backdropBorderColor[4] > trailPopup.rows[2].backdropBorderColor[4],
+    and trailPopup.rows[1].rail.color[4] > trailPopup.rows[2].rail.color[4],
     "the picker must match the active theme and identify the current style")
 for _, row in ipairs(trailPopup.rows) do
     assert(row.width == 202 and row.height == 24 and row.parent == trailPopup.content
@@ -2090,9 +2098,11 @@ for _, row in ipairs(trailPopup.rows) do
         "every scrollable choice needs a bounded animated example beside its label")
 end
 local previewStart = trailPopup.rows[1].marks[1].startPoint[3]
+local previewBrightness = trailPopup.rows[1].marks[1].color[4]
 trailPopup.scripts.OnUpdate(trailPopup, .06)
-assert(trailPopup.rows[1].marks[1].startPoint[3] ~= previewStart,
-    "open previews must visibly advance along their sample paths")
+assert(trailPopup.rows[1].marks[1].startPoint[3] == previewStart
+    and trailPopup.rows[1].marks[1].color[4] ~= previewBrightness,
+    "open previews must animate brightness without sliding their route marks")
 trailPopup.rows[2].scripts.OnClick(trailPopup.rows[2])
 local stoppedPreview = trailPopup.rows[1].marks[1].startPoint[3]
 trailPopup.scripts.OnUpdate(trailPopup, .2)
@@ -2108,8 +2118,8 @@ assert(settings.vignetteRadarTrailStyle == "ticks" and settings.vignetteRadarBre
     and trailPopup.rows[2].style == "ticks",
     "right-click must switch to crosswise ticks without reallocating the line pool")
 panel.trailToggle.scripts.OnClick(panel.trailToggle, "RightButton")
-assert(trailPopup:IsShown() and trailPopup.rows[2].backdropBorderColor[4] >
-    trailPopup.rows[1].backdropBorderColor[4],
+assert(trailPopup:IsShown() and trailPopup.rows[2].rail.color[4] >
+    trailPopup.rows[1].rail.color[4],
     "reopening the picker must highlight the saved style")
 panel.trailToggle.scripts.OnClick(panel.trailToggle, "RightButton")
 assert(not trailPopup:IsShown(), "a second right-click must close the picker")
@@ -2259,12 +2269,14 @@ GetCursorPosition = previousCursor
 assert(trailPopup.scrollIndex == 7 and trailPopup.scrollThumb.point[5]
     == -(trailPopup.scrollTrack.height - trailPopup.scrollThumb.height),
     "the arrow-free scrollbar must remain draggable")
-local diamondPreview = trailPopup.rows[10].marks[1].startPoint[3]
+local diamondPreviewX = trailPopup.rows[10].marks[1].startPoint[3]
+local diamondPreviewAlpha = trailPopup.rows[10].marks[1].color[4]
 trailPopup.scripts.OnUpdate(trailPopup, .06)
-assert(trailPopup.rows[10].marks[1].startPoint[3] ~= diamondPreview,
+assert(trailPopup.rows[10].marks[1].startPoint[3] == diamondPreviewX
+    and trailPopup.rows[10].marks[1].color[4] ~= diamondPreviewAlpha,
     "scrolled styles must animate their examples (shown=" .. tostring(trailPopup:IsShown())
-        .. ", before=" .. tostring(diamondPreview) .. ", after="
-        .. tostring(trailPopup.rows[10].marks[1].startPoint[3]) .. ")")
+        .. ", before=" .. tostring(diamondPreviewAlpha) .. ", after="
+        .. tostring(trailPopup.rows[10].marks[1].color[4]) .. ")")
 trailPopup.rows[10].scripts.OnClick(trailPopup.rows[10])
 assert(settings.vignetteRadarTrailStyle == "diamonds" and panel.trailExtraMarks[1]:IsShown()
     and #panel.trailMarks <= 64 and panel.trailToggle.trailExtras[1][1]:IsShown(),
@@ -2294,10 +2306,12 @@ assert(firstTrailMark.startPoint[3] == stillStart,
     "Still flow must hold trail marks in place while the player is stationary")
 addon.SetVignetteRadarTrailOption("vignetteRadarTrailSpeed", 1)
 local flowingStart = firstTrailMark.startPoint[3]
+local flowingAlpha = firstTrailMark.color[4]
 now = now + .5
 addon.VignetteRadarAPI.Refresh(false)
-assert(firstTrailMark.startPoint[3] ~= flowingStart,
-    "flow speed must animate the actual radar trail")
+assert(firstTrailMark.startPoint[3] == flowingStart
+    and math.abs(firstTrailMark.color[4] - flowingAlpha) > .001,
+    "Flow should move light across fixed trail marks without sliding their positions")
 addon.SetVignetteRadarTrailStyle("dots")
 panel.trailToggle.scripts.OnClick(panel.trailToggle, "LeftButton")
 assert(not settings.vignetteRadarBreadcrumbs and not panel.trailToggle._selected

@@ -7,7 +7,6 @@ local ACCENT = { 0.05, 0.82, 0.62 }
 local controls = {}
 local POPUP_FACE = "Interface\\AddOns\\VignetteRadar\\Media\\radar-rounded-square.tga"
 local POPUP_EDGE = "Interface\\AddOns\\VignetteRadar\\Media\\radar-rounded-border.tga"
-local BUTTON_FACE = "Interface\\AddOns\\VignetteRadar\\Media\\control-rounded-square.tga"
 
 function Controls.RefreshPopupSurface(frame)
     if not (frame and frame.popupFace) then return end
@@ -45,24 +44,21 @@ function Controls.RefreshTheme()
     end
 end
 
--- Keep ordinary buttons consistent with the radar legend and target picker.
+-- Quiet, flat controls match the unboxed glyphs on the radar. A one-pixel
+-- underline carries selection; wide buttons never stretch a rounded sprite.
 function Controls.Button(parent, title, width, height)
-    local button = CreateFrame("Button", nil, parent, "BackdropTemplate")
+    local button = CreateFrame("Button", nil, parent)
     button:SetSize(width, height)
-    button:SetBackdrop({
-        bgFile = "Interface\\Buttons\\WHITE8X8",
-        edgeFile = "Interface\\Buttons\\WHITE8X8",
-        edgeSize = 1,
-    })
     button.face = button:CreateTexture(nil, "BACKGROUND")
     button.face:SetAllPoints(button)
-    button.face:SetTexture(BUTTON_FACE)
-    button.edge = button:CreateTexture(nil, "BORDER")
-    button.edge:SetAllPoints(button)
-    button.edge:SetTexture(POPUP_EDGE)
+    button.face:SetTexture("Interface\\Buttons\\WHITE8X8")
+    button.edge = button:CreateTexture(nil, "ARTWORK")
+    button.edge:SetHeight(1)
+    button.edge:SetPoint("BOTTOMLEFT", button, "BOTTOMLEFT", 2, 2)
+    button.edge:SetPoint("BOTTOMRIGHT", button, "BOTTOMRIGHT", -2, 2)
+    button.edge:SetTexture("Interface\\Buttons\\WHITE8X8")
     button.label = button:CreateFontString(nil, "OVERLAY")
-    local font = EllesmereUI and (EllesmereUI.EXPRESSWAY or EllesmereUI._font)
-        or STANDARD_TEXT_FONT or "Fonts\\FRIZQT__.TTF"
+    local font = STANDARD_TEXT_FONT or "Fonts\\FRIZQT__.TTF"
     button.label:SetFont(font, width <= 48 and 14 or 10, "")
     button.label:SetSize(width - 10, height - 6)
     button.label:SetJustifyH("CENTER")
@@ -71,8 +67,8 @@ function Controls.Button(parent, title, width, height)
     button:SetText(title)
 
     button.selection = button:CreateTexture(nil, "ARTWORK")
-    button.selection:SetSize(math.max(1, width - 12), 1)
-    button.selection:SetPoint("BOTTOM", 0, 3)
+    button.selection:SetSize(math.max(1, width - 12), 2)
+    button.selection:SetPoint("BOTTOM", 0, 1)
     button.selection:SetColorTexture(ACCENT[1], ACCENT[2], ACCENT[3], 0.8)
     button._enabled = true
 
@@ -83,25 +79,23 @@ function Controls.Button(parent, title, width, height)
         local pressed = enabled and button._pressed
         button:SetAlpha(enabled and 1 or 0.38)
         button.label:ClearAllPoints()
-        button.label:SetPoint("CENTER", 0, pressed and -1 or 0)
+        button.label:SetPoint("CENTER", 0, 0)
         button.selection:SetColorTexture(ACCENT[1], ACCENT[2], ACCENT[3], .8)
         button.selection:SetShown(enabled and selected == true)
         if pressed then
-            button.face:SetVertexColor(ACCENT[1], ACCENT[2], ACCENT[3], .42)
-            button.edge:SetVertexColor(ACCENT[1], ACCENT[2], ACCENT[3], .85)
+            button.face:SetVertexColor(ACCENT[1], ACCENT[2], ACCENT[3], .24)
+            button.edge:SetVertexColor(ACCENT[1], ACCENT[2], ACCENT[3], .75)
             button.label:SetTextColor(0.95, 1, 0.98, 1)
         elseif hovered or selected then
-            button.face:SetVertexColor(ACCENT[1], ACCENT[2], ACCENT[3], hovered and .30 or .22)
-            button.edge:SetVertexColor(ACCENT[1], ACCENT[2], ACCENT[3], hovered and .65 or .42)
+            button.face:SetVertexColor(ACCENT[1], ACCENT[2], ACCENT[3], hovered and .14 or .08)
+            button.edge:SetVertexColor(ACCENT[1], ACCENT[2], ACCENT[3], hovered and .50 or .32)
             button.label:SetTextColor(hovered and 0.86 or ACCENT[1], hovered and 1 or ACCENT[2],
                 hovered and 0.95 or ACCENT[3], 1)
         else
-            button.face:SetVertexColor(.12, .16, .17, .75)
-            button.edge:SetVertexColor(.60, .70, .70, .13)
-            button.label:SetTextColor(0.72, 0.8, 0.79, 1)
+            button.face:SetVertexColor(.13, .17, .19, .24)
+            button.edge:SetVertexColor(.60, .70, .70, .10)
+            button.label:SetTextColor(.76, .83, .82, 1)
         end
-        button:SetBackdropColor(0, 0, 0, 0)
-        button:SetBackdropBorderColor(0, 0, 0, 0)
     end
     button.RefreshAppearance = Refresh
 
@@ -185,24 +179,27 @@ function Controls.IconButton(parent, symbol, width, height)
 end
 
 function Controls.Checkbox(parent)
-    local checkbox = CreateFrame("CheckButton", nil, parent, "BackdropTemplate")
+    local checkbox = CreateFrame("CheckButton", nil, parent)
     checkbox:SetSize(26, 26)
-    checkbox:SetBackdrop({
+    checkbox.visual = CreateFrame("Frame", nil, checkbox, "BackdropTemplate")
+    checkbox.visual:SetSize(17, 17)
+    checkbox.visual:SetPoint("CENTER")
+    checkbox.visual:SetBackdrop({
         bgFile = "Interface\\Buttons\\WHITE8X8",
         edgeFile = "Interface\\Buttons\\WHITE8X8",
         edgeSize = 1,
     })
     checkbox.mark = {}
     local segments = {
-        { -7, 0, -2, -5 },
-        { -2, -5, 8, 6 },
+        { -5, 0, -1, -4 },
+        { -1, -4, 6, 4 },
     }
     for index, segment in ipairs(segments) do
-        local line = checkbox:CreateLine(nil, "OVERLAY")
-        line:SetThickness(3)
-        line:SetColorTexture(0.015, 0.075, 0.06, 1)
-        line:SetStartPoint("CENTER", checkbox, segment[1], segment[2])
-        line:SetEndPoint("CENTER", checkbox, segment[3], segment[4])
+        local line = checkbox.visual:CreateLine(nil, "OVERLAY")
+        line:SetThickness(2)
+        line:SetColorTexture(ACCENT[1], ACCENT[2], ACCENT[3], 1)
+        line:SetStartPoint("CENTER", checkbox.visual, segment[1], segment[2])
+        line:SetEndPoint("CENTER", checkbox.visual, segment[3], segment[4])
         checkbox.mark[index] = line
     end
     function checkbox:RefreshAppearance()
@@ -211,23 +208,25 @@ function Controls.Checkbox(parent)
         local pressed = self._pressed == true
         for _, line in ipairs(self.mark) do line:SetShown(checked and not self.glyph) end
         if self.glyph then
-            local r, g, b = checked and 0.015 or 0.69, checked and 0.075 or 0.77,
-                checked and 0.06 or 0.78
+            local r, g, b = checked and ACCENT[1] or 0.69,
+                checked and ACCENT[2] or 0.77, checked and ACCENT[3] or 0.78
             for _, line in ipairs(self.glyph.lines or {}) do line:SetColorTexture(r, g, b, 1) end
             if self.glyph.label then self.glyph.label:SetTextColor(r, g, b, 1) end
             if self.glyph.pupil then self.glyph.pupil:SetVertexColor(r, g, b, 1) end
         end
         if checked then
-            self:SetBackdropColor(pressed and ACCENT[1] * .55 or ACCENT[1],
-                hovered and math.min(1, ACCENT[2] * 1.08) or ACCENT[2] * .95,
-                hovered and math.min(1, ACCENT[3] * 1.08) or ACCENT[3] * .95, 1)
-            self:SetBackdropBorderColor(math.min(1, ACCENT[1] + .45),
-                math.min(1, ACCENT[2] + .2), math.min(1, ACCENT[3] + .25), 1)
+            self.visual:SetBackdropColor(ACCENT[1] * .18,
+                ACCENT[2] * .18, ACCENT[3] * .18, .94)
+            self.visual:SetBackdropBorderColor(ACCENT[1], ACCENT[2], ACCENT[3],
+                pressed and 1 or hovered and .98 or .82)
         else
-            self:SetBackdropColor(hovered and 0.035 or 0.025, hovered and 0.065 or 0.03,
-                hovered and 0.055 or 0.035, 0.96)
-            self:SetBackdropBorderColor(hovered and ACCENT[1] or 0.55,
-                hovered and ACCENT[2] or 0.62, hovered and ACCENT[3] or 0.62, hovered and 0.75 or 0.65)
+            self.visual:SetBackdropColor(.025, .033, .039, .88)
+            self.visual:SetBackdropBorderColor(hovered and ACCENT[1] or .48,
+                hovered and ACCENT[2] or .55, hovered and ACCENT[3] or .57,
+                hovered and .78 or .48)
+        end
+        for _, line in ipairs(self.mark) do
+            line:SetColorTexture(ACCENT[1], ACCENT[2], ACCENT[3], 1)
         end
         if self.label then
             self.label:SetTextColor(checked and 0.90 or (hovered and 0.95 or 0.82),
@@ -239,9 +238,9 @@ function Controls.Checkbox(parent)
         if self.glyph then return end
         self.glyph = { lines = {} }
         if symbol == "N" then
-            local label = self:CreateFontString(nil, "OVERLAY")
+            local label = self.visual:CreateFontString(nil, "OVERLAY")
             label:SetFont(STANDARD_TEXT_FONT or "Fonts\\FRIZQT__.TTF", 14, "")
-            label:SetAllPoints()
+            label:SetAllPoints(self.visual)
             label:SetJustifyH("CENTER")
             label:SetText("N")
             self.glyph.label = label
@@ -249,13 +248,13 @@ function Controls.Checkbox(parent)
             for _, points in ipairs({
                 { -7, 0, 0, 4 }, { 0, 4, 7, 0 }, { -7, 0, 0, -4 }, { 0, -4, 7, 0 },
             }) do
-                local line = self:CreateLine(nil, "OVERLAY")
+                local line = self.visual:CreateLine(nil, "OVERLAY")
                 line:SetThickness(1.7)
-                line:SetStartPoint("CENTER", self, points[1], points[2])
-                line:SetEndPoint("CENTER", self, points[3], points[4])
+                line:SetStartPoint("CENTER", self.visual, points[1], points[2])
+                line:SetEndPoint("CENTER", self.visual, points[3], points[4])
                 self.glyph.lines[#self.glyph.lines + 1] = line
             end
-            local pupil = self:CreateTexture(nil, "OVERLAY")
+            local pupil = self.visual:CreateTexture(nil, "OVERLAY")
             pupil:SetSize(3, 3)
             pupil:SetPoint("CENTER")
             pupil:SetTexture("Interface\\CharacterFrame\\TempPortraitAlphaMask")

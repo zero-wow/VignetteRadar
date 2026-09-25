@@ -243,22 +243,25 @@ assert(table.concat(questHelp, " "):find("north", 1, true)
     and table.concat(questHelp, " "):find("behind markers", 1, true),
     "quest settings should explain orientation and visual layering")
 local themedCheck = byKey.vignetteRadarAlertSound
-assert(themedCheck.backdrop and #themedCheck.mark == 2 and not themedCheck.mark[1]:IsShown(),
-    "every settings checkbox must use the addon surface and a recognizable empty state")
-local oldBorder = themedCheck.backdropBorderColor[4]
+assert(themedCheck.visual and themedCheck.visual.backdrop
+    and themedCheck.visual.width == 17 and #themedCheck.mark == 2
+    and not themedCheck.mark[1]:IsShown(),
+    "settings checks need a restrained inset box and a recognizable empty state")
+local oldBorder = themedCheck.visual.backdropBorderColor[4]
 themedCheck.scripts.OnEnter(themedCheck)
-local hoveredFill = themedCheck.backdropColor[2]
-assert(themedCheck.backdropBorderColor[4] > oldBorder and hoveredFill < 0.1
+local hoveredFill = themedCheck.visual.backdropColor[2]
+assert(themedCheck.visual.backdropBorderColor[4] > oldBorder and hoveredFill < 0.1
     and not themedCheck.mark[1]:IsShown(),
     "hovering must strengthen the outline without looking checked")
 themedCheck:SetChecked(true)
 assert(themedCheck.mark[1]:IsShown() and themedCheck.mark[2]:IsShown()
-    and themedCheck.mark[1].thickness >= 3 and themedCheck.mark[1].color[2] < 0.2
-    and themedCheck.backdropColor[2] - hoveredFill > 0.6
-    and themedCheck.backdropBorderColor[4] == 1,
-    "checked state needs a large dark tick on a strongly contrasting solid fill")
+    and themedCheck.mark[1].thickness == 2
+    and themedCheck.mark[1].color[2] > themedCheck.visual.backdropColor[2] + .4
+    and themedCheck.visual.backdropColor[2] < .25
+    and themedCheck.visual.backdropBorderColor[4] > .9,
+    "checked state needs a bright tick and outline without a solid accent tile")
 themedCheck.scripts.OnLeave(themedCheck)
-assert(themedCheck.backdropColor[2] > 0.7 and themedCheck.mark[1]:IsShown(),
+assert(themedCheck.visual.backdropBorderColor[4] > .8 and themedCheck.mark[1]:IsShown(),
     "checked state must remain unmistakable after hover ends")
 themedCheck:SetChecked(false)
 local rangeReadout

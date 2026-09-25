@@ -123,15 +123,27 @@ function API.UpdateTrail(player, mapID, now)
     if Settings().vignetteRadarBreadcrumbs ~= true or not player then return trail end
     now = Number(now) or Now()
     local lifetime = Settings().vignetteRadarTrailLifetime or 180
-    local interval = lifetime <= 5 and .25 or 2
-    local minDistance = lifetime <= 5 and .5 or 6
+    local interval = lifetime <= 5 and .25 or 1
+    local minDistance = lifetime <= 5 and .5 or 2.5
     while #trail > 0 and now - trail[1].at > lifetime do table.remove(trail, 1) end
     local x, y = Number(player.worldX), Number(player.worldY)
     if not x or not y then return trail end
     local last = trail[#trail]
-    local distance = last and math.sqrt((x-last.x)^2 + (y-last.y)^2) or math.huge
+    if last and last.instanceID and player.instanceID ~= last.instanceID then
+        trail, last, lastTrailAt = {}, nil, 0
+    end
+    if not last then
+        -- The first sample is the path's anchor, not a phantom line from the
+        -- player dot to whichever position happens to be sampled later.
+        trail[1] = { x=x, y=y, at=now, instanceID=player.instanceID, arc=0 }
+        lastTrailAt = now
+        return trail
+    end
+    local distance = math.sqrt((x-last.x)^2 + (y-last.y)^2)
     if now-lastTrailAt >= interval and distance >= minDistance then
-        trail[#trail+1] = { x=x, y=y, at=now, instanceID=player.instanceID }
+        local gap = now-last.at > 12 or distance > 120
+        trail[#trail+1] = { x=x, y=y, at=now, instanceID=player.instanceID,
+            arc=gap and 0 or (last.arc or 0) + distance, breakBefore=gap }
         if #trail > MAX_TRAIL then table.remove(trail, 1) end
         lastTrailAt = now
     end

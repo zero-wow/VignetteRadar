@@ -37,18 +37,21 @@ assert(#E.ObjectiveLines(900) == 1 and E.ObjectiveLines(900)[1] == "Defeat rare:
     "quest tooltips should surface the unfinished objective text")
 
 db.vignetteRadarBreadcrumbs = true
-assert(#E.UpdateTrail(player, 10, 0) == 0)
+assert(#E.UpdateTrail(player, 10, 0) == 1 and E.GetTrail()[1].arc == 0,
+    "the first position must anchor the route before any movement")
 current = 4
 player.worldX = 210
-assert(#E.UpdateTrail(player, 10, current) == 1)
+assert(#E.UpdateTrail(player, 10, current) == 2)
 current = 8
 player.worldX = 220
-assert(#E.UpdateTrail(player, 10, current) == 2)
+assert(#E.UpdateTrail(player, 10, current) == 3)
 assert(#E.UpdateTrail(player, 11, current) == 1, "new map must discard earlier trail points")
 db.vignetteRadarTrailLifetime = 300
 current, player.worldX = 200, 230
 assert(#E.UpdateTrail(player, 11, current) == 2,
     "five-minute fade must retain a point older than the original three-minute limit")
+assert(E.GetTrail()[2].breakBefore and E.GetTrail()[2].arc == 0,
+    "a long pause must start a new route instead of drawing across missing travel")
 db.vignetteRadarTrailLifetime = 60
 current = 201
 assert(#E.UpdateTrail(player, 11, current) == 1,

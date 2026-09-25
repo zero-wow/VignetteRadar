@@ -1793,84 +1793,120 @@ local function RenderExploration(player, range)
             layer:EnableMouse(false)
             panel.trailLayer = layer
         end
-        local trailDotCount = 0
+        panel.trailSamples = panel.trailSamples or {}
+        local samples, trailDotCount = panel.trailSamples, 0
         local definition = TRAIL_STYLE_BY_ID[Settings().vignetteRadarTrailStyle] or TRAIL_STYLES[1]
         local spacing = definition.spacing * (Settings().vignetteRadarTrailSpacing or 1)
+        local spacingYards = spacing * range / math.max(1, panel.plotRadius)
         local sizeScale = Settings().vignetteRadarTrailSize or 1
         local tailFade = Settings().vignetteRadarTrailTailFade or 0
         local fadeSpan = Settings().vignetteRadarTrailFadeSpan or 1
         local limit = definition.segments and #definition.segments > 2 and 48 or 64
         local edge = panel.plotRadius - 7
         local now = Now()
-        local nextDot = (now * (Settings().vignetteRadarTrailSpeed or 1) * 8) % spacing
+        local speed = Settings().vignetteRadarTrailSpeed or 1
         local lifetime = Settings().vignetteRadarTrailLifetime or 180
         local r, g, b = .25, .91, .7
         if addon.VignetteRadarStyle then r, g, b = addon.VignetteRadarStyle.Color("accent") end
         local extraParts = {}
-        local function TrailSegment(x1, y1, x2, y2, alpha, progress)
+        local candidateBudget = 384
+        local function TrailPosition(point)
+            if player.instanceID and point.instanceID
+                and player.instanceID ~= point.instanceID then return nil end
+            local dx, dy = point.x - player.worldX, point.y - player.worldY
+            local distance = math.sqrt(dx * dx + dy * dy)
+            return Project(dx, dy, distance, ViewFacing(player.facing), panel.plotRadius, range)
+        end
+        local function CollectSegment(x1, y1, x2, y2, startArc, endArc, startAt, endAt)
+            if not (x1 and x2 and startArc and endArc) then return end
             local dx, dy = x2 - x1, y2 - y1
             local length = math.sqrt(dx*dx + dy*dy)
-            if length < .01 then return end
-            if length > edge * 4 then nextDot = 0; return end
-            local offset = nextDot
-            local steps = 0
-            while offset <= length and trailDotCount < limit and steps < 128 do
-                steps = steps + 1
-                local x, y = x1 + dx * offset / length, y1 + dy * offset / length
+            local worldLength = startArc - endArc
+            if length < .01 or length > edge * 4 or worldLength <= .01 then return end
+            if (x1 > edge and x2 > edge) or (x1 < -edge and x2 < -edge)
+                or (y1 > edge and y2 > edge) or (y1 < -edge and y2 < -edge) then return end
+            -- These grid positions are measured along the travelled route,
+            -- not from the player or a clock phase. A stationary mark stays
+            -- on the same patch of world as newer samples arrive.
+            local offset = startArc % spacingYards
+            while offset <= worldLength and trailDotCount < limit and candidateBudget > 0 do
+                candidateBudget = candidateBudget - 1
+                local portion = offset / worldLength
+                local x, y = x1 + dx * portion, y1 + dy * portion
                 local radiusSquared = x*x + y*y
                 if radiusSquared >= 49 and radiusSquared <= edge*edge then
                     trailDotCount = trailDotCount + 1
-                    local visibleProgress = math.max(progress + offset / length / #trail,
-                        (trailDotCount - 1) / math.max(1, limit - 1))
-                    local markAlpha = alpha * TrailFadeMultiplier(visibleProgress, tailFade, fadeSpan)
-                    if definition.dot or definition.square then
-                        local dot = panel.trailDots[trailDotCount]
-                        if not dot then
-                            dot = panel.trailLayer:CreateTexture(nil, "BACKGROUND")
-                            panel.trailDots[trailDotCount] = dot
-                        end
-                        local texture = definition.square and SQUARE_TEXTURE or CIRCLE_TEXTURE
-                        if dot._trailTexture ~= texture then
-                            dot:SetTexture(texture)
-                            dot._trailTexture = texture
-                        end
-                        DrawTrailGlyph(definition, dot, nil, panel.field, x, y,
-                            dx / length, dy / length, r, g, b, markAlpha, trailDotCount, sizeScale)
-                    else
-                        local mark = panel.trailMarks[trailDotCount]
-                        if not mark then
-                            mark = panel.trailLayer:CreateLine(nil, "BACKGROUND")
-                            panel.trailMarks[trailDotCount] = mark
-                        end
-                        for part = 2, #definition.segments do
-                            local slot = (trailDotCount - 1) * 3 + part - 1
-                            local extra = panel.trailExtraMarks[slot]
-                            if not extra then
-                                extra = panel.trailLayer:CreateLine(nil, "BACKGROUND")
-                                panel.trailExtraMarks[slot] = extra
-                            end
-                            extraParts[part - 1] = extra
-                        end
-                        DrawTrailGlyph(definition, mark, extraParts, panel.field, x, y,
-                            dx / length, dy / length, r, g, b, markAlpha, trailDotCount, sizeScale)
-                    end
+                    local sample = samples[trailDotCount]
+                    if not sample then sample = {}; samples[trailDotCount] = sample end
+                    sample.x, sample.y = x, y
+                    sample.ux, sample.uy = dx / length, dy / length
+                    sample.arc = startArc - offset
+                    sample.age = math.max(0, now - (startAt + (endAt - startAt) * portion))
                 end
-                offset = offset + spacing
+                offset = offset + spacingYards
             end
-            nextDot = steps >= 128 and 0 or offset - length
         end
-        local priorX, priorY = 0, 0
-        for index = #trail, 1, -1 do
-            if trailDotCount >= limit then break end
-            local point = trail[index]
-            local x, y = Position(point, false)
-            if x and priorX and trailDotCount < limit then
-                local age = math.max(0, now - point.at)
-                local alpha = (.3 + .65 * index / #trail) * math.max(0, 1 - age / lifetime)
-                TrailSegment(priorX, priorY, x, y, alpha, (#trail - index) / #trail)
+        local latest = trail[#trail]
+        local newerX, newerY
+        if latest then newerX, newerY = TrailPosition(latest) end
+        if latest and now - latest.at <= 3 then
+            local dx, dy = player.worldX - latest.x, player.worldY - latest.y
+            local distance = math.sqrt(dx * dx + dy * dy)
+            if distance > .5 and distance <= 120 then
+                CollectSegment(0, 0, newerX, newerY, (latest.arc or 0) + distance,
+                    latest.arc or 0, now, latest.at)
             end
-            priorX, priorY = x, y
-            if not x then nextDot = 0 end
+        end
+        for index = #trail, 2, -1 do
+            if trailDotCount >= limit or candidateBudget <= 0 then break end
+            local newer, older = trail[index], trail[index - 1]
+            local olderX, olderY = TrailPosition(older)
+            if not newer.breakBefore then
+                CollectSegment(newerX, newerY, olderX, olderY, newer.arc, older.arc,
+                    newer.at, older.at)
+            end
+            newerX, newerY = olderX, olderY
+        end
+        local wavePhase = now * speed * 3.2
+        for index = 1, trailDotCount do
+            local sample = samples[index]
+            local progress = (index - 1) / math.max(1, trailDotCount - 1)
+            local remaining = math.max(0, 1 - sample.age / lifetime)
+            local glow = speed == 0 and 1 or .74 + .26
+                * math.cos(sample.arc / spacingYards * .85 - wavePhase)
+            local markAlpha = .95 * math.sqrt(remaining)
+                * TrailFadeMultiplier(progress, tailFade, fadeSpan) * glow
+            if definition.dot or definition.square then
+                local dot = panel.trailDots[index]
+                if not dot then
+                    dot = panel.trailLayer:CreateTexture(nil, "BACKGROUND")
+                    panel.trailDots[index] = dot
+                end
+                local texture = definition.square and SQUARE_TEXTURE or CIRCLE_TEXTURE
+                if dot._trailTexture ~= texture then
+                    dot:SetTexture(texture)
+                    dot._trailTexture = texture
+                end
+                DrawTrailGlyph(definition, dot, nil, panel.field, sample.x, sample.y,
+                    sample.ux, sample.uy, r, g, b, markAlpha, index, sizeScale)
+            else
+                local mark = panel.trailMarks[index]
+                if not mark then
+                    mark = panel.trailLayer:CreateLine(nil, "BACKGROUND")
+                    panel.trailMarks[index] = mark
+                end
+                for part = 2, #definition.segments do
+                    local slot = (index - 1) * 3 + part - 1
+                    local extra = panel.trailExtraMarks[slot]
+                    if not extra then
+                        extra = panel.trailLayer:CreateLine(nil, "BACKGROUND")
+                        panel.trailExtraMarks[slot] = extra
+                    end
+                    extraParts[part - 1] = extra
+                end
+                DrawTrailGlyph(definition, mark, extraParts, panel.field, sample.x, sample.y,
+                    sample.ux, sample.uy, r, g, b, markAlpha, index, sizeScale)
+            end
         end
     end
     for _, pin in ipairs(exploration.GetPins(player.mapID)) do
@@ -2412,7 +2448,6 @@ RefreshTrailPopup = function()
     trailPopup:SetBackdropColor(math.min(.14, br * 2.7), math.min(.14, bg * 2.7),
         math.min(.14, bb * 2.7), .98)
     addon.VignetteRadarControls.RefreshPopupSurface(trailPopup)
-    trailPopup.rail:SetColorTexture(ar, ag, ab, .8)
     trailPopup.title:SetTextColor(ar, ag, ab, 1)
     trailPopup.rule:SetColorTexture(ar, ag, ab, .18)
     trailPopup.close.label:SetTextColor(ar, ag, ab, trailPopup.close._hovered and 1 or .7)
@@ -2421,9 +2456,9 @@ RefreshTrailPopup = function()
     trailPopup.scrollThumb:SetColorTexture(ar, ag, ab, .8)
     for _, row in ipairs(trailPopup.rows) do
         local selected = row.style == Settings().vignetteRadarTrailStyle
-        row:SetBackdropColor(ar, ag, ab, selected and .13 or row._hovered and .07 or .025)
-        row:SetBackdropBorderColor(ar, ag, ab, selected and .48 or row._hovered and .25 or .10)
-        row.rail:SetColorTexture(ar, ag, ab, selected and .9 or 0)
+        row:SetBackdropColor(ar, ag, ab, selected and .07 or row._hovered and .05 or 0)
+        row:SetBackdropBorderColor(ar, ag, ab, 0)
+        row.rail:SetColorTexture(ar, ag, ab, selected and .82 or row._hovered and .28 or .08)
         row.label:SetTextColor(selected and ar or .82, selected and ag or .87,
             selected and ab or .88, 1)
         row.track:SetColorTexture(ar, ag, ab, .12)
@@ -2516,10 +2551,6 @@ local function EnsureTrailPopup()
     trailPopup:EnableMouse(true)
     Surface(trailPopup)
     addon.VignetteRadarControls.PopupSurface(trailPopup)
-    trailPopup.rail = trailPopup:CreateTexture(nil, "OVERLAY")
-    trailPopup.rail:SetPoint("TOPLEFT", 1, -1)
-    trailPopup.rail:SetPoint("BOTTOMLEFT", 1, 1)
-    trailPopup.rail:SetWidth(2)
     trailPopup.title = Text(trailPopup, 10, "TRAIL STYLE & FLOW", true)
     trailPopup.title:SetPoint("TOPLEFT", 11, -9)
     trailPopup.rule = trailPopup:CreateTexture(nil, "ARTWORK")
@@ -2566,9 +2597,9 @@ local function EnsureTrailPopup()
         Surface(row)
         row.style, row.definition = definition.id, definition
         row.rail = row:CreateTexture(nil, "ARTWORK")
-        row.rail:SetPoint("TOPLEFT", 1, -1)
-        row.rail:SetPoint("BOTTOMLEFT", 1, 1)
-        row.rail:SetWidth(2)
+        row.rail:SetPoint("BOTTOMLEFT", row, "BOTTOMLEFT", 8, 1)
+        row.rail:SetPoint("BOTTOMRIGHT", row, "BOTTOMRIGHT", -8, 1)
+        row.rail:SetHeight(1)
         row.label = Text(row, 10, definition.label)
         row.label:SetPoint("LEFT", 11, 0)
         row.label:SetWidth(96)
@@ -2780,20 +2811,21 @@ local function EnsureTrailPopup()
         for rowIndex = self.scrollIndex + 1, self.scrollIndex + 5 do
             local row = self.rows[rowIndex]
             local gap = row.definition.spacing * spacing
-            local offset = phase % gap
-            local cycle = math.floor(phase / gap)
             for index, mark in ipairs(row.marks) do
-                local x = 21 + (index - 1) * gap + offset
+                local x = 21 + (index - 1) * gap
                 if x <= 77 then
                     -- Preview a recent 30-second slice. Mapping the tiny lane
                     -- across the full lifetime made its older marks nearly
                     -- invisible at the default three-minute setting.
                     local age = (77 - x) * 30 / 56
+                    local glow = settings.vignetteRadarTrailSpeed == 0 and 1 or .74 + .26
+                        * math.cos((index - 1) * .85 - phase / gap * .85)
                     local alpha = (.65 + .30 * math.max(0, math.min(1, (x - 21) / 56)))
                         * math.max(0, 1 - age / lifetime)
                         * TrailFadeMultiplier(math.max(0, math.min(1, (77 - x) / 56)), tailFade, fadeSpan)
+                        * glow
                     DrawTrailGlyph(row.definition, mark, row.extraByMark[index], row, x, 0, 1, 0,
-                        r, g, b, alpha, index - cycle, sizeScale)
+                        r, g, b, alpha, index, sizeScale)
                 else
                     mark:Hide()
                     for _, extra in ipairs(row.extraByMark[index] or {}) do extra:Hide() end
