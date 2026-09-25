@@ -622,6 +622,41 @@ assert(routeHover.toolID == "route" and #routeHover.routeRing == 16
     and #routeHover.routeDots == 3 and #routeHover.routeStrokes == 2
     and routeHover.routeUnderline and not routeHover.back,
     "the radar-only route control should share the other hover icons' circular outline")
+do
+    panel.routeToggle.scripts.OnClick(panel.routeToggle, "RightButton")
+    local chooser = assert(_G.VignetteRadarRouteChooserPopup)
+    assert(chooser:IsShown() and chooser.width == 248 and chooser.height == 235
+        and chooser.clamped and chooser.point[2] == panel.routeToggle
+        and chooser.choices.rare and chooser.choices.treasure and chooser.choices.quest
+        and chooser.choices.zygor and chooser.choices.previous and chooser.choices.next
+        and chooser.choices.pause and chooser.choices.skip and chooser.choices.settings
+        and UISpecialFrames[#UISpecialFrames] == chooser.name,
+        "right-click should open an accessible route chooser with every action")
+    for _, button in pairs(chooser.choices) do
+        assert(button.point[4] >= 12 and button.point[4] + button.width <= chooser.width - 12
+            and -button.point[5] + button.height <= chooser.height - 12,
+            "route chooser actions must fit inside the popup with a visible gutter")
+    end
+    local originalPin = addon.VignetteRadarAPI.PinZygorStep
+    local pinned = false
+    addon.VignetteRadarAPI.PinZygorStep = function() pinned = true; return true end
+    chooser.choices.zygor.scripts.OnClick()
+    assert(pinned and not chooser:IsShown(), "the Zygor row must pin directly and dismiss the chooser")
+    addon.VignetteRadarAPI.PinZygorStep = originalPin
+    local focus = addon.VignetteRadarWorldFocus
+    local originalNearest, chosen = focus.StartNearest, nil
+    focus.StartNearest = function(kind) chosen = kind; return true end
+    panel.routeToggle.scripts.OnClick(panel.routeToggle, "RightButton")
+    chooser.choices.quest.scripts.OnClick()
+    assert(chosen == "quest" and not chooser:IsShown(),
+        "the quest choice must start its route without a separate marker click")
+    focus.StartNearest = originalNearest
+    routeHover.scripts.OnClick(routeHover, "RightButton")
+    assert(chooser:IsShown() and chooser.point[2] == routeHover,
+        "the radar-only route icon must anchor the same chooser")
+    routeHover.scripts.OnClick(routeHover, "RightButton")
+    assert(not chooser:IsShown(), "right-clicking the route icon again should close its chooser")
+end
 assert(not panel.zoomIn._enabled and panel.zoomIn.strokes[1].color[4] < .4,
     "the zoom-in icon must visibly dim at the closest range")
 panel.zoomOut.scripts.OnEnter(panel.zoomOut)
@@ -1951,8 +1986,9 @@ assert(panel.routeToggle.strokes[1].color[1] == themedRed
     and panel.routeToggle.strokes[1].color[2] == themedGreen
     and panel.routeToggle.strokes[1].color[3] == themedBlue
     and routeHover.routeStrokes[1].color[1] == themedRed
-    and routeHover.routeRing[1].color[1] == themedRed,
-    "Auto Route artwork in both layouts must follow the active theme")
+    and routeHover.routeRing[1].color[1] == themedRed
+    and _G.VignetteRadarRouteChooserPopup.popupEdge.vertexColor[1] == themedRed,
+    "Auto Route artwork and its chooser must follow the active theme")
 routeHover.scripts.OnLeave(routeHover)
 panel.routeToggle.scripts.OnLeave(panel.routeToggle)
 panel.zoomOut.scripts.OnLeave(panel.zoomOut)
@@ -2780,6 +2816,21 @@ outsideClickEvents.scripts.OnEvent(outsideClickEvents, "GLOBAL_MOUSE_DOWN")
 assert(not quick:IsShown() and not guidePanel:IsShown()
     and outsideClickEvents.eventRegistrationCalls == registrations,
     "a click elsewhere must dismiss popups without registering or unregistering events")
+do
+    panel.routeToggle.scripts.OnClick(panel.routeToggle, "RightButton")
+    local chooser = assert(_G.VignetteRadarRouteChooserPopup)
+    panel.routeToggle.hovered = true
+    outsideClickEvents.scripts.OnEvent(outsideClickEvents, "GLOBAL_MOUSE_DOWN")
+    assert(chooser:IsShown(), "clicking the route opener must leave its toggle action in control")
+    panel.routeToggle.hovered = false
+    chooser.hovered = true
+    outsideClickEvents.scripts.OnEvent(outsideClickEvents, "GLOBAL_MOUSE_DOWN")
+    assert(chooser:IsShown(), "clicks inside the route chooser must keep it open")
+    chooser.hovered = false
+    outsideClickEvents.scripts.OnEvent(outsideClickEvents, "GLOBAL_MOUSE_DOWN")
+    assert(not chooser:IsShown() and outsideClickEvents.eventRegistrationCalls == registrations,
+        "a click outside must dismiss the chooser without adding another event loop")
+end
 
 local profileClock, performanceWarning = 0, nil
 debugprofilestop = function() profileClock = profileClock + 300; return profileClock end

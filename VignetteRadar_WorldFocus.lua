@@ -406,6 +406,27 @@ end
 
 function API.IsRouteActive() return route ~= nil end
 
+function API.StartNearest(kind)
+    if kind ~= "rare" and kind ~= "treasure" and kind ~= "quest" then
+        return false, "Choose a rare, treasure, or quest route"
+    end
+    local nearest
+    for _, candidate in ipairs(candidates) do
+        if RouteKind(candidate) == kind and player and candidate.mapID == player.mapID
+            and (not nearest or candidate.focusDistance < nearest.focusDistance) then
+            nearest = candidate
+        end
+    end
+    if not nearest then return false, "No " .. kind .. " point on this map" end
+    local ok, reason = Select(nearest)
+    if not ok then return false, reason end
+    if not route then
+        ok, reason = API.ToggleRoute()
+        if not ok then return false, reason end
+    end
+    return true, nearest
+end
+
 function API.SkipRouteStop()
     if not (route and active) then return false, "No active route" end
     return AdvanceRoute()

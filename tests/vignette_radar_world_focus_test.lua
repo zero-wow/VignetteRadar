@@ -184,6 +184,27 @@ focus.Sync(123, player, {}, {}, { start, cave, direct })
 assert(waypoint.position.x == .5,
     "flying mode should favor the closer entrance when path length is less costly")
 
+do
+    local rare, chest, quest = Step(320), Step(330), Step(340)
+    rare.key, rare.name, rare.category = "nearest-rare", "Nearby rare", "rare"
+    chest.key, chest.name, chest.kind = "nearest-chest", "Nearby chest", "treasure"
+    quest.questID, quest.name = 77, "Nearby quest"
+    player.worldX = 300
+    focus.Sync(123, player, { rare }, { quest }, { chest })
+    assert(focus.StartNearest("rare") and waypoint.position.x == .32 and focus.IsRouteActive(),
+        "the route chooser should start a rare route without first clicking a marker")
+    assert(focus.StartNearest("treasure") and waypoint.position.x == .33 and focus.IsRouteActive(),
+        "the route chooser should include saved treasure locations")
+    settings.vignetteRadarAutoRouteOnSelect = true
+    assert(focus.StartNearest("quest") and waypoint.position.x == .34 and focus.IsRouteActive(),
+        "the chooser must not pause a route already started by auto-route-on-select")
+    settings.vignetteRadarAutoRouteOnSelect = false
+    focus.Sync(123, player, {}, {}, {})
+    local ok, reason = focus.StartNearest("rare")
+    assert(not ok and reason:find("No rare point", 1, true),
+        "the chooser should explain when a route category has no point here")
+end
+
 ZygorGuidesViewer = { CurrentStep = { num = 5 }, Pointer = {
     current_waypoint = { m = 123, x = .6, y = .4, title = "Find the quest giver" },
 } }

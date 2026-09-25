@@ -59,6 +59,7 @@ local launcherPeekActive = false
 local radarPeekActive, radarPeekPreviousManual, radarPeekPreviousPosition
 local EndLauncherPeek
 local trailPopup, HideTrailPopup, ToggleTrailPopup, RefreshTrailPopup
+local routeMenu = {}
 local preview = false
 local manualPanelState
 local activeTargets = {}
@@ -2121,6 +2122,7 @@ local function ApplyPanelLayout(focused)
     if changed then
         -- Close pop-outs; opening them again chooses the side that fits the resized panel.
         if HideTrailPopup then HideTrailPopup() end
+        if routeMenu.Hide then routeMenu.Hide() end
         local legend, picker = LegendAPI(), TargetPickerAPI()
         if legend and legend.Hide then legend.Hide() end
         if legend and legend.HideQuest then legend.HideQuest() end
@@ -2327,6 +2329,7 @@ ApplyAppearance = function()
         end
         if panel.RefreshCornerTools then panel.RefreshCornerTools() end
         if RefreshTrailPopup then RefreshTrailPopup() end
+        if routeMenu.Refresh then routeMenu.Refresh() end
         if panel.legend and panel.legend.dots then
             for index, slot in ipairs({ "rare", "treasure", "event" }) do
                 panel.legend.dots[index]:SetVertexColor(style.Color(slot))
@@ -2870,6 +2873,7 @@ end
 ToggleTrailPopup = function(anchor, keepConfig)
     local popup = EnsureTrailPopup()
     if popup:IsShown() then HideTrailPopup(); return false end
+    routeMenu.Hide()
     local legend, picker = LegendAPI(), TargetPickerAPI()
     if legend and legend.Hide then legend.Hide() end
     if picker and picker.Hide then picker.Hide() end
@@ -2897,6 +2901,155 @@ end
 
 function addon.ToggleVignetteRadarTrailPicker(anchor)
     return ToggleTrailPopup(anchor, true)
+end
+
+routeMenu.Hide = function()
+    if routeMenu.popup and routeMenu.popup:IsShown() then routeMenu.popup:Hide() end
+end
+
+routeMenu.Refresh = function()
+    if not routeMenu.popup then return end
+    local style, focus = addon.VignetteRadarStyle, addon.VignetteRadarWorldFocus
+    local ar, ag, ab = ACCENT[1], ACCENT[2], ACCENT[3]
+    if style then ar, ag, ab = style.Color("accent") end
+    addon.VignetteRadarControls.RefreshPopupSurface(routeMenu.popup)
+    routeMenu.popup.title:SetTextColor(ar, ag, ab, 1)
+    routeMenu.popup.section:SetTextColor(ar, ag, ab, .88)
+    routeMenu.popup.rule:SetColorTexture(ar, ag, ab, .2)
+    routeMenu.popup.rule2:SetColorTexture(ar, ag, ab, .16)
+    routeMenu.popup.status:SetText(focus and focus.Status() or "Waypoint data unavailable")
+    routeMenu.popup.status:SetTextColor(.7, .79, .8, 1)
+    local routing = focus and focus.IsRouteActive()
+    routeMenu.popup.pause:SetText(routing and "Pause Auto Route" or "Resume Auto Route")
+    routeMenu.popup.skip:SetEnabled(routing == true)
+end
+
+function routeMenu.Position(anchor)
+    if not (routeMenu.popup and anchor) then return end
+    routeMenu.popup:ClearAllPoints()
+    local function Edge(region, method)
+        if not (region and type(region[method]) == "function") then return nil end
+        local ok, value = pcall(region[method], region)
+        return ok and SafeNumber(value) or nil
+    end
+    local width, screenWidth = routeMenu.popup:GetWidth(), UIParent:GetWidth()
+    local left, right, top = Edge(anchor, "GetLeft"), Edge(anchor, "GetRight"), Edge(anchor, "GetTop")
+    local alignTop = top and top >= routeMenu.popup:GetHeight() + 8
+    local from, to = alignTop and "TOPLEFT" or "BOTTOMLEFT",
+        alignTop and "TOPRIGHT" or "BOTTOMRIGHT"
+    if right and screenWidth - right >= width + 16 then
+        routeMenu.popup:SetPoint(from, anchor, to, 8, 0)
+    elseif left and left >= width + 16 then
+        routeMenu.popup:SetPoint(alignTop and "TOPRIGHT" or "BOTTOMRIGHT", anchor,
+            alignTop and "TOPLEFT" or "BOTTOMLEFT", -8, 0)
+    else
+        routeMenu.popup:SetPoint("TOPLEFT", anchor, "BOTTOMLEFT", 0, -8)
+    end
+end
+
+function routeMenu.Ensure()
+    if routeMenu.popup then return routeMenu.popup end
+    routeMenu.popup = CreateFrame("Frame", "VignetteRadarRouteChooserPopup", UIParent, "BackdropTemplate")
+    routeMenu.popup:SetSize(248, 235)
+    routeMenu.popup:SetFrameStrata("DIALOG")
+    routeMenu.popup:SetClampedToScreen(true)
+    routeMenu.popup:EnableMouse(true)
+    Surface(routeMenu.popup)
+    addon.VignetteRadarControls.PopupSurface(routeMenu.popup)
+    routeMenu.popup.title = Text(routeMenu.popup, 10, "ROUTE CHOOSER", true)
+    routeMenu.popup.title:SetPoint("TOPLEFT", 13, -10)
+    routeMenu.popup.close = addon.VignetteRadarControls.Button(routeMenu.popup, "×", 20, 20)
+    routeMenu.popup.close:SetPoint("TOPRIGHT", routeMenu.popup, "TOPRIGHT", -9, -5)
+    routeMenu.popup.close:SetScript("OnClick", routeMenu.Hide)
+    routeMenu.popup.rule = routeMenu.popup:CreateTexture(nil, "ARTWORK")
+    routeMenu.popup.rule:SetPoint("TOPLEFT", 12, -29)
+    routeMenu.popup.rule:SetPoint("TOPRIGHT", -12, -29)
+    routeMenu.popup.rule:SetHeight(1)
+    routeMenu.popup.status = Text(routeMenu.popup, 9, "")
+    routeMenu.popup.status:SetPoint("TOPLEFT", 13, -39)
+    routeMenu.popup.status:SetWidth(222)
+    if routeMenu.popup.status.SetMaxLines then routeMenu.popup.status:SetMaxLines(1) end
+    routeMenu.popup.section = Text(routeMenu.popup, 9, "AUTO ROUTE TO NEAREST", true)
+    routeMenu.popup.section:SetPoint("TOPLEFT", 13, -61)
+    routeMenu.popup.rule2 = routeMenu.popup:CreateTexture(nil, "ARTWORK")
+    routeMenu.popup.rule2:SetPoint("TOPLEFT", 12, -108)
+    routeMenu.popup.rule2:SetPoint("TOPRIGHT", -12, -108)
+    routeMenu.popup.rule2:SetHeight(1)
+    routeMenu.popup.choices = {}
+    local function Choice(key, label, x, y, width, action)
+        local button = addon.VignetteRadarControls.Button(routeMenu.popup, label, width, 22)
+        button:SetPoint("TOPLEFT", routeMenu.popup, "TOPLEFT", x, y)
+        button:SetScript("OnClick", function()
+            routeMenu.Hide()
+            local ok, reason = action()
+            if not ok and reason and UIErrorsFrame and UIErrorsFrame.AddMessage then
+                UIErrorsFrame:AddMessage(reason, 1, .65, .25)
+            end
+            if RefreshRadar then RefreshRadar(false) end
+        end)
+        routeMenu.popup.choices[key] = button
+        return button
+    end
+    for index, kind in ipairs({ "rare", "treasure", "quest" }) do
+        Choice(kind, kind:sub(1, 1):upper() .. kind:sub(2), 13 + (index - 1) * 77,
+            -77, 69, function()
+                local focus = addon.VignetteRadarWorldFocus
+                return focus and focus.StartNearest(kind)
+            end)
+    end
+    Choice("zygor", "Pin Zygor Step", 13, -117, 222, function()
+        local api = addon.VignetteRadarAPI
+        return api and api.PinZygorStep()
+    end)
+    Choice("previous", "Previous Point", 13, -145, 107, function()
+        return addon.VignetteRadarWorldFocus.Cycle(-1)
+    end)
+    Choice("next", "Next Point", 128, -145, 107, function()
+        return addon.VignetteRadarWorldFocus.Cycle(1)
+    end)
+    routeMenu.popup.pause = Choice("pause", "Resume Auto Route", 13, -173, 107, function()
+        local focus = addon.VignetteRadarWorldFocus
+        local wasRouting = focus.IsRouteActive()
+        local ok, reason = focus.ToggleRoute()
+        return wasRouting or ok, wasRouting and nil or reason
+    end)
+    routeMenu.popup.skip = Choice("skip", "Skip Stop", 128, -173, 107, function()
+        return addon.VignetteRadarWorldFocus.SkipRouteStop()
+    end)
+    Choice("settings", "Route Settings", 13, -201, 222, function()
+        local quick = addon.VignetteRadarQuickConfig
+        if quick and quick.OpenPage then quick.OpenPage("Auto Route", CircleOnly() and panel.field or panel) end
+        return true
+    end)
+    routeMenu.popup:SetScript("OnHide", function()
+        if panel and panel.routeToggle then
+            panel.routeToggle._popupOpen = false
+            panel.routeToggle:RefreshAppearance()
+        end
+    end)
+    if type(UISpecialFrames) == "table" then
+        UISpecialFrames[#UISpecialFrames + 1] = "VignetteRadarRouteChooserPopup"
+    end
+    routeMenu.popup:Hide()
+    return routeMenu.popup
+end
+
+routeMenu.Toggle = function(anchor)
+    local popup = routeMenu.Ensure()
+    if popup:IsShown() then routeMenu.Hide(); return false end
+    HideTrailPopup()
+    local legend, picker = LegendAPI(), TargetPickerAPI()
+    if legend and legend.Hide then legend.Hide() end
+    if picker and picker.Hide then picker.Hide() end
+    if addon.VignetteRadarQuickConfig then addon.VignetteRadarQuickConfig.Hide() end
+    routeMenu.Position(anchor)
+    routeMenu.Refresh()
+    popup:Show()
+    if panel and panel.routeToggle then
+        panel.routeToggle._popupOpen = true
+        panel.routeToggle:RefreshAppearance()
+    end
+    return true
 end
 
 local function EmptyExplanation(player, shown, quests, notes, areas, starts)
@@ -3654,6 +3807,7 @@ local function ToggleRadarPanel()
         manualPanelState = false
         preview = false
         if HideTrailPopup then HideTrailPopup() end
+        if routeMenu.Hide then routeMenu.Hide() end
         local legend = LegendAPI()
         if legend and type(legend.Hide) == "function" then pcall(legend.Hide) end
         if legend and type(legend.HideQuest) == "function" then pcall(legend.HideQuest) end
@@ -4135,6 +4289,7 @@ local function EnsurePanel()
     panel.settingsDot.dot:SetVertexColor(ACCENT[1], ACCENT[2], ACCENT[3], 1)
     panel.settingsDot:SetScript("OnClick", function()
         HideTrailPopup()
+        routeMenu.Hide()
         local quick = addon.VignetteRadarQuickConfig
         if not (quick and quick.Toggle) then return end
         local legend, picker = LegendAPI(), TargetPickerAPI()
@@ -4182,6 +4337,7 @@ local function EnsurePanel()
     panel.target.dot:SetVertexColor(ACCENT[1], ACCENT[2], ACCENT[3], 1)
     panel.target:SetScript("OnClick", function(self, button)
         HideTrailPopup()
+        routeMenu.Hide()
         if addon.VignetteRadarQuickConfig then addon.VignetteRadarQuickConfig.Hide() end
         local picker = TargetPickerAPI()
         if not picker then return end
@@ -4246,6 +4402,7 @@ local function EnsurePanel()
             return
         end
         HideTrailPopup()
+        routeMenu.Hide()
         if addon.VignetteRadarQuickConfig then addon.VignetteRadarQuickConfig.Hide() end
         local legend = LegendAPI()
         if not (legend and type(legend.Toggle) == "function") then return end
@@ -4320,6 +4477,7 @@ local function EnsurePanel()
     panel.close:SetScript("OnClick", function()
         if addon.VignetteRadarQuickConfig then addon.VignetteRadarQuickConfig.Hide() end
         if HideTrailPopup then HideTrailPopup() end
+        if routeMenu.Hide then routeMenu.Hide() end
         local legend = LegendAPI()
         if legend and legend.Hide then pcall(legend.Hide) end
         if legend and legend.HideQuest then pcall(legend.HideQuest) end
@@ -4708,6 +4866,7 @@ local function EnsurePanel()
             ToggleTrailPopup(panel._trailPopupAnchor or panel.trailToggle)
         else
             HideTrailPopup()
+            routeMenu.Hide()
             addon.SetVignetteRadarTrailEnabled(Settings().vignetteRadarBreadcrumbs ~= true)
         end
     end)
@@ -4728,10 +4887,11 @@ local function EnsurePanel()
     panel.routeToggle:RegisterForClicks("LeftButtonUp", "RightButtonUp")
     panel.routeToggle:SetScript("OnClick", function(self, button)
         if button == "RightButton" then
-            local quick = addon.VignetteRadarQuickConfig
-            if quick and quick.OpenPage then quick.OpenPage("Auto Route", self) end
+            if GameTooltip then GameTooltip:Hide() end
+            routeMenu.Toggle(panel._routePopupAnchor or self)
             return
         end
+        routeMenu.Hide()
         local focus = addon.VignetteRadarWorldFocus
         if not focus then return end
         local ok, reason = focus.ToggleRoute()
@@ -4748,7 +4908,7 @@ local function EnsurePanel()
         GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
         GameTooltip:SetText(focus and focus.IsRouteActive() and "Pause Auto Route" or "Start Auto Route", 1, 1, 1)
         GameTooltip:AddLine("Click a rare, treasure, or quest first. The route chooses the next stop as you arrive.", .7, .8, .8, true)
-        GameTooltip:AddLine("Right-click for route settings.", .55, .86, .76, true)
+        GameTooltip:AddLine("Right-click to choose a route, pin Zygor, or manage stops.", .55, .86, .76, true)
         GameTooltip:Show()
     end)
     panel.routeToggle:HookScript("OnLeave", function() if GameTooltip then GameTooltip:Hide() end end)
@@ -4934,8 +5094,10 @@ local function EnsurePanel()
             local click = reference and reference:GetScript("OnClick")
             if click then
                 if id == "trail" then panel._trailPopupAnchor = self end
+                if id == "route" then panel._routePopupAnchor = self end
                 click(reference, button)
                 panel._trailPopupAnchor = nil
+                panel._routePopupAnchor = nil
             end
             panel.RefreshCornerTools()
         end)
@@ -4949,7 +5111,7 @@ local function EnsurePanel()
     HoverTool("plus", "Zoom in", panel.zoomIn, "TOPRIGHT", -30, -10)
     HoverTool("north", "North up / facing up", panel.compass, "TOPRIGHT", -10, -30)
     HoverTool("trail", "Trail: left toggle, right style", panel.trailToggle, "BOTTOMLEFT", 10, 10)
-    HoverTool("route", "Auto Route: click to start or pause; right-click settings",
+    HoverTool("route", "Auto Route: click to start or pause; right-click to choose",
         panel.routeToggle, "BOTTOMRIGHT", -10, 30)
     HoverTool("eye", "Stay fully visible", panel.combatToggle, "BOTTOMLEFT", 30, 10)
     HoverTool("help", "Radar status", nil, "BOTTOMLEFT", 10, 30)
@@ -5013,6 +5175,7 @@ local function EnsurePanel()
     end)
     panel:SetScript("OnHide", function()
         HideTrailPopup()
+        routeMenu.Hide()
         ReleaseAllBlips()
         HideQuestDots()
         HideMapNotes()
@@ -5593,6 +5756,7 @@ function addon.SetVignetteRadarCircleOnly(enabled)
     end
     if enabled then
         if HideTrailPopup then HideTrailPopup() end
+        if routeMenu.Hide then routeMenu.Hide() end
         local legend, picker = LegendAPI(), TargetPickerAPI()
         if legend and legend.Hide then legend.Hide() end
         if picker and picker.Hide then picker.Hide() end
@@ -5669,6 +5833,7 @@ end
 addon.VignetteRadarPopupNames = {
     "VignetteRadarTargetPickerPanel", "VignetteRadarLegendPanel",
     "VignetteRadarQuestLegendPanel", "VignetteRadarTrailStylePopup",
+    "VignetteRadarRouteChooserPopup",
     "VignetteRadarQuickConfigPanel", "VignetteRadarExplorePanel",
     "VignetteRadarGuidePanel",
 }
@@ -5696,12 +5861,13 @@ events:SetScript("OnEvent", function(_, event)
         -- first would make its subsequent OnClick reopen the same popup.
         if panel then
             for _, opener in ipairs({ panel.settingsDot, panel.target,
-                panel.legend, panel.trailToggle }) do
+                panel.legend, panel.trailToggle, panel.routeToggle }) do
                 if opener and opener.IsMouseOver and opener:IsMouseOver() then return end
             end
             for _, tool in ipairs(panel.hoverTools or {}) do
                 if (tool.toolID == "config" or tool.toolID == "target"
-                    or tool.toolID == "legend" or tool.toolID == "trail")
+                    or tool.toolID == "legend" or tool.toolID == "trail"
+                    or tool.toolID == "route")
                     and tool.IsMouseOver and tool:IsMouseOver() then return end
             end
         end
