@@ -241,6 +241,14 @@ function addon.GetSettings()
             db[key] = math.max(limits[2], math.min(limits[3], value))
         end
     end
+    local labelOpacity = db.vignetteRadarRangeLabelOpacity
+    if type(labelOpacity) ~= "number" or labelOpacity ~= labelOpacity
+        or labelOpacity == math.huge or labelOpacity == -math.huge then
+        -- Existing characters start with text matching their current rings.
+        db.vignetteRadarRangeLabelOpacity = db.vignetteRadarRingOpacity
+    else
+        db.vignetteRadarRangeLabelOpacity = math.max(0, math.min(16, labelOpacity))
+    end
     return db
 end
 

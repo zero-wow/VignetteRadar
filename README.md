@@ -34,6 +34,8 @@ The short trail-mark icon in the footer is a quick travel-trail switch. Left-cli
 
 The full radar supports 10, 25, 50, 100, 150, 300, 450, 600, 1,200, 2,400, and 4,800-yard radii. Scroll down over it or click the borderless `−` icon to zoom out; scroll up or click `+` to zoom in. The `N` icon toggles north-up and glows when locked. Zoom, compass, focus, legend, and close controls use the same circular hover cue as the eye and settings dot. The range readout is the distance from you to the outer range ring. The launcher stays at 150 yards. Optional **Smart zoom** widens the view while moving quickly and chooses a close range around a focused target. Manual zoom takes control for 30 seconds.
 
+In **Guides**, **Ring visibility** controls the circle lines and **Yard text visibility** controls the two in-radar yard labels. Existing characters start with the label opacity matched to their current rings; either setting can then be changed without affecting the other. The footer range readout stays readable.
+
 Open the **Explore** tab in either settings panel for smart zoom, marker spreading, the travel trail, approach alerts, journal recording, distance, and hunting presets. **Saved presets, pins & journal** opens the management panel for named presets, pins, routes, and history. `/vr explore` remains an optional shortcut to that panel. Its five pages keep optional hunting tools off the radar face:
 
 - **Modes:** Treasure, Rare, Questing, and Exploring presets change the range, layout, and filters together. Save up to eight named presets with your current colors and appearance; click a saved preset to load it or right-click it to delete it.
@@ -88,7 +90,7 @@ Preview samples support focus without changing favorites, ignores, or navigation
 
 ## Development validation
 
-Current development build: `0.1.0-dev.59` (base version `0.1.0`).
+Current development build: `0.1.0-dev.60` (base version `0.1.0`).
 
 Repeating launcher, radar, and idle updates have a session-only CPU guard. A stalled update, or three consecutive slow updates, pauses that repeating work and prints a chat warning. `/reload` retries it.
 

@@ -43,6 +43,22 @@ WaffleHouseDB = nil
 local fresh = {}
 assert(loadfile(sourcePath))("VignetteRadar", fresh)
 local defaults = fresh.GetSettings()
+assert(defaults.vignetteRadarRangeLabelOpacity == defaults.vignetteRadarRingOpacity,
+    "yard labels must start at the same visibility as the range rings")
+defaults.vignetteRadarRingOpacity = 1.25
+defaults.vignetteRadarRangeLabelOpacity = nil
+fresh.GetSettings()
+assert(defaults.vignetteRadarRangeLabelOpacity == 1.25,
+    "existing ring visibility must seed the independent yard-label setting")
+defaults.vignetteRadarRingOpacity = .25
+fresh.GetSettings()
+assert(defaults.vignetteRadarRangeLabelOpacity == 1.25,
+    "later ring changes must leave yard-label visibility alone")
+defaults.vignetteRadarRangeLabelOpacity = 20
+fresh.GetSettings()
+assert(defaults.vignetteRadarRangeLabelOpacity == 16,
+    "yard-label visibility must stay within its supported range")
+defaults.vignetteRadarRingOpacity, defaults.vignetteRadarRangeLabelOpacity = .5, .5
 assert(defaults.vignetteRadarEnabled == true and defaults.vignetteRadarHideWhenEmpty == true
     and defaults.vignetteRadarLauncherVisible == true and defaults.vignetteRadarRange == 450
     and defaults.vignetteRadarWorldMap == true and defaults.vignetteRadarLayout == "classic"

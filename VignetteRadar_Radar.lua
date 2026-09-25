@@ -2297,7 +2297,7 @@ ApplyAppearance = function()
     local db = Settings()
     local key = table.concat({ db.vignetteRadarTheme or "verdant", style.revision or 0,
         db.vignetteRadarRingOpacity or .5, db.vignetteRadarChevronOpacity or .72,
-        db.vignetteRadarHeadingOpacity or .46 }, ":")
+        db.vignetteRadarHeadingOpacity or .46, db.vignetteRadarRangeLabelOpacity or .5 }, ":")
     if key == appearanceKey and panel == appearancePanel and launcher == appearanceLauncher then return end
     appearanceKey, appearancePanel, appearanceLauncher = key, panel, launcher
     local ar, ag, ab = style.Color("accent")
@@ -2325,8 +2325,10 @@ ApplyAppearance = function()
         end
         panel.player:SetVertexColor(ar, ag, ab, 1)
         panel.playerGlow:SetVertexColor(ar, ag, ab, .25)
-        panel.innerLabel:SetTextColor(rr, rg, rb, .55)
-        panel.outerLabel:SetTextColor(rr, rg, rb, .55)
+        panel.innerLabel:SetTextColor(rr, rg, rb,
+            .03 * db.vignetteRadarRangeLabelOpacity)
+        panel.outerLabel:SetTextColor(rr, rg, rb,
+            .04 * db.vignetteRadarRangeLabelOpacity)
         panel.settingsDot.dot:SetVertexColor(ar, ag, ab, 1)
         panel.settingsDot.rim:SetVertexColor(ar, ag, ab, .20)
         panel.settingsDot.inner:SetVertexColor(br, bg, bb, 1)
@@ -4139,8 +4141,8 @@ local function EnsurePanel()
     panel.squareBorder:SetVertexColor(ACCENT[1], ACCENT[2], ACCENT[3], .06)
     panel.squareBorder:Hide()
     panel.rangeRing = AddRing(panel.field, PLOT_RADIUS, 0.045)
-    panel.middleRing = AddRing(panel.field, PLOT_RADIUS * (2 / 3), 0.04)
-    panel.innerRing = AddRing(panel.field, PLOT_RADIUS / 3, 0.03)
+    panel.middleRing = AddRing(panel.field, PLOT_RADIUS * (2 / 3), .04)
+    panel.innerRing = AddRing(panel.field, PLOT_RADIUS / 3, .03)
     panel.sweepLines = {}
     for index = 1, 2 do
         local line = panel.field:CreateLine(nil, "BORDER")
@@ -4151,10 +4153,12 @@ local function EnsurePanel()
     end
 
     panel.innerLabel = Text(panel.field, 8, "150y")
-    panel.innerLabel:SetTextColor(ACCENT[1], ACCENT[2], ACCENT[3], 0.55)
+    panel.innerLabel:SetTextColor(ACCENT[1], ACCENT[2], ACCENT[3],
+        .03 * Settings().vignetteRadarRangeLabelOpacity)
     panel.innerLabel:SetPoint("CENTER", 0, -(PLOT_RADIUS / 3))
     panel.outerLabel = Text(panel.field, 8, "300y")
-    panel.outerLabel:SetTextColor(ACCENT[1], ACCENT[2], ACCENT[3], 0.55)
+    panel.outerLabel:SetTextColor(ACCENT[1], ACCENT[2], ACCENT[3],
+        .04 * Settings().vignetteRadarRangeLabelOpacity)
     panel.outerLabel:SetPoint("CENTER", 0, -(PLOT_RADIUS * 2 / 3))
 
     panel.cardinals = {}

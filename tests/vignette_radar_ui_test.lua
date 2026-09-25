@@ -1732,7 +1732,8 @@ for _, key in ipairs({ "vignetteRadarEnabled", "vignetteRadarHideWhenEmpty", "vi
     "vignetteRadarNextQuestStep", "vignetteRadarQuestStartBadges",
     "vignetteRadarQuestNumbers", "vignetteRadarDataStatus",
     "vignetteRadarLensEnabled", "vignetteRadarLensCategory",
-    "vignetteRadarRingOpacity", "vignetteRadarChevronOpacity", "vignetteRadarHeadingOpacity",
+    "vignetteRadarRingOpacity", "vignetteRadarRangeLabelOpacity",
+    "vignetteRadarChevronOpacity", "vignetteRadarHeadingOpacity",
     "vignetteRadarChevronDistance", "vignetteRadarHeadingLength", "vignetteRadarFullSweep",
     "vignetteRadarTheme", "vignetteRadarSmartZoom", "vignetteRadarUntangle",
     "vignetteRadarBreadcrumbs", "vignetteRadarTrailStyle", "vignetteRadarApproachAlerts",
@@ -1864,6 +1865,13 @@ assert(math.abs(panel.blipByKey["preview-boss"].dot.vertexColor[1] - .2) < .001
     and math.abs(panel.blipByKey["preview-rare"].dot.vertexColor[1] - .78) < .001,
     "world-boss color must be independently editable from rare color")
 quick.tabs.Guides.scripts.OnClick(quick.tabs.Guides)
+assert(math.abs(panel.innerLabel.textColor[4] - panel.innerRing[1].color[4]) < .001
+    and math.abs(panel.outerLabel.textColor[4] - panel.middleRing[1].color[4]) < .001,
+    "yard labels must initially match the opacity of their rings")
+local guidesSweep = quickControl("Guides", "vignetteRadarFullSweep")
+assert(guidesSweep and -guidesSweep.point[5] + guidesSweep.height
+    <= quick.pages.Guides.height - 12,
+    "the extra yard-label control must leave the Guides page's last toggle inside its gutter")
 local function plusFor(key)
     for _, object in ipairs(objects) do
         if object.parent == quick.pages.Guides and object.optionKey == key and object.text == "+" then
@@ -1873,8 +1881,15 @@ local function plusFor(key)
 end
 plusFor("vignetteRadarRingOpacity").scripts.OnClick()
 assert(settings.vignetteRadarRingOpacity == .75
-    and math.abs(panel.rangeRing[1].color[4] - .045 * .75) < .001,
-    "ring visibility control must change the real ring alpha")
+    and math.abs(panel.rangeRing[1].color[4] - .045 * .75) < .001
+    and math.abs(panel.innerLabel.textColor[4] - .03 * .5) < .001,
+    "ring visibility must change rings without changing yard-label opacity")
+plusFor("vignetteRadarRangeLabelOpacity").scripts.OnClick()
+assert(settings.vignetteRadarRangeLabelOpacity == .75
+    and math.abs(panel.innerLabel.textColor[4] - .03 * .75) < .001
+    and math.abs(panel.outerLabel.textColor[4] - .04 * .75) < .001
+    and math.abs(panel.innerRing[1].color[4] - .03 * .75) < .001,
+    "yard-label visibility must redraw both labels independently of ring settings")
 plusFor("vignetteRadarChevronOpacity").scripts.OnClick()
 plusFor("vignetteRadarHeadingOpacity").scripts.OnClick()
 assert(math.abs(panel.headingChevron[1].color[4] - .8) < .001

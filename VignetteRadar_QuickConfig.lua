@@ -521,15 +521,17 @@ local function Build()
     local percent = function(value) return math.floor(value * 100 + .5) .. "%" end
     Stepper(guides, "vignetteRadarRingOpacity", "Ring visibility", -25,
         { 0, .25, .5, .75, 1, 1.25, 1.5, 1.75, 2 }, percent)
-    Stepper(guides, "vignetteRadarChevronOpacity", "Chevron opacity", -66,
+    Stepper(guides, "vignetteRadarRangeLabelOpacity", "Yard text visibility", -61,
+        { 0, .25, .5, .75, 1, 1.5, 2, 3, 4, 6, 8, 12, 16 }, percent)
+    Stepper(guides, "vignetteRadarChevronOpacity", "Chevron opacity", -97,
         { 0, .1, .2, .3, .4, .5, .6, .72, .8, .9, 1 }, percent)
-    Stepper(guides, "vignetteRadarHeadingOpacity", "Facing line opacity", -107,
+    Stepper(guides, "vignetteRadarHeadingOpacity", "Facing line opacity", -133,
         { 0, .1, .2, .3, .4, .46, .5, .6, .7, .8, .9, 1 }, percent)
-    Stepper(guides, "vignetteRadarChevronDistance", "Chevron gap", -148,
+    Stepper(guides, "vignetteRadarChevronDistance", "Chevron gap", -169,
         { 2, 3, 4, 5, 6, 7, 8, 9 }, function(value) return value .. " px" end)
-    Stepper(guides, "vignetteRadarHeadingLength", "Facing line length", -189,
+    Stepper(guides, "vignetteRadarHeadingLength", "Facing line length", -205,
         { .12, .16, .2, .25, .3, .35, .4, .5, .6, .7, .8 }, percent)
-    Check(guides, "vignetteRadarFullSweep", "Animated sweep on full radar", 14, -231)
+    Check(guides, "vignetteRadarFullSweep", "Animated sweep on full radar", 14, -247)
 
     local themes = quick.pages.Themes
     Section(themes, "COLOR THEMES", -3)
