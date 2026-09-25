@@ -311,15 +311,17 @@ assert(launcher.width == 44 and launcher.height == 44 and launcher.clamped == tr
 assert(launcher.clickButtons[1] == "LeftButtonUp" and launcher.clickButtons[2] == "RightButtonUp"
     and launcher.dragButtons[1] == "LeftButton", "launcher must expose distinct click and drag gestures")
 assert(#launcher.ring == 24 and #launcher.sweepLines == 2
-    and launcher.bezel.texture:find("vignette%-radar%-bezel%.tga$")
-    and launcher.closed.texture:find("vignette%-radar%-closed%.tga$"),
-    "launcher needs matching jeweled closed and hollow live states")
+    and launcher.face.texture:find("radar%-rounded%-square%.tga$")
+    and launcher.bezel.texture:find("radar%-rounded%-border%.tga$")
+    and launcher.closed.texture:find("radar%-rounded%-border%.tga$")
+    and launcher.horizontal == nil and launcher.vertical == nil,
+    "launcher needs the radar's rounded surface and uncluttered live ring")
 assert(launcher.rangeLabel.text == "BOSS" and #launcher.miniBlips == 5 and launcher.miniBlips[1]:IsShown(),
     "launcher preview must mirror category markers with a plain boss cue")
-launcher.scripts.OnUpdate(launcher, 0.05)
-assert(launcher.bezel.alpha >= 0.93 and launcher.bezel.alpha <= 0.95
+launcher.scripts.OnUpdate(launcher, 0.10)
+assert(launcher.bezel.alpha >= 0.5 and launcher.bezel.alpha <= 0.8
     and launcher.shadow == nil and launcher.halo == nil and launcher.alert == nil,
-    "detection feedback must stay on the centered bezel without offset circular shadow or alert layers")
+    "detection feedback must stay on the rounded border without offset shadow or alert layers")
 
 panel.legend.scripts.OnClick(panel.legend)
 local legendPanel = assert(_G.VignetteRadarLegendPanel, "radar header must open its attached legend")
@@ -348,7 +350,11 @@ assert(addon.VignetteRadarTargetPicker.GetFocus() == nil,
     "right-clicking the reticle must restore all category-filtered vignettes")
 SlashCmdList.VIGNETTERADAR("off")
 assert(launcher.closed:IsShown() and not launcher.bezel:IsShown() and not launcher.miniBlips[1]:IsShown(),
-    "disabled tracking must close the live center into its filled jeweled state")
+    "disabled tracking must dim the rounded outline and hide live markers")
+local idleSweepAngle = launcher._sweepAngle
+for _ = 1, 6 do launcher.scripts.OnUpdate(launcher, 0.05) end
+assert(launcher._sweepAngle == idleSweepAngle and not launcher.sweepLines[1]:IsShown(),
+    "the launcher must stop sweeping when tracking is off and no interaction needs animation")
 
 -- Exercise the complete feature path with deterministic live vignette data.
 local now, combat, instance, shift, alt = 100, false, false, false, false
@@ -1981,10 +1987,26 @@ end
 -- Explicit close and disable still take priority over automatic visibility.
 panel.close.scripts.OnClick(panel.close)
 addon.VignetteRadarAPI.Refresh(true)
-assert(not panel:IsShown() and settings.vignetteRadarEnabled,
-    "closing the panel must win over stay visible during later scans")
+local morph = assert(_G.VignetteRadarMorphShell, "minimizing must animate into the mini radar")
+assert(panel:IsShown() and morph:IsShown() and not launcher:IsShown() and settings.vignetteRadarEnabled,
+    "the radar must remain live while its surface shrinks into the launcher")
+morph.scripts.OnUpdate(morph, .09)
+assert(morph.width > 44 and morph.width < morph.from[3] and morph.alpha > 0
+    and morph.alpha < 1 and panel:GetAlpha() > 0 and panel:GetAlpha() < 1,
+    "the compacting surface must animate its size and crossfade with the live radar")
+morph.scripts.OnUpdate(morph, .11)
+assert(not panel:IsShown() and not morph:IsShown() and morph.scripts.OnUpdate == nil and launcher:IsShown(),
+    "a completed minimize must leave only the live mini radar visible")
 launcher.scripts.OnClick(launcher, "LeftButton")
 assert(panel:IsShown(), "the launcher must reopen a manually closed radar")
+assert(morph:IsShown() and not launcher:IsShown() and panel:GetAlpha() == 0,
+    "opening the compact radar must grow its surface into the full panel")
+morph.scripts.OnUpdate(morph, .09)
+assert(morph.width > 44 and morph.width < morph.to[3] and panel:GetAlpha() > 0
+    and panel:GetAlpha() < 1, "expansion must reveal the full radar as the compact surface grows")
+morph.scripts.OnUpdate(morph, .11)
+assert(not morph:IsShown() and panel:GetAlpha() > 0 and not launcher:IsShown(),
+    "the expanded panel must replace the compact launcher after the transition")
 addon.SetVignetteRadarEnabled(false)
 addon.VignetteRadarAPI.Refresh(true)
 assert(not panel:IsShown(), "disabled tracking must keep the panel closed even with stay visible enabled")

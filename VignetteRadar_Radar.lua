@@ -48,13 +48,12 @@ local QUEST_COLORS = {
 }
 addon.VignetteRadarQuestColors = QUEST_COLORS
 local SKULL_TEXTURE = "Interface\\TargetingFrame\\UI-TargetingFrame-Skull"
-local LAUNCHER_BEZEL = "Interface\\AddOns\\VignetteRadar\\Media\\vignette-radar-bezel.tga"
-local LAUNCHER_CLOSED = "Interface\\AddOns\\VignetteRadar\\Media\\vignette-radar-closed.tga"
 local TWO_PI = math.pi * 2
 local atan2 = math.atan2 or function(y, x) return math.atan(y, x) end
 local Unpack = unpack or table.unpack
 
 local panel, launcher
+local Morph = { running = false }
 local launcherPeekActive = false
 local radarPeekActive, radarPeekPreviousManual, radarPeekPreviousPosition
 local EndLauncherPeek
@@ -2351,6 +2350,8 @@ ApplyAppearance = function()
         launcher.centerGlow:SetVertexColor(ar, ag, ab, .22)
         launcher.direction:SetColorTexture(hr, hg, hb, db.vignetteRadarHeadingOpacity)
         for _, line in ipairs(launcher.ring) do line:SetColorTexture(rr, rg, rb, .18) end
+        launcher.bezel:SetVertexColor(ar, ag, ab, 1)
+        launcher.closed:SetVertexColor(rr, rg, rb, 1)
     end
     if addon.VignetteRadarControls and addon.VignetteRadarControls.RefreshTheme then
         addon.VignetteRadarControls.RefreshTheme()
@@ -3108,7 +3109,7 @@ Render = function()
         panel.compass._northUp, panel.compass._selected = northUp, northUp
         panel.compass:RefreshAppearance()
     end
-    panel:SetAlpha(VisuallyQuiet() and 0.35 or 1)
+    panel:SetAlpha((VisuallyQuiet() and 0.35 or 1) * (panel._morphAlpha or 1))
     local sidebarTarget = focusedTarget
     if not sidebarTarget and Settings().vignetteRadarLayout == "squat" then
         if preview then
@@ -3422,6 +3423,7 @@ local function PlaceLauncher(left, top)
     top = math.max(LAUNCHER_SIZE * scale + 4, math.min(top, height - 4))
     launcher:ClearAllPoints()
     launcher:SetPoint("TOPLEFT", UIParent, "TOPLEFT", left / scale, (top - height) / scale)
+    return left, top
 end
 
 local function SaveLauncherPosition()
@@ -3439,15 +3441,156 @@ local function SaveLauncherPosition()
     end
 end
 
+function Morph.LauncherCenter()
+    if not launcher then return nil end
+    local scale = launcher:GetScale()
+    local left, top = SafeNumber(launcher:GetLeft()), SafeNumber(launcher:GetTop())
+    if not (SafeNumber(scale) and left and top) then return nil end
+    return (left + LAUNCHER_SIZE / 2) * scale, (top - LAUNCHER_SIZE / 2) * scale
+end
+
+function Morph.RadarSurface()
+    local left, top = PanelPosition()
+    if not (left and top) then return nil end
+    local scale = panel:GetScale()
+    if not CircleOnly() then
+        local width, height = panel:GetWidth() * scale, panel:GetHeight() * scale
+        return left + width / 2, top - height / 2, width, height
+    end
+    local name = panel.layout or Settings().vignetteRadarLayout or "classic"
+    local layout = LAYOUTS[name] or LAYOUTS.classic
+    local fieldLeft = name == "squat" and 10 or (layout.width - layout.field) / 2
+    local fieldBottom = name == "squat" and 38
+        or (layout.footer or ZOOM_FOOTER_H) + (panel.layoutFocused and (layout.focus or 0) or 0) + 9
+    local size = (layout.field - (panel.squarePlot and 18 or 0)) * scale
+    return left + (fieldLeft + layout.field / 2) * scale,
+        top - (panel:GetHeight() - fieldBottom - layout.field / 2) * scale, size, size
+end
+
+function Morph.MoveLauncherToRadar()
+    if not launcher or not panel then return end
+    local x, y = Morph.RadarSurface()
+    if not (x and y) then return end
+    local half = LAUNCHER_SIZE * launcher:GetScale() / 2
+    local left, top = PlaceLauncher(x - half, y + half)
+    if left and top then
+        Settings().vignetteRadarLauncherPosition = { x = left, y = top - UIParent:GetHeight() }
+    end
+end
+
+function Morph.MoveRadarToLauncher(x, y)
+    if not (panel and x and y) then return end
+    local currentX, currentY = Morph.RadarSurface()
+    local left, top = PanelPosition()
+    if not (currentX and currentY and left and top) then return end
+    PlacePanel(left + x - currentX, top + y - currentY, panel:GetScale())
+    SavePosition()
+end
+
+function Morph.SyncLauncherVisibility()
+    if not launcher then return end
+    local wanted = (Settings().vignetteRadarLauncherVisible ~= false or launcherPeekActive)
+        and (not panel or not panel:IsShown() or launcherPeekActive or launcher._rescueRaised)
+        and not Morph.running
+    if launcher:IsShown() ~= wanted then launcher:SetShown(wanted) end
+end
+
+function Morph.Start(opening, fromX, fromY, fromWidth, fromHeight,
+    toX, toY, toWidth, toHeight)
+    if not (fromX and fromY and fromWidth and fromHeight
+        and toX and toY and toWidth and toHeight) then
+        Morph.running = false
+        if panel then panel._morphAlpha = nil end
+        if not opening and panel then panel:Hide() end
+        Morph.SyncLauncherVisibility()
+        return
+    end
+    if not Morph.shell then
+        Morph.shell = CreateFrame("Frame", "VignetteRadarMorphShell", UIParent)
+        Morph.shell:SetFrameStrata("HIGH")
+        Morph.shell:EnableMouse(false)
+        Morph.shell.face = Morph.shell:CreateTexture(nil, "BACKGROUND")
+        Morph.shell.face:SetAllPoints()
+        Morph.shell.face:SetTexture(ROUNDED_SQUARE_TEXTURE)
+        Morph.shell.border = Morph.shell:CreateTexture(nil, "OVERLAY")
+        Morph.shell.border:SetAllPoints()
+        Morph.shell.border:SetTexture(ROUNDED_BORDER_TEXTURE)
+    end
+    local morphShell = Morph.shell
+    local style = addon.VignetteRadarStyle
+    if style and style.Color then
+        morphShell.face:SetVertexColor(style.Color("background"))
+        morphShell.border:SetVertexColor(style.Color("accent"))
+    end
+    morphShell.opening = opening
+    morphShell.elapsed = 0
+    morphShell.from = { fromX, fromY, fromWidth, fromHeight }
+    morphShell.to = { toX, toY, toWidth, toHeight }
+    morphShell:SetSize(fromWidth, fromHeight)
+    morphShell:ClearAllPoints()
+    morphShell:SetPoint("CENTER", UIParent, "BOTTOMLEFT", fromX, fromY)
+    morphShell:SetAlpha(1)
+    Morph.running = true
+    if panel then
+        panel._morphAlpha = opening and 0 or 1
+        panel:SetAlpha((VisuallyQuiet() and 0.35 or 1) * panel._morphAlpha)
+    end
+    Morph.SyncLauncherVisibility()
+    morphShell:Show()
+    morphShell:SetScript("OnUpdate", function(self, elapsed)
+        self.elapsed = math.min(0.18, self.elapsed + elapsed)
+        local progress = self.elapsed / 0.18
+        local eased = progress * progress * (3 - 2 * progress)
+        local from, to = self.from, self.to
+        local x = from[1] + (to[1] - from[1]) * eased
+        local y = from[2] + (to[2] - from[2]) * eased
+        self:SetSize(from[3] + (to[3] - from[3]) * eased,
+            from[4] + (to[4] - from[4]) * eased)
+        self:ClearAllPoints()
+        self:SetPoint("CENTER", UIParent, "BOTTOMLEFT", x, y)
+        self:SetAlpha(opening and 1 - eased or eased)
+        if panel then
+            panel._morphAlpha = opening and eased or 1 - eased
+            panel:SetAlpha((VisuallyQuiet() and 0.35 or 1) * panel._morphAlpha)
+        end
+        if progress >= 1 then
+            self:SetScript("OnUpdate", nil)
+            self:Hide()
+            Morph.running = false
+            if panel then
+                panel._morphAlpha = nil
+                panel:SetAlpha(VisuallyQuiet() and 0.35 or 1)
+                if not opening then panel:Hide() end
+            end
+            Morph.SyncLauncherVisibility()
+        end
+    end)
+end
+
+function Morph.Cancel()
+    if not Morph.running then return end
+    if Morph.shell then
+        Morph.shell:SetScript("OnUpdate", nil)
+        Morph.shell:Hide()
+    end
+    Morph.running = false
+    if panel then
+        panel._morphAlpha = nil
+        panel:SetAlpha(VisuallyQuiet() and 0.35 or 1)
+        if Morph.shell and not Morph.shell.opening then panel:Hide() end
+    end
+    Morph.SyncLauncherVisibility()
+end
+
 local function LauncherTooltip(owner)
     if not GameTooltip then return end
     GameTooltip:SetOwner(owner, "ANCHOR_RIGHT")
     GameTooltip:SetText("Vignette Radar", 1, 1, 1)
-    GameTooltip:AddLine("The hollow center mirrors live detections within 150 yards.", 0.55, 0.86, 0.76, true)
+    GameTooltip:AddLine("This mini radar shows live detections within 150 yards.", 0.55, 0.86, 0.76, true)
     if (owner.bosses or 0) > 0 then GameTooltip:AddLine(owner.bosses .. " world boss nearby", 1, 0.18, 0.12) end
     if (owner.rares or 0) > 0 then GameTooltip:AddLine(owner.rares .. " rare enemy nearby", 0.78, 0.88, 1) end
     GameTooltip:AddLine("Silver skull: rare enemy. Larger red skull: world boss.", 0.78, 0.88, 1, true)
-    GameTooltip:AddLine("Left-click to show or tuck away the radar.", 0.65, 0.80, 0.77, true)
+    GameTooltip:AddLine("Left-click to expand this mini radar.", 0.65, 0.80, 0.77, true)
     GameTooltip:AddLine("Right-click to preview its live layout. Drag to move this launcher.", 0.65, 0.80, 0.77, true)
     if (owner.detected or 0) == 0 then
         local reason = EmptyExplanation(PlayerSnapshot(CurrentMapID()), 0, 0, 0, false)
@@ -3464,17 +3607,34 @@ local function PlayLauncherSound()
 end
 
 local function ToggleRadarPanel()
+    Morph.Cancel()
     if panel and panel:IsShown() then
+        local x, y, width, height = Morph.RadarSurface()
+        Morph.MoveLauncherToRadar()
+        local targetX, targetY = x, y
         manualPanelState = false
         preview = false
-        panel:Hide()
+        if HideTrailPopup then HideTrailPopup() end
         local legend = LegendAPI()
         if legend and type(legend.Hide) == "function" then pcall(legend.Hide) end
+        if legend and type(legend.HideQuest) == "function" then pcall(legend.HideQuest) end
+        local picker = TargetPickerAPI()
+        if picker and type(picker.Hide) == "function" then pcall(picker.Hide) end
+        Morph.Start(false, x, y, width, height,
+            targetX, targetY, LAUNCHER_SIZE, LAUNCHER_SIZE)
     else
+        local x, y = Morph.LauncherCenter()
         Settings().vignetteRadarEnabled = true
         manualPanelState = true
         RefreshRadar(true)
+        if panel and panel:IsShown() and x and y then
+            Morph.MoveRadarToLauncher(x, y)
+            local targetX, targetY, width, height = Morph.RadarSurface()
+            Morph.Start(true, x, y, LAUNCHER_SIZE, LAUNCHER_SIZE,
+                targetX, targetY, width, height)
+        end
     end
+    Morph.SyncLauncherVisibility()
     if UpdateLauncher then UpdateLauncher(0, true) end
 end
 
@@ -3497,37 +3657,35 @@ local function UpdateLauncherSweep(frame, elapsed)
     ApplyAppearance()
     frame:SetAlpha(VisuallyQuiet() and 0.35 or 1)
     local active = Settings().vignetteRadarEnabled == true or preview
-    frame._animationTime = (frame._animationTime or 0) + elapsed
+    local now = Now()
+    local alerting = active and pulseUntil > now and not Quiet()
+    local animated = active and ((frame.detected or 0) > 0 or frame._hovered or alerting)
     local speed = frame._hovered and 1.35 or 0.72
-    frame._sweepAngle = ((frame._sweepAngle or 0) + elapsed * speed) % TWO_PI
+    if animated then frame._sweepAngle = ((frame._sweepAngle or 0) + math.min(elapsed, 0.10) * speed) % TWO_PI end
     for index, line in ipairs(frame.sweepLines) do
-        local angle = frame._sweepAngle - ((index - 1) * 0.13)
-        local alpha = active and (0.30 / index) or (0.08 / index)
-        line:SetColorTexture(active and ACCENT[1] or 0.45, active and ACCENT[2] or 0.49,
-            active and ACCENT[3] or 0.50, alpha)
-        line:SetEndPoint("CENTER", frame, math.sin(angle) * LAUNCHER_RADIUS,
-            math.cos(angle) * LAUNCHER_RADIUS)
+        line:SetShown(animated)
+        if animated then
+            local angle = frame._sweepAngle - ((index - 1) * 0.13)
+            line:SetColorTexture(ACCENT[1], ACCENT[2], ACCENT[3], 0.22 / index)
+            line:SetEndPoint("CENTER", frame, math.sin(angle) * 11,
+                math.cos(angle) * 11)
+        end
     end
 
-    local pulse = 0.5 + (0.5 * math.sin(frame._animationTime * 2.0))
     frame.bezel:SetShown(active)
     frame.closed:SetShown(not active)
     local stateTexture = active and frame.bezel or frame.closed
-    local stateAlpha = 0.92
+    local stateAlpha = active and 0.38 or 0.20
     if frame._pressed then
-        stateAlpha = 0.78
+        stateAlpha = 0.28
     elseif frame._hovered then
-        stateAlpha = 1
+        stateAlpha = 0.78
     elseif (frame.detected or 0) > 0 then
-        stateAlpha = 0.93 + (pulse * 0.02)
+        stateAlpha = 0.52
     end
+    if alerting then stateAlpha = 0.68 + 0.25 * math.abs(math.sin(now * 6)) end
     stateTexture:SetAlpha(stateAlpha)
-    stateTexture:SetVertexColor(1, 1, 1, 1)
-    if active and pulseUntil > Now() and not Quiet() then
-        stateTexture:SetVertexColor(0.60 + 0.40 * math.abs(math.sin(Now() * 6)), 1, 0.72, 1)
-    end
-    frame.face:SetVertexColor(frame._pressed and 0.01 or 0.012, frame._pressed and 0.035 or 0.046,
-        frame._pressed and 0.038 or 0.052, 0.98)
+    frame.face:SetAlpha(frame._pressed and 0.82 or 1)
 
     if frame._shock then
         frame._shock = frame._shock + elapsed / 0.24
@@ -3620,20 +3778,11 @@ EnsureLauncher = function()
         UIParent:GetHeight() + (savedY or -170))
 
     launcher.face = launcher:CreateTexture(nil, "BORDER")
-    launcher.face:SetSize(29, 29)
+    launcher.face:SetSize(LAUNCHER_SIZE, LAUNCHER_SIZE)
     launcher.face:SetPoint("CENTER")
-    launcher.face:SetTexture(CIRCLE_TEXTURE)
+    launcher.face:SetTexture(ROUNDED_SQUARE_TEXTURE)
     launcher.face:SetVertexColor(0.012, 0.046, 0.052, 0.98)
-    launcher.ring = CreateLauncherRing(launcher, 9, 0.18)
-
-    launcher.horizontal = launcher:CreateTexture(nil, "ARTWORK")
-    launcher.horizontal:SetSize(25, 1)
-    launcher.horizontal:SetPoint("CENTER")
-    launcher.horizontal:SetColorTexture(ACCENT[1], ACCENT[2], ACCENT[3], 0.12)
-    launcher.vertical = launcher:CreateTexture(nil, "ARTWORK")
-    launcher.vertical:SetSize(1, 25)
-    launcher.vertical:SetPoint("CENTER")
-    launcher.vertical:SetColorTexture(ACCENT[1], ACCENT[2], ACCENT[3], 0.12)
+    launcher.ring = CreateLauncherRing(launcher, 11, 0.18)
 
     launcher.sweepLines = {}
     for index = 1, 2 do
@@ -3674,12 +3823,12 @@ EnsureLauncher = function()
     launcher.rangeLabel:SetTextColor(0.56, 0.78, 0.74, 0.68)
     launcher.bezel = launcher:CreateTexture(nil, "OVERLAY", nil, 3)
     launcher.bezel:SetAllPoints()
-    launcher.bezel:SetTexture(LAUNCHER_BEZEL)
-    launcher.bezel:SetAlpha(0.92)
+    launcher.bezel:SetTexture(ROUNDED_BORDER_TEXTURE)
+    launcher.bezel:SetAlpha(0.38)
     launcher.closed = launcher:CreateTexture(nil, "OVERLAY", nil, 3)
     launcher.closed:SetAllPoints()
-    launcher.closed:SetTexture(LAUNCHER_CLOSED)
-    launcher.closed:SetAlpha(0.92)
+    launcher.closed:SetTexture(ROUNDED_BORDER_TEXTURE)
+    launcher.closed:SetAlpha(0.20)
     launcher.closed:Hide()
     launcher.shock = launcher:CreateTexture(nil, "OVERLAY", nil, 4)
     launcher.shock:SetPoint("CENTER")
@@ -3713,6 +3862,7 @@ EnsureLauncher = function()
             self._rescueRaised = nil
         end
         if self._peekReleased and EndLauncherPeek then EndLauncherPeek() end
+        Morph.SyncLauncherVisibility()
         if C_Timer and C_Timer.After then
             C_Timer.After(0, function() self._suppressClick = false end)
         else
@@ -3736,11 +3886,12 @@ EnsureLauncher = function()
         self._sweepElapsed = (self._sweepElapsed or 0) + elapsed
         self._targetElapsed = (self._targetElapsed or 0) + elapsed
         self._scanElapsed = (self._scanElapsed or 0) + elapsed
-        if self._sweepElapsed >= (1 / 30) then
+        if self._sweepElapsed >= 0.10
+            and (self._hovered or self._shock or (self.detected or 0) > 0 or pulseUntil > Now()) then
             UpdateLauncherSweep(self, self._sweepElapsed)
             self._sweepElapsed = 0
         end
-        if self._targetElapsed >= 0.15 then
+        if self._targetElapsed >= 0.25 then
             self._targetElapsed = 0
             UpdateLauncher(0, true)
         end
@@ -3761,7 +3912,7 @@ EndLauncherPeek = function()
     launcher:SetFrameStrata(launcher._peekStrata or "MEDIUM")
     if launcher._peekLevel ~= nil then launcher:SetFrameLevel(launcher._peekLevel) end
     launcher._peekStrata, launcher._peekLevel, launcher._peekReleased = nil, nil, nil
-    if Settings().vignetteRadarLauncherVisible == false then launcher:Hide() end
+    Morph.SyncLauncherVisibility()
 end
 
 function VignetteRadar_RaiseLauncher(keystate)
@@ -4023,14 +4174,7 @@ local function EnsurePanel()
     panel.close.glow:SetVertexColor(ACCENT[1], ACCENT[2], ACCENT[3], 0)
     panel.close:SetScript("OnClick", function()
         if addon.VignetteRadarQuickConfig then addon.VignetteRadarQuickConfig.Hide() end
-        manualPanelState = false
-        preview = false
-        panel:Hide()
-        local legend = LegendAPI()
-        if legend and type(legend.Hide) == "function" then pcall(legend.Hide) end
-        local picker = TargetPickerAPI()
-        if picker and type(picker.Hide) == "function" then pcall(picker.Hide) end
-        if UpdateLauncher then UpdateLauncher(0, true) end
+        ToggleRadarPanel()
     end)
     panel.close:SetScript("OnEnter", function(self)
         self._hovered = true
@@ -4827,13 +4971,7 @@ RefreshRadar = function(rescan)
     if addon.VignetteRadarQuickConfig and addon.VignetteRadarQuickConfig.Refresh then
         addon.VignetteRadarQuickConfig.Refresh()
     end
-    if settings.vignetteRadarLauncherVisible ~= false then
-        EnsureLauncher():Show()
-    elseif launcherPeekActive then
-        EnsureLauncher():Show()
-    elseif launcher then
-        launcher:Hide()
-    end
+    if settings.vignetteRadarLauncherVisible ~= false or launcherPeekActive then EnsureLauncher() end
     if rescan then ScanVignettes(CurrentMapID()) end
     local hasMapNotes = false
     if #activeMapNotes > 0 and settings.vignetteRadarPOISource ~= "none" then
@@ -4877,12 +5015,17 @@ RefreshRadar = function(rescan)
     local picker = TargetPickerAPI()
     if picker and type(picker.Refresh) == "function" then pcall(picker.Refresh) end
     if settings.vignetteRadarEnabled ~= true and not preview then
-        if panel then panel:Hide() end
+        if panel and panel:IsShown() then Morph.MoveLauncherToRadar(); panel:Hide() end
+        Morph.SyncLauncherVisibility()
         if launcher then UpdateLauncher(0, true) end
         return
     end
     if manualPanelState == false then
-        if panel then panel:Hide() end
+        if panel and panel:IsShown()
+            and not (Morph.running and Morph.shell and not Morph.shell.opening) then
+            Morph.MoveLauncherToRadar()
+            panel:Hide()
+        end
     elseif manualPanelState == true or preview or settings.vignetteRadarKeepVisibleCombat == true
         or settings.vignetteRadarHideWhenEmpty == false
         or hasExploration or #SelectableTargets() > 0 or hasMapNotes or hasQuestStarts
@@ -4895,8 +5038,10 @@ RefreshRadar = function(rescan)
             addon.VignetteRadarQuickConfig.ShowFirstRunGuide(panel.field)
         end
     elseif panel then
+        if panel:IsShown() then Morph.MoveLauncherToRadar() end
         panel:Hide()
     end
+    Morph.SyncLauncherVisibility()
     if launcher then UpdateLauncher(0, true) end
     UpdateTargetButton()
 end
@@ -4997,6 +5142,7 @@ do
 end
 
 function addon.ResetVignetteRadarPositions()
+    Morph.Cancel()
     Settings().vignetteRadarPosition = nil
     Settings().vignetteRadarCirclePosition = nil
     Settings().vignetteRadarLauncherPosition = nil
@@ -5031,6 +5177,7 @@ function addon.SetVignetteRadarRange(range)
 end
 
 function addon.SetVignetteRadarEnabled(enabled)
+    Morph.Cancel()
     Settings().vignetteRadarEnabled = enabled == true
     preview = false
     manualPanelState = nil
