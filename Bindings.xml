@@ -38,6 +38,12 @@
     <Binding name="VIGNETTERADAR_ROUTE_QUEST" category="ADDONS">
         VignetteRadar_StartNearestRoute("quest")
     </Binding>
+    <Binding name="VIGNETTERADAR_QUEST_STEP_PREVIOUS" category="ADDONS">
+        VignetteRadar_NavigateQuestRoute(-1)
+    </Binding>
+    <Binding name="VIGNETTERADAR_QUEST_STEP_NEXT" category="ADDONS">
+        VignetteRadar_NavigateQuestRoute(1)
+    </Binding>
     <Binding name="VIGNETTERADAR_CLEAR_FOCUS" category="ADDONS">
         VignetteRadar_ClearFocus()
     </Binding>

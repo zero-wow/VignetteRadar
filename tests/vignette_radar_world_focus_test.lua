@@ -164,6 +164,16 @@ firstQuestObjective.finished = true
 focus.Sync(123, player, {}, { questA, questNext, questB }, {})
 assert(waypoint.position.x == .5,
     "completing a quest objective should choose the nearest remaining point")
+assert(focus.PreviousQuestStep() and waypoint.position.x == .35,
+    "Previous Quest Step should revisit an earlier point that still exists")
+assert(focus.NextQuestStep() and waypoint.position.x == .5,
+    "Next Quest Step should restore the point reached before stepping backward")
+focus.Sync(123, player, {}, { questNext, questB }, {})
+local previousOk, previousReason = focus.PreviousQuestStep()
+assert(not previousOk and previousReason:find("still available", 1, true)
+    and waypoint.position.x == .5,
+    "Previous Quest Step must leave the pin alone when the old point has disappeared")
+focus.Sync(123, player, {}, { questA, questNext, questB }, {})
 player.worldX = 500
 focus.Sync(123, player, {}, { questA, questNext, questB }, {})
 assert(waypoint.position.x == .5 and focus.GetRoutePoint(),
@@ -187,6 +197,8 @@ assert(waypoint.position.x == .5,
 questActive[11], questTurnedIn[11] = nil, true
 focus.Sync(123, player, {}, { questA, questNext, questB }, {})
 assert(waypoint.position.x == .7, "a completed quest should advance to the next available quest")
+assert(not focus.PreviousQuestStep() and waypoint.position.x == .7,
+    "the back hotkey must not reopen a quest that was already turned in")
 assert(focus.IsQuestRoute() and focus.SkipQuest()
     and not focus.IsRouteActive() and not focus.HasFocus() and waypoint == nil,
     "Skip Quest should move past a stuck quest and clear the final owned pin")
@@ -212,6 +224,17 @@ focus.Sync(123, player, {}, { objectiveFar, objectiveNear, objectiveNext }, {})
 assert(waypoint.position.x == .4,
     "finishing an objective should pick the nearest remaining quest point")
 assert(focus.Clear(), "the objective route should release its waypoint")
+objectiveProgress.finished = false
+focus.Sync(123, player, {}, { objectiveFar, objectiveNear, objectiveNext }, {})
+assert(focus.SelectQuest(33) and focus.ToggleRoute() and waypoint.position.x == .32,
+    "a fresh quest route should begin at its closest point")
+assert(focus.NextQuestStep() and waypoint.position.x == .4,
+    "Next Quest Step should move to another available point without completing the quest")
+assert(focus.PreviousQuestStep() and waypoint.position.x == .32
+    and focus.NextQuestStep() and waypoint.position.x == .4,
+    "manual next, previous, and forward navigation should preserve the route order")
+assert(focus.Clear() and not focus.PreviousQuestStep(),
+    "quest-step hotkeys should not act without an active quest route")
 focus.Sync(123, player, {}, { questA, questNext, questB }, {})
 
 local customWaypoint

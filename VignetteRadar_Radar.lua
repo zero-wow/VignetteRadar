@@ -3150,6 +3150,9 @@ routeMenu.Refresh = function()
         routeMenu.popup.choices[kind]:SetRouteSelected(chosen == kind, state)
     end
     local routing = focus and focus.IsRouteActive()
+    local questRoute = focus and focus.IsQuestRoute and focus.IsQuestRoute()
+    routeMenu.popup.choices.previous:SetText(questRoute and "Previous Step" or "Previous Point")
+    routeMenu.popup.choices.next:SetText(questRoute and "Next Step" or "Next Point")
     routeMenu.popup.pause:SetText(routing and "Pause Auto Route"
         or focus and focus.IsRoutePaused and focus.IsRoutePaused()
             and "Resume Auto Route" or "Start Auto Route")
@@ -3251,10 +3254,14 @@ function routeMenu.Ensure()
         return "page"
     end, true)
     Choice("previous", "Previous Point", 13, -137, 107, function()
-        return addon.VignetteRadarWorldFocus.Cycle(-1)
+        local focus = addon.VignetteRadarWorldFocus
+        if focus.IsQuestRoute() then return focus.PreviousQuestStep() end
+        return focus.Cycle(-1)
     end)
     Choice("next", "Next Point", 128, -137, 107, function()
-        return addon.VignetteRadarWorldFocus.Cycle(1)
+        local focus = addon.VignetteRadarWorldFocus
+        if focus.IsQuestRoute() then return focus.NextQuestStep() end
+        return focus.Cycle(1)
     end)
     routeMenu.popup.pause = Choice("pause", "Resume Auto Route", 13, -165, 107, function()
         local focus = addon.VignetteRadarWorldFocus
@@ -6327,6 +6334,17 @@ function VignetteRadar_StartNearestRoute(kind)
     local focus = addon.VignetteRadarWorldFocus
     if not focus then return addon.VignetteRadarBindingError("World Focus is unavailable") end
     local ok, reason = focus.StartNearest(kind)
+    if not ok then addon.VignetteRadarBindingError(reason) end
+    RefreshRadar(false)
+    return ok
+end
+
+function VignetteRadar_NavigateQuestRoute(direction)
+    local focus = addon.VignetteRadarWorldFocus
+    if not focus then return addon.VignetteRadarBindingError("World Focus is unavailable") end
+    local ok, reason
+    if direction and direction < 0 then ok, reason = focus.PreviousQuestStep()
+    else ok, reason = focus.NextQuestStep() end
     if not ok then addon.VignetteRadarBindingError(reason) end
     RefreshRadar(false)
     return ok

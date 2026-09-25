@@ -749,6 +749,24 @@ do
     assert(chosen == "quest" and not chooser:IsShown(),
         "the quest choice must start its route without a separate marker click")
     focus.StartNearest = originalNearest
+    local originalQuestRoute, originalPreviousStep, originalNextStep =
+        focus.IsQuestRoute, focus.PreviousQuestStep, focus.NextQuestStep
+    local previousCalls, nextCalls = 0, 0
+    focus.IsQuestRoute = function() return true end
+    focus.PreviousQuestStep = function() previousCalls = previousCalls + 1; return true end
+    focus.NextQuestStep = function() nextCalls = nextCalls + 1; return true end
+    panel.routeToggle.scripts.OnClick(panel.routeToggle, "RightButton")
+    assert(chooser.choices.previous.text == "Previous Step"
+        and chooser.choices.next.text == "Next Step",
+        "an active quest route should label the chooser buttons as quest-step navigation")
+    chooser.choices.previous.scripts.OnClick()
+    panel.routeToggle.scripts.OnClick(panel.routeToggle, "RightButton")
+    chooser.choices.next.scripts.OnClick()
+    assert(VignetteRadar_NavigateQuestRoute(-1) and VignetteRadar_NavigateQuestRoute(1)
+        and previousCalls == 2 and nextCalls == 2,
+        "quest-step buttons and global bindings should use the same previous/next actions")
+    focus.IsQuestRoute, focus.PreviousQuestStep, focus.NextQuestStep =
+        originalQuestRoute, originalPreviousStep, originalNextStep
     routeHover.scripts.OnClick(routeHover, "RightButton")
     assert(chooser:IsShown() and chooser.point[2] == routeHover,
         "the radar-only route icon must anchor the same chooser")

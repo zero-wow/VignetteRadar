@@ -123,6 +123,13 @@ local function RouteID(item)
     return kind .. ":" .. tostring(item.key or item.name or "location")
 end
 
+local function QuestRouteItem(quest)
+    return { kind = "quest", questID = quest.questID, name = quest.name,
+        colorSlot = quest.colorSlot,
+        mapID = quest.mapID or player.mapID, mapX = quest.mapX, mapY = quest.mapY,
+        worldX = quest.worldX, worldY = quest.worldY, instanceID = quest.instanceID }
+end
+
 local function Distance(ax, ay, bx, by)
     local dx, dy = ax - bx, ay - by
     return math.sqrt(dx * dx + dy * dy)
@@ -204,6 +211,14 @@ local function MarkVisited(item)
     end
 end
 
+local function RememberQuestStep(stack, item)
+    if not (stack and item and RouteKind(item) == "quest") then return end
+    local id = RouteID(item)
+    if not id or (#stack > 0 and RouteID(stack[#stack]) == id) then return end
+    if #stack >= 64 then table.remove(stack, 1) end
+    stack[#stack + 1] = item
+end
+
 QuestComplete = function(questID)
     if not (questID and C_QuestLog) then return false end
     local function Done(callback)
@@ -222,6 +237,28 @@ QuestComplete = function(questID)
         end
     end
     return Done(C_QuestLog.IsQuestFlaggedCompleted) or Done(C_QuestLog.IsComplete)
+end
+
+local function AvailableQuestStep(saved)
+    if not (saved and player and route and route.kind == "quest"
+        and saved.mapID == player.mapID and not QuestComplete(saved.questID)
+        and not (route.skippedQuests and route.skippedQuests[saved.questID])) then return nil end
+    if C_QuestLog and type(C_QuestLog.IsOnQuest) == "function" then
+        local ok, onQuest = pcall(C_QuestLog.IsOnQuest, saved.questID)
+        if ok and not (issecretvalue and issecretvalue(onQuest)) and onQuest == false then
+            return nil
+        end
+    end
+    for _, quest in ipairs(quests) do
+        if quest.questID == saved.questID then
+            local current = QuestRouteItem(quest)
+            if current.mapID == player.mapID and Valid(current)
+                and (RouteID(current) == RouteID(saved)
+                    or Distance(current.worldX, current.worldY, saved.worldX, saved.worldY) <= 8) then
+                return current
+            end
+        end
+    end
 end
 
 local function QuestProgress(questID)
@@ -287,10 +324,7 @@ local function NextRouteStop()
     end
     if kind == "quest" then
         for _, quest in ipairs(quests) do
-            Consider({ kind = "quest", questID = quest.questID, name = quest.name,
-                colorSlot = quest.colorSlot,
-                mapID = quest.mapID or player.mapID, mapX = quest.mapX, mapY = quest.mapY,
-                worldX = quest.worldX, worldY = quest.worldY, instanceID = quest.instanceID })
+            Consider(QuestRouteItem(quest))
         end
     else
         local live = {}
@@ -379,8 +413,16 @@ local function Activate(item)
     return true
 end
 
+local function RecordQuestAdvance()
+    if not (route and route.kind == "quest" and active) then return end
+    route.previous = route.previous or {}
+    RememberQuestStep(route.previous, active.item)
+    route.forward = {}
+end
+
 local function AdvanceRoute()
     if not (route and active) then return false end
+    RecordQuestAdvance()
     MarkVisited(active.item)
     local nextItem = NextRouteStop()
     if nextItem then
@@ -551,6 +593,60 @@ function API.SkipQuest()
     return advanced or not route, reason or "Quest skipped"
 end
 
+function API.PreviousQuestStep()
+    if not (route and route.kind == "quest" and active) then
+        return false, "Start a quest Auto Route first"
+    end
+    route.previous = route.previous or {}
+    while #route.previous > 0 do
+        local point = AvailableQuestStep(route.previous[#route.previous])
+        if point then
+            local current = not route.waiting and active.item or nil
+            local ok, reason = Activate(point)
+            if not ok then return false, reason end
+            table.remove(route.previous)
+            route.forward = route.forward or {}
+            RememberQuestStep(route.forward, current)
+            route.questID, route.waiting = point.questID, false
+            RouteNote("QUEST ROUTE", "Previous · " .. (point.name or "Quest point"))
+            return true, point
+        end
+        table.remove(route.previous)
+    end
+    return false, "No previous quest point is still available"
+end
+
+function API.NextQuestStep()
+    if not (route and route.kind == "quest" and active) then
+        return false, "Start a quest Auto Route first"
+    end
+    route.forward = route.forward or {}
+    while #route.forward > 0 do
+        local point = AvailableQuestStep(route.forward[#route.forward])
+        if point then
+            local current = not route.waiting and active.item or nil
+            local ok, reason = Activate(point)
+            if not ok then return false, reason end
+            table.remove(route.forward)
+            route.previous = route.previous or {}
+            RememberQuestStep(route.previous, current)
+            route.questID, route.waiting = point.questID, false
+            RouteNote("QUEST ROUTE", "Next · " .. (point.name or "Quest point"))
+            return true, point
+        end
+        table.remove(route.forward)
+    end
+    if route.waiting then
+        local point = NextRouteStop()
+        if not point then return false, "Waiting for the next quest point" end
+        local ok, reason = Activate(point)
+        if ok then route.waiting = false end
+        return ok, reason
+    end
+    local ok, reason = AdvanceRoute()
+    return ok, reason or (not ok and "Waiting for the next quest point")
+end
+
 function API.SelectTarget(target)
     if not target or target.stale or target.sample then return false, "No live target" end
     return Select({ key = target.key, name = target.name, kind = target.category,
@@ -701,6 +797,7 @@ function API.Sync(mapID, snapshot, liveTargets, questPoints, mapNotes)
         local progress, finished = QuestProgress(route.questID)
         if NewlyFinishedObjective(route.finished, finished) then
             route.progress, route.finished = progress, finished
+            RecordQuestAdvance()
             MarkVisited(active.item)
             route.waiting = true
             RouteNote("AUTO ROUTE", "Waiting for the next quest objective")
