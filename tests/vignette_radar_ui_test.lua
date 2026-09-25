@@ -2162,6 +2162,23 @@ for _, control in ipairs(trailPopup.controls) do
             "trail steppers must use bounded, borderless radar glyphs")
     end
 end
+local tailMinus = trailPopup.controls[5].minus
+local originalSetEnabled = tailMinus.SetEnabled
+local enableCalls = 0
+tailMinus.SetEnabled = function(self, enabled)
+    enableCalls = enableCalls + 1
+    assert(enableCalls <= 2, "a stepper hover must not recursively enable the same button")
+    originalSetEnabled(self, enabled)
+    self.scripts.OnEnter(self)
+end
+addon.SetVignetteRadarTrailOption("vignetteRadarTrailTailFade", 0)
+assert(enableCalls == 1 and tailMinus.enabled == false,
+    "the fade-minimum stepper must disable once even when that fires OnEnter")
+addon.SetVignetteRadarTrailOption("vignetteRadarTrailTailFade", .5)
+assert(enableCalls == 2 and tailMinus.enabled == true,
+    "the stepper must re-enable once when the fade setting returns to range")
+tailMinus.SetEnabled = originalSetEnabled
+tailMinus.scripts.OnLeave(tailMinus)
 local previewDots = trailPopup.rows[3]
 local oldGap = previewDots.marks[2].point[4] - previewDots.marks[1].point[4]
 local oldFade = previewDots.marks[1].vertexColor[4]

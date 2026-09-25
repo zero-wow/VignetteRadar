@@ -2494,7 +2494,13 @@ RefreshTrailPopup = function()
                     if candidate == value then nextValue = control.values[slot + button.direction]; break end
                 end
             end
-            button:SetEnabled(nextValue ~= nil)
+            local available = nextValue ~= nil
+            if button._available ~= available then
+                -- SetEnabled can fire OnEnter while the cursor is on a stepper.
+                -- Record the state first so that hover cannot refresh in a loop.
+                button._available = available
+                button:SetEnabled(available)
+            end
             local opacity = not nextValue and .3 or button._hovered and 1 or .78
             button.glow:SetVertexColor(ar, ag, ab, nextValue and button._hovered and .2 or 0)
             for _, stroke in ipairs(button.strokes) do
