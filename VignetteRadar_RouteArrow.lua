@@ -7,6 +7,10 @@ addon.VignetteRadarRouteArrow = API
 local frame
 local atan2 = math.atan2 or function(y, x) return math.atan(y, x) end
 local CIRCLE = "Interface\\CharacterFrame\\TempPortraitAlphaMask"
+local POINTER = "Interface\\AddOns\\VignetteRadar\\Media\\route-crystal-pointer.tga"
+local KIND_TITLE = { quest = "Quest", treasure = "Treasure", rare = "Rare",
+    boss = "World Boss", guide = "Zygor", zygor = "Zygor",
+    exploration = "Map Note", event = "Event" }
 
 local function Number(value)
     if type(issecretvalue) == "function" and issecretvalue(value) then return nil end
@@ -39,7 +43,7 @@ local function SavePosition()
     left, top = Number(frame:GetLeft()), Number(frame:GetTop())
     if left and top then
         Settings().vignetteRadarRouteArrowPosition = {
-            x = left * scale, y = top * scale - UIParent:GetHeight() }
+            x = left * scale, y = top * scale - UIParent:GetHeight(), layout = 2 }
     end
 end
 
@@ -49,71 +53,65 @@ local function SetColor(kind)
     if frame.kind == kind and frame.styleRevision == revision then return end
     frame.kind, frame.styleRevision = kind, revision
     local r, g, b = .05, .82, .62
-    if style and style.Color then r, g, b = style.Color(kind or "accent") end
-    frame.outer:SetVertexColor(r, g, b, .17)
-    frame.rim:SetVertexColor(r, g, b, .62)
-    frame.inner:SetVertexColor(r, g, b, .18)
-    frame.distance:SetTextColor(r, g, b, .95)
-    for _, line in ipairs(frame.arrow) do
-        line:SetColorTexture(r, g, b, 1)
+    local slot = (kind == "guide" or kind == "zygor") and "accent" or kind
+    if style and style.Color then r, g, b = style.Color(slot or "accent") end
+    frame.pointer:SetVertexColor(r, g, b, 1)
+    frame.node.mark:SetVertexColor(r, g, b, 1)
+    frame.node.meta:SetTextColor(r, g, b, .96)
+    local controls = addon.VignetteRadarControls
+    if controls and controls.RefreshRoundedStatusSurface then
+        controls.RefreshRoundedStatusSurface(frame.node)
+        for _, edge in ipairs(frame.node.statusSurface.edge) do
+            edge:SetVertexColor(r, g, b, .54)
+        end
     end
-end
-
-local function PointLine(line, firstX, firstY, lastX, lastY)
-    line:SetStartPoint("CENTER", frame, firstX, firstY + 5)
-    line:SetEndPoint("CENTER", frame, lastX, lastY + 5)
 end
 
 local function DrawBearing(dx, dy, facing)
     local angle = atan2(dy, dx) - facing
-    local forwardX, forwardY = -math.sin(angle), math.cos(angle)
-    local rightX, rightY = -forwardY, forwardX
-    PointLine(frame.arrow[1], -forwardX * 12, -forwardY * 12,
-        forwardX * 6, forwardY * 6)
-    PointLine(frame.arrow[2], -forwardX * 2 + rightX * 9,
-        -forwardY * 2 + rightY * 9, forwardX * 13, forwardY * 13)
-    PointLine(frame.arrow[3], -forwardX * 2 - rightX * 9,
-        -forwardY * 2 - rightY * 9, forwardX * 13, forwardY * 13)
+    if frame.bearing ~= angle then
+        frame.bearing = angle
+        frame.pointer:SetRotation(angle)
+    end
 end
 
 local function Ensure()
     if frame then return frame end
     frame = CreateFrame("Button", "VignetteRadarRouteArrow", UIParent)
-    frame:SetSize(58, 58)
+    frame:SetSize(160, 52)
     frame:SetFrameStrata("HIGH")
     frame:SetClampedToScreen(true)
     frame:SetMovable(true)
     frame:EnableMouse(true)
     frame:RegisterForDrag("LeftButton")
     frame:RegisterForClicks("RightButtonUp")
-    frame.outer = frame:CreateTexture(nil, "BACKGROUND")
-    frame.outer:SetSize(58, 58)
-    frame.outer:SetPoint("CENTER")
-    frame.outer:SetTexture(CIRCLE)
-    frame.rim = frame:CreateTexture(nil, "BORDER")
-    frame.rim:SetSize(52, 52)
-    frame.rim:SetPoint("CENTER")
-    frame.rim:SetTexture(CIRCLE)
-    frame.face = frame:CreateTexture(nil, "ARTWORK")
-    frame.face:SetSize(49, 49)
-    frame.face:SetPoint("CENTER")
-    frame.face:SetTexture(CIRCLE)
-    frame.face:SetVertexColor(.025, .033, .04, .94)
-    frame.inner = frame:CreateTexture(nil, "ARTWORK")
-    frame.inner:SetSize(37, 37)
-    frame.inner:SetPoint("CENTER", 0, 4)
-    frame.inner:SetTexture(CIRCLE)
-    frame.arrow = {}
-    for index = 1, 3 do
-        local line = frame:CreateLine(nil, "OVERLAY")
-        line:SetThickness(index == 1 and 2.2 or 2.5)
-        frame.arrow[index] = line
+    frame.pointer = frame:CreateTexture(nil, "OVERLAY")
+    frame.pointer:SetTexture(POINTER)
+    frame.pointer:SetSize(16, 16)
+    frame.pointer:SetPoint("TOP", frame, "TOP", 0, -2)
+    frame.node = CreateFrame("Frame", nil, frame)
+    frame.node:SetSize(160, 30)
+    frame.node:SetPoint("TOP", frame, "TOP", 0, -22)
+    local controls = addon.VignetteRadarControls
+    if controls and controls.RoundedStatusSurface then
+        controls.RoundedStatusSurface(frame.node)
     end
-    frame.distance = frame:CreateFontString(nil, "OVERLAY")
-    frame.distance:SetFont(STANDARD_TEXT_FONT or "Fonts\\FRIZQT__.TTF", 9, "OUTLINE")
-    frame.distance:SetSize(48, 12)
-    frame.distance:SetPoint("BOTTOM", 0, 4)
-    frame.distance:SetJustifyH("CENTER")
+    frame.node.mark = frame.node:CreateTexture(nil, "ARTWORK")
+    frame.node.mark:SetTexture(CIRCLE)
+    frame.node.mark:SetSize(7, 7)
+    frame.node.mark:SetPoint("LEFT", frame.node, "LEFT", 8, 0)
+    frame.node.name = frame.node:CreateFontString(nil, "OVERLAY")
+    frame.node.name:SetFont(STANDARD_TEXT_FONT or "Fonts\\FRIZQT__.TTF", 10, "OUTLINE")
+    frame.node.name:SetSize(132, 12)
+    frame.node.name:SetPoint("TOPLEFT", frame.node, "TOPLEFT", 21, -3)
+    frame.node.name:SetJustifyH("LEFT")
+    frame.node.name:SetWordWrap(false)
+    frame.node.name:SetTextColor(.91, .94, .95, 1)
+    frame.node.meta = frame.node:CreateFontString(nil, "OVERLAY")
+    frame.node.meta:SetFont(STANDARD_TEXT_FONT or "Fonts\\FRIZQT__.TTF", 9, "OUTLINE")
+    frame.node.meta:SetSize(132, 11)
+    frame.node.meta:SetPoint("BOTTOMLEFT", frame.node, "BOTTOMLEFT", 21, 3)
+    frame.node.meta:SetJustifyH("LEFT")
     frame:SetScript("OnEnter", function(self)
         if not GameTooltip then return end
         GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
@@ -144,6 +142,10 @@ local function Ensure()
     end)
     local position = Settings().vignetteRadarRouteArrowPosition
     if type(position) == "table" and Number(position.x) and Number(position.y) then
+        if position.layout ~= 2 then
+            -- Keep the pointer near its former location as the label widens.
+            position.x, position.y, position.layout = position.x - 51, position.y - 10, 2
+        end
         Place(position.x, position.y)
     else
         frame:SetPoint("CENTER", UIParent, "CENTER", 0, -120)
@@ -162,7 +164,7 @@ function API.Refresh()
         if frame then frame:Hide() end
         return
     end
-    local step, kind = focus.GetRoutePoint()
+    local step, kind, routeName, routeIndex, routeCount = focus.GetRoutePoint()
     if not (step and Number(step.worldX) and Number(step.worldY)) then
         if frame then frame:Hide() end
         return
@@ -185,10 +187,22 @@ function API.Refresh()
     SetColor(kind)
     DrawBearing(dx, dy, player.facing)
     local rounded = math.floor(distance + .5)
-    if frame.lastDistance ~= rounded then
-        frame.lastDistance = rounded
-        frame.distance:SetText(rounded < 10000 and (rounded .. " yd")
-            or (math.floor(rounded / 1000 + .5) .. "k yd"))
+    local name = type(step.name) == "string" and step.name ~= "" and step.name
+        or type(routeName) == "string" and routeName ~= "" and routeName
+        or "Route Stop"
+    if frame.nodeName ~= name then
+        frame.nodeName = name
+        frame.node.name:SetText(name)
+    end
+    local kindTitle = KIND_TITLE[kind] or "Route"
+    local progress = Number(routeIndex) and Number(routeCount) and routeCount > 1
+        and (" " .. routeIndex .. "/" .. routeCount) or ""
+    local yards = rounded < 10000 and (rounded .. " yd")
+        or (math.floor(rounded / 1000 + .5) .. "k yd")
+    local meta = kindTitle .. progress .. "  ·  " .. yards
+    if frame.nodeMeta ~= meta then
+        frame.nodeMeta = meta
+        frame.node.meta:SetText(meta)
     end
     if not frame:IsShown() then frame:Show() end
 end

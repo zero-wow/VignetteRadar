@@ -78,6 +78,7 @@ function methods:UnlockHighlight() self.highlightLocked = false end
 function methods:SetHighlightTexture(texture) self.highlight = setmetatable({ texture = texture }, { __index = methods }) end
 function methods:GetHighlightTexture() return self.highlight end
 function methods:SetTexture(value) self.texture = value end
+function methods:SetRotation(value) self.rotation = value end
 function methods:SetTexCoord(...) self.texCoord = { ... } end
 function methods:SetAtlas(value) self.atlas = value end
 function methods:SetColorTexture(...) self.color = { ... } end
@@ -2408,19 +2409,23 @@ do
     local focus = addon.VignetteRadarWorldFocus
     local originalRoutePoint = focus.GetRoutePoint
     local snapshot = addon.VignetteRadarAPI.GetPlayerSnapshot()
-    local routeStep = { worldX = snapshot.worldX + 300, worldY = snapshot.worldY,
+    local routeStep = { name = "Crystal Cache", worldX = snapshot.worldX + 300, worldY = snapshot.worldY,
         instanceID = snapshot.instanceID }
-    focus.GetRoutePoint = function() return routeStep, "treasure" end
+    focus.GetRoutePoint = function() return routeStep, "treasure", "Treasure Route", 2, 3 end
     settings.vignetteRadarRouteArrow = true
     addon.VignetteRadarAPI.Refresh(false)
     local widget = addon.VignetteRadarRouteArrow.GetFrame()
+    local initialRotation = widget and widget.pointer.rotation
     assert(widget and widget:IsShown() and widget.parent == UIParent
         and widget.movable and widget.clamped and widget.dragButtons[1] == "LeftButton"
-        and widget.arrow[1].endPoint[3] > widget.arrow[1].startPoint[3],
-        "the independent arrow must point to the route stop beyond radar range")
+        and widget.pointer.width == 16 and widget.pointer.height == 16
+        and math.abs(initialRotation + snapshot.facing) < .01
+        and widget.node.name.text == "Crystal Cache"
+        and widget.node.meta.text == "Treasure 2/3  ·  300 yd",
+        "the movable crystal pointer and node readout must show the active route stop")
     routeStep.worldX, routeStep.worldY = snapshot.worldX, snapshot.worldY + 300
     widget.scripts.OnUpdate(widget, .21)
-    assert(widget.arrow[1].endPoint[4] > widget.arrow[1].startPoint[4],
+    assert(math.abs(widget.pointer.rotation - initialRotation - math.pi / 2) < .01,
         "the movable arrow must keep turning without a full radar redraw")
     widget.left, widget.top = 220, 600
     widget.scripts.OnDragStart(widget)

@@ -523,7 +523,8 @@ end
 
 function API.GetRoutePoint()
     if not (route and not route.waiting and active) then return nil end
-    return active.steps[active.index], route.kind
+    return active.steps[active.index], route.kind, active.name,
+        active.index, #active.steps
 end
 
 function API.OwnsGuideWaypoint()

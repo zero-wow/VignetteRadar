@@ -95,9 +95,10 @@ assert(focus.ToggleRoute() and focus.IsRouteActive(), "route button should use t
 local chosenKind, chosenState = focus.GetRouteChoice()
 assert(chosenKind == "rare" and chosenState == "active",
     "the route chooser should identify the active route category")
-local routePoint, routeKind = focus.GetRoutePoint()
-assert(routePoint and routePoint.worldX == 600 and routeKind == "rare",
-    "the route arrow should receive the current stop and route category")
+local routePoint, routeKind, routeName, routeIndex, routeCount = focus.GetRoutePoint()
+assert(routePoint and routePoint.worldX == 600 and routeKind == "rare"
+    and routeName == "First rare" and routeIndex == 1 and routeCount == 1,
+    "the route pointer should receive the current stop and its node readout")
 local pauseOk, pauseReason = focus.ToggleRoute()
 assert(not pauseOk and pauseReason:find("paused", 1, true)
     and focus.IsRoutePaused() and not focus.IsRouteActive()
