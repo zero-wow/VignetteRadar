@@ -45,6 +45,19 @@ assert(loadfile(sourcePath))("VignetteRadar", fresh)
 local defaults = fresh.GetSettings()
 assert(defaults.vignetteRadarRangeLabelOpacity == defaults.vignetteRadarRingOpacity,
     "yard labels must start at the same visibility as the range rings")
+defaults.vignetteRadarQuestAreaColorsReset = nil
+defaults.vignetteRadarQuestAreaColors = true
+fresh.GetSettings()
+assert(defaults.vignetteRadarQuestAreaColors == false
+    and defaults.vignetteRadarQuestAreaColorsReset == true,
+    "the old quest-area color setting must reset to reliable blue once")
+defaults.vignetteRadarQuestAreaColors = true
+fresh.GetSettings()
+assert(defaults.vignetteRadarQuestAreaColors == true,
+    "an explicit later choice to color estimated circles must persist")
+defaults.vignetteRadarQuestAreaColors = false
+assert(defaults.vignetteRadarAutoRouteArrivalRadius == 3,
+    "Auto Route must wait for a three-yard arrival by default")
 assert(defaults.vignetteRadarBeaconsEnabled == false
     and defaults.vignetteRadarBeaconRares == true
     and defaults.vignetteRadarBeaconQuests == true

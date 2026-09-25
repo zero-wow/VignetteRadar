@@ -1365,26 +1365,27 @@ settings.vignetteRadarQuestDots = true
 addon.VignetteRadarAPI.Refresh(false)
 settings.vignetteRadarQuestAreaColors = true
 addon.VignetteRadarAPI.Refresh(false)
-assert(panel.questColorBlobs and #panel.questColorBlobs == 8
-    and #panel.questBlobSources == 2,
-    "colored quest areas must allocate reusable widgets but draw only active colors")
+assert(not panel.questColorBlobs and #panel.questBlobSources == 1
+    and panel.questBlob.fillTexture == "Interface\\WorldMap\\UI-QuestBlob-Inside"
+    and #panel.questBlob.drawnQuests == 2,
+    "exact quest shapes must keep Blizzard's blue mesh even when estimated circles are colored")
+assert(addon.VignetteRadarQuestColors[1][3] > addon.VignetteRadarQuestColors[1][2]
+    and addon.VignetteRadarQuestColors[6][3] > addon.VignetteRadarQuestColors[6][2],
+    "quest colors should not turn estimated circles green")
 for _, dot in ipairs({ questDot, secondQuestDot }) do
-    local source = panel.questColorBlobs[dot.quest.colorSlot]
-    local expectedTexture = ("Interface\\AddOns\\VignetteRadar\\Media\\quest-solid-%02d.tga")
-        :format(dot.quest.colorSlot)
-    assert(source:IsShown() and source.fillTexture == expectedTexture
-        and source.drawnQuests[1] == dot.quest.questID and #source.drawnQuests == 1
-        and dot.halo.fill.vertexColor[1] == dot.fill.vertexColor[1]
+    assert(dot.halo.fill.vertexColor[1] == dot.fill.vertexColor[1]
         and dot.halo.fill.vertexColor[2] == dot.fill.vertexColor[2]
         and dot.halo.fill.vertexColor[3] == dot.fill.vertexColor[3],
-        "each exact shape and estimated circle must match its quest diamond")
+        "only estimated circles should take their quest diamond's color")
 end
 settings.vignetteRadarQuestAreaColors = false
 addon.VignetteRadarAPI.Refresh(false)
 assert(panel.questBlob.fillTexture == "Interface\\WorldMap\\UI-QuestBlob-Inside"
     and #panel.questBlob.drawnQuests == 2
-    and not panel.questColorBlobs[2]:IsShown(),
-    "switching the color option off must restore one shared blue native area")
+    and math.abs(questDot.halo.fill.vertexColor[1] - .34) < .001
+    and math.abs(questDot.halo.fill.vertexColor[2] - .60) < .001
+    and math.abs(questDot.halo.fill.vertexColor[3] - 1) < .001,
+    "switching estimated colors off must restore blue native and estimated areas")
 settings.vignetteRadarQuestColors = false
 addon.VignetteRadarAPI.Refresh(false)
 assert(panel.questBlob.fillTexture == "Interface\\WorldMap\\UI-QuestBlob-Inside"
@@ -1492,8 +1493,8 @@ local blobCount = 0
 for _, object in ipairs(objects) do
     if object.kind == "QuestPOIFrame" then blobCount = blobCount + 1 end
 end
-assert(blobCount == 8 and panel.questBlob.fillTexture == "Interface\\WorldMap\\UI-QuestBlob-Inside",
-    "the optional color widgets must be reused while default-blue mode stays active")
+assert(blobCount == 1 and panel.questBlob.fillTexture == "Interface\\WorldMap\\UI-QuestBlob-Inside",
+    "exact areas should use one blue widget without allocating colored duplicates")
 SlashCmdList.VIGNETTERADAR("preview")
 addon.HandleVignetteClick(panel.blipByKey["preview-rare"].target, "LeftButton")
 for _, name in ipairs({ "classic", "compact", "squat" }) do
@@ -2259,6 +2260,11 @@ for _, control in ipairs(trailPopup.controls) do
             "trail steppers must use bounded, borderless radar glyphs")
     end
 end
+local threeYards = quickControl("Auto Route", "vignetteRadarAutoRouteArrivalRadius", 3)
+assert(threeYards and threeYards.width == 59 and threeYards.point[4] == 14
+    and -quick.pages["Auto Route"].status.point[5]
+        + quick.pages["Auto Route"].status.height <= quick.pages["Auto Route"].height - 10,
+    "the three-yard route setting and status must fit inside the compact panel")
 local tailMinus = trailPopup.controls[5].minus
 local originalSetEnabled = tailMinus.SetEnabled
 local enableCalls = 0

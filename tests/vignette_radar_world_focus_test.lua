@@ -6,6 +6,7 @@ local settings = {
     vignetteRadarWorldFocusSavedNotes = true,
     vignetteRadarWorldFocusZygor = true,
     vignetteRadarWorldFocusArrivalRadius = 20,
+    vignetteRadarAutoRouteArrivalRadius = 3,
     vignetteRadarAutoRouteMapNotes = true,
 }
 addon.GetSettings = function() return settings end
@@ -70,9 +71,13 @@ assert(focus.SelectTarget({ key = rareA.key, name = rareA.name, category = rareA
     mapID = rareA.mapID, mapX = rareA.mapX, mapY = rareA.mapY,
     worldX = rareA.worldX, worldY = rareA.worldY, instanceID = rareA.instanceID }))
 assert(focus.ToggleRoute() and focus.IsRouteActive(), "route button should use the last clicked rare")
-player.worldX = 600
+player.worldX = 596.9
 focus.Sync(123, player, { rareA, rareB }, {}, { rareNote })
-assert(waypoint.position.x == .8, "rare route should pick the next nearby live rare")
+assert(waypoint.position.x == .6,
+    "the current map pin must remain until Auto Route is within 3 yards")
+player.worldX = 597.1
+focus.Sync(123, player, { rareA, rareB }, {}, { rareNote })
+assert(waypoint.position.x == .8, "Auto Route should advance after entering 3 yards")
 player.worldX = 800
 focus.Sync(123, player, { rareA, rareB }, {}, { rareNote })
 assert(waypoint.position.x == .9, "rare route should continue into the selected map pack")
@@ -113,22 +118,27 @@ end } }
 settings.vignetteRadarWorldFocusThemedWaypoint = true
 settings.vignetteRadarQuestColors = true
 addon.VignetteRadarQuestColors = { { .2, .3, .4 }, { .3, .4, .5 }, { .4, .5, .6 } }
+addon.VignetteRadarStyle = { Color = function(slot)
+    if slot == "rare" then return .9, .2, .1 end
+    if slot == "treasure" then return .8, .6, .1 end
+    return .5, .8, .7
+end }
 questB.colorSlot = 3
 assert(focus.SelectQuest(22) and customWaypoint
-    and customWaypoint.iconTexture:find("quest%-diamond%-hollow")
+    and customWaypoint.iconTexture == nil
     and customWaypoint.r == .4 and customWaypoint.g == .5 and customWaypoint.b == .6
     and customWaypoint.x == 70 and customWaypoint.y == 50,
-    "WaypointUI should receive the same per-quest diamond color as the radar legend")
+    "WaypointUI should receive quest color and its own unobstructed icon")
 assert(focus.SelectTarget({ key = rareA.key, name = rareA.name, category = rareA.kind,
     mapID = rareA.mapID, mapX = rareA.mapX, mapY = rareA.mapY,
     worldX = rareA.worldX, worldY = rareA.worldY, instanceID = rareA.instanceID })
-    and customWaypoint.iconTexture:find("beacon%-rare"),
-    "rare waypoints should use a distinct radar reticle")
-assert(focus.SelectNote(treasure) and customWaypoint.iconTexture:find("beacon%-rare"),
-    "known treasure entrance steps should have a clear approach icon")
-assert(focus.Advance() and focus.Advance() and customWaypoint.iconType == "ATLAS"
-    and customWaypoint.iconTexture == "VignetteLoot",
-    "the final treasure stop should switch to a recognizable loot icon")
+    and customWaypoint.iconTexture == nil and customWaypoint.r == .9,
+    "rare waypoints should use their theme color without drawing over the nameplate")
+assert(focus.SelectNote(treasure) and customWaypoint.iconTexture == nil
+    and customWaypoint.r == .8 and customWaypoint.g == .6,
+    "treasure approach waypoints should preserve color and WaypointUI layout")
+assert(focus.Advance() and focus.Advance() and customWaypoint.iconTexture == nil,
+    "the final treasure stop should retain WaypointUI's legible native icon")
 settings.vignetteRadarAutoRouteOnSelect = true
 assert(focus.SelectTarget({ key = rareA.key, name = rareA.name, category = rareA.kind,
     mapID = rareA.mapID, mapX = rareA.mapX, mapY = rareA.mapY,

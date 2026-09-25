@@ -42,9 +42,9 @@ local ROUNDED_CONTROL_TEXTURE = "Interface\\AddOns\\VignetteRadar\\Media\\contro
 local QUEST_CLIP_INSET = 4
 local QUEST_AREA_BLUE = { .34, .60, 1 }
 local QUEST_COLORS = {
-    { 94/255, 219/255, 199/255 }, { 255/255, 179/255, 87/255 },
+    { 87/255, 153/255, 255/255 }, { 255/255, 179/255, 87/255 },
     { 181/255, 150/255, 255/255 }, { 255/255, 120/255, 133/255 },
-    { 110/255, 199/255, 255/255 }, { 186/255, 219/255, 94/255 },
+    { 110/255, 199/255, 255/255 }, { 126/255, 129/255, 255/255 },
     { 245/255, 153/255, 212/255 }, { 255/255, 145/255, 82/255 },
 }
 addon.VignetteRadarQuestColors = QUEST_COLORS
@@ -1467,62 +1467,25 @@ local function HideQuestAreas()
         panel.questBlob:Hide()
         panel.questBlob.drawnKey = nil
         panel.questBlob.nextDrawAt = nil
-        if panel.questColorBlobs then
-            for index = 2, #panel.questColorBlobs do
-                local colored = panel.questColorBlobs[index]
-                colored:Hide()
-                colored.drawnKey = nil
-            end
-        end
     end
 end
 
-local function ColoredQuestBlobs()
-    if not (Settings().vignetteRadarQuestColors and Settings().vignetteRadarQuestAreaColors
-        and not panel.questColorFailed) then return nil end
-    if panel.questColorBlobs then return panel.questColorBlobs end
-    if type(InCombatLockdown) == "function" and SafeBoolean(Call(InCombatLockdown)) then return nil end
-    local blobs = { panel.questBlob }
-    panel.questBlob._questColorSlot = 1
-    for index = 2, #QUEST_COLORS do
-        local ok, blob = pcall(CreateFrame, "QuestPOIFrame", nil, panel.questClip)
-        if not (ok and blob and type(blob.DrawNone) == "function" and type(blob.DrawBlob) == "function"
-            and type(blob.SetMapID) == "function" and type(blob.SetFillTexture) == "function"
-            and type(blob.SetBorderTexture) == "function") then
-            for _, created in ipairs(blobs) do if created ~= panel.questBlob then created:Hide() end end
-            panel.questColorFailed = true
-            return nil
-        end
-        blob:SetFrameLevel(panel.field:GetFrameLevel() + 2)
-        blob:EnableMouse(false)
-        blob:Hide()
-        blob._questColorSlot = index
-        blobs[index] = blob
-    end
-    panel.questColorBlobs = blobs
-    return blobs
-end
-
-local function StyleQuestBlob(blob, slot, range)
-    local fill = slot and ("Interface\\AddOns\\VignetteRadar\\Media\\quest-solid-%02d.tga"):format(slot)
-        or "Interface\\WorldMap\\UI-QuestBlob-Inside"
-    local border = slot and fill or "Interface\\WorldMap\\UI-QuestBlob-Outside"
+local function StyleQuestBlob(blob, range)
     -- A close zoom can put the player inside a quest shape that covers the
     -- entire radar. Fade the native mesh itself so markers remain legible.
     local opacity = math.max(.2, math.min(1, (SafeNumber(range) or 300) / 300))
-    local fillAlpha = math.max(3, math.floor((slot and 38 or 48) * opacity + .5))
-    local borderAlpha = slot and math.max(5, math.floor(78 * opacity + .5)) or 0
+    local fillAlpha = math.max(3, math.floor(48 * opacity + .5))
     local ok = pcall(function()
-        if blob.colorSlot ~= slot then
-            blob:SetFillTexture(fill)
-            blob:SetBorderTexture(border)
+        if not blob._radarDefaultStyle then
+            blob:SetFillTexture("Interface\\WorldMap\\UI-QuestBlob-Inside")
+            blob:SetBorderTexture("Interface\\WorldMap\\UI-QuestBlob-Outside")
         end
         if blob._radarFillAlpha ~= fillAlpha then blob:SetFillAlpha(fillAlpha) end
-        if blob._radarBorderAlpha ~= borderAlpha then blob:SetBorderAlpha(borderAlpha) end
+        if blob._radarBorderAlpha ~= 0 then blob:SetBorderAlpha(0) end
     end)
     if ok then
-        blob.colorSlot = slot
-        blob._radarFillAlpha, blob._radarBorderAlpha = fillAlpha, borderAlpha
+        blob._radarDefaultStyle = true
+        blob._radarFillAlpha, blob._radarBorderAlpha = fillAlpha, 0
     end
     return ok
 end
@@ -1656,76 +1619,38 @@ local function RenderQuestAreas(player, mapID, range)
     panel.questAreaPlayerMapX, panel.questAreaPlayerMapY = player.mapX, player.mapY
     local key = tostring(mapID) .. ":" .. tostring(width) .. ":" .. tostring(height)
     for _, quest in ipairs(activeQuests) do key = key .. ":" .. tostring(quest.questID) end
-    local colored = ColoredQuestBlobs()
-    local sources = colored or { blob }
-    local renderSources = { blob }
-    if colored then
-        local activeSlots = {}
-        for _, quest in ipairs(activeQuests) do activeSlots[quest.colorSlot or 1] = true end
-        for index = 2, #colored do
-            if activeSlots[index] then
-                renderSources[#renderSources + 1] = colored[index]
-            else
-                colored[index]:Hide()
-                colored[index].drawnKey = nil
-            end
-        end
+    panel.questBlobSources = { blob }
+    if not StyleQuestBlob(blob, range) then HideQuestAreas(); return end
+    if blob._radarCanvasScale ~= canvasScale then
+        blob:SetScale(canvasScale)
+        blob._radarCanvasScale = canvasScale
     end
-    panel.questBlobSources = renderSources
-    for index, source in ipairs(renderSources) do
-        local slot = colored and source._questColorSlot or nil
-        if not StyleQuestBlob(source, slot, range) then
-            if colored then
-                panel.questColorFailed = true
-                HideQuestAreas()
-                return RenderQuestAreas(player, mapID, range)
-            end
-            HideQuestAreas()
-            return
+    blob:SetSize(width / canvasScale, height / canvasScale)
+    blob:ClearAllPoints()
+    blob:SetPoint("CENTER", panel.field, "CENTER", (0.5 - player.mapX) * width / canvasScale,
+        (player.mapY - 0.5) * height / canvasScale)
+    if blob.drawnKey ~= key or now >= (blob.nextDrawAt or 0) then
+        local ok = true
+        if blob.mapContextID ~= mapID then
+            ok = pcall(blob.SetMapID, blob, mapID)
+            if ok then blob.mapContextID = mapID end
         end
-        if source._radarCanvasScale ~= canvasScale then
-            source:SetScale(canvasScale)
-            source._radarCanvasScale = canvasScale
-        end
-        source:SetSize(width / canvasScale, height / canvasScale)
-        source:ClearAllPoints()
-        source:SetPoint("CENTER", panel.field, "CENTER", (0.5 - player.mapX) * width / canvasScale,
-            (player.mapY - 0.5) * height / canvasScale)
-        local sourceKey = key .. ":" .. tostring(slot or 0)
-        if source.drawnKey ~= sourceKey or now >= (source.nextDrawAt or 0) then
-            local ok = true
-            if source.mapContextID ~= mapID then
-                ok = pcall(source.SetMapID, source, mapID)
-                if ok then source.mapContextID = mapID end
-            end
-            if ok then ok = pcall(source.DrawNone, source) end
-            if ok then
-                local drawnQuests = {}
-                for _, quest in ipairs(activeQuests) do
-                    if (not slot or quest.colorSlot == slot) and not drawnQuests[quest.questID] then
-                        if not pcall(source.DrawBlob, source, quest.questID, true) then ok = false; break end
-                        drawnQuests[quest.questID] = true
-                    end
+        if ok then ok = pcall(blob.DrawNone, blob) end
+        if ok then
+            local drawnQuests = {}
+            for _, quest in ipairs(activeQuests) do
+                if not drawnQuests[quest.questID] then
+                    if not pcall(blob.DrawBlob, blob, quest.questID, true) then ok = false; break end
+                    drawnQuests[quest.questID] = true
                 end
             end
-            if not ok then
-                if colored then
-                    panel.questColorFailed = true
-                    HideQuestAreas()
-                    return RenderQuestAreas(player, mapID, range)
-                end
-                HideQuestAreas()
-                return
-            end
-            source.drawnKey = sourceKey
-            -- DrawBlob can succeed before Blizzard loads the shape data.
-            source.nextDrawAt = now + RESCAN_SECONDS
         end
-        source:Show()
+        if not ok then HideQuestAreas(); return end
+        blob.drawnKey = key
+        -- DrawBlob can succeed before Blizzard loads the shape data.
+        blob.nextDrawAt = now + RESCAN_SECONDS
     end
-    if not colored and panel.questColorBlobs then
-        for index = 2, #panel.questColorBlobs do panel.questColorBlobs[index]:Hide() end
-    end
+    blob:Show()
     return true
 end
 

@@ -40,35 +40,24 @@ local function SameWaypoint(step)
         and math.abs(y - step.mapY) < .0001
 end
 
-local function WaypointArt(item, step)
+local function WaypointColor(item)
     if not item then return nil end
     local kind = item.kind == "mob" and "rare" or item.kind
     if kind ~= "rare" and kind ~= "treasure" and kind ~= "quest" then return nil end
-    local iconType, iconTexture = "TEXTURE", nil
     local r, g, b
     local style = addon.VignetteRadarStyle
     if kind == "quest" then
-        local complete = QuestComplete and QuestComplete(item.questID)
-        iconTexture = "Interface\\AddOns\\VignetteRadar\\Media\\quest-diamond"
-            .. (complete and ".tga" or "-hollow.tga")
         if addon.GetSettings().vignetteRadarQuestColors and item.colorSlot
             and addon.VignetteRadarQuestColors then
             local color = addon.VignetteRadarQuestColors[item.colorSlot]
             if color then r, g, b = color[1], color[2], color[3] end
         end
-    elseif kind == "treasure" then
-        if step ~= item and not (type(item.route) == "table"
-            and step == item.route[#item.route]) and (step.mapID ~= item.mapID
-            or math.abs(step.mapX - item.mapX) > .0001
-            or math.abs(step.mapY - item.mapY) > .0001) then
-            iconTexture = "Interface\\AddOns\\VignetteRadar\\Media\\beacon-rare.tga"
-        else iconType, iconTexture = "ATLAS", "VignetteLoot" end
-    else iconTexture = "Interface\\AddOns\\VignetteRadar\\Media\\beacon-rare.tga" end
+    end
     if not r and style and type(style.Color) == "function" then
         r, g, b = style.Color(kind == "rare" and item.isWorldBoss and "boss" or kind)
     end
     if not (Number(r) and Number(g) and Number(b)) then r, g, b = .55, .88, .82 end
-    return iconType, iconTexture, r, g, b
+    return r, g, b
 end
 
 local function Place(step, item)
@@ -86,11 +75,10 @@ local function Place(step, item)
     local wui = _G.WaypointUIAPI and _G.WaypointUIAPI.Navigation
     if item and addon.GetSettings().vignetteRadarWorldFocusThemedWaypoint
         and wui and type(wui.NewUserNavigation) == "function" then
-        local iconType, iconTexture, r, g, b = WaypointArt(item, step)
-        if iconTexture then
+        local r, g, b = WaypointColor(item)
+        if r then
             local named, result = pcall(wui.NewUserNavigation, {
                 name = item.name or "World Focus", mapID = mapID, x = x * 100, y = y * 100,
-                iconType = iconType, iconTexture = iconTexture,
                 r = r, g = g, b = b, requestRecolor = true, suppressAudio = true,
             })
             if named and result and not (issecretvalue and issecretvalue(result)) then return true end
@@ -332,18 +320,32 @@ local function NextRouteStop()
     return best
 end
 
+local function ArrivalRadius()
+    local settings = addon.GetSettings()
+    return route and (settings.vignetteRadarAutoRouteArrivalRadius or 3)
+        or (settings.vignetteRadarWorldFocusArrivalRadius or 20)
+end
+
+local function ArmArrival()
+    if not (active and player) then return end
+    local step = active.steps[active.index]
+    if not (step and Number(step.worldX) and Number(step.worldY)) then return end
+    local radius = ArrivalRadius()
+    local margin = route and 0 or 5
+    active.wasOutside = Distance(player.worldX, player.worldY,
+        step.worldX, step.worldY) > radius + margin
+end
+
 local function Activate(item)
     local steps = { item }
     if item.kind == "treasure" and addon.GetSettings().vignetteRadarWorldFocusRoutes
         and type(item.route) == "table" and #item.route > 1 then steps = item.route end
     local ok, reason = Place(steps[1], item)
     if not ok then return false, reason end
-    local radius = addon.GetSettings().vignetteRadarWorldFocusArrivalRadius or 20
-    local dx = player and player.worldX - steps[1].worldX or 0
-    local dy = player and player.worldY - steps[1].worldY or 0
     active = { key = item.key or item.questID or item.name, name = item.name or "Location",
         kind = item.kind, questID = item.questID, item = item, steps = steps, index = 1,
-        wasOutside = player and dx * dx + dy * dy > (radius + 5) * (radius + 5) or false }
+        wasOutside = false }
+    ArmArrival()
     return true
 end
 
@@ -378,6 +380,7 @@ local function Select(item)
             visited = {}, visitedPlaces = {}, waiting = false,
             progress = kind == "quest" and QuestProgress(item.questID) or nil }
     end
+    ArmArrival()
     return true
 end
 
@@ -397,6 +400,7 @@ function API.ToggleRoute()
     route = { kind = kind, questID = kind == "quest" and item.questID or nil,
         visited = {}, visitedPlaces = {}, waiting = false,
         progress = kind == "quest" and QuestProgress(item.questID) or nil }
+    ArmArrival()
     return true, "Auto Route: " .. kind
 end
 
@@ -560,8 +564,8 @@ function API.Sync(mapID, snapshot, liveTargets, questPoints, mapNotes)
         and player.instanceID ~= step.instanceID then return end
     local dx, dy = player.worldX - step.worldX, player.worldY - step.worldY
     local distance = math.sqrt(dx * dx + dy * dy)
-    local radius = addon.GetSettings().vignetteRadarWorldFocusArrivalRadius or 20
-    if distance > radius + 5 then active.wasOutside = true end
+    local radius = ArrivalRadius()
+    if distance > radius + (route and 0 or 5) then active.wasOutside = true end
     if not active.wasOutside or distance > radius then return end
     if active.index < #active.steps then
         local nextStep = active.steps[active.index + 1]

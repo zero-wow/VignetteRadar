@@ -101,6 +101,10 @@ function addon.GetSettings()
     if type(db.vignetteRadarAutoRouteOnSelect) ~= "boolean" then db.vignetteRadarAutoRouteOnSelect = false end
     if type(db.vignetteRadarAutoRouteMapNotes) ~= "boolean" then db.vignetteRadarAutoRouteMapNotes = true end
     if type(db.vignetteRadarWorldFocusThemedWaypoint) ~= "boolean" then db.vignetteRadarWorldFocusThemedWaypoint = true end
+    if db.vignetteRadarAutoRouteArrivalRadius ~= 3 and db.vignetteRadarAutoRouteArrivalRadius ~= 10
+        and db.vignetteRadarAutoRouteArrivalRadius ~= 20 and db.vignetteRadarAutoRouteArrivalRadius ~= 40 then
+        db.vignetteRadarAutoRouteArrivalRadius = 3
+    end
     if db.vignetteRadarAutoRouteTravel ~= "auto" and db.vignetteRadarAutoRouteTravel ~= "ground"
         and db.vignetteRadarAutoRouteTravel ~= "flying" then db.vignetteRadarAutoRouteTravel = "auto" end
     if db.vignetteRadarWorldFocusArrivalRadius ~= 10 and db.vignetteRadarWorldFocusArrivalRadius ~= 20
@@ -145,6 +149,10 @@ function addon.GetSettings()
     if type(db.vignetteRadarQuestHalos) ~= "boolean" then db.vignetteRadarQuestHalos = true end
     if type(db.vignetteRadarQuestColors) ~= "boolean" then db.vignetteRadarQuestColors = true end
     if type(db.vignetteRadarQuestAreaColors) ~= "boolean" then db.vignetteRadarQuestAreaColors = false end
+    if db.vignetteRadarQuestAreaColorsReset ~= true then
+        db.vignetteRadarQuestAreaColors = false
+        db.vignetteRadarQuestAreaColorsReset = true
+    end
     if type(db.vignetteRadarNextQuestStep) ~= "boolean" then db.vignetteRadarNextQuestStep = false end
     if type(db.vignetteRadarQuestStartBadges) ~= "boolean" then db.vignetteRadarQuestStartBadges = false end
     if type(db.vignetteRadarQuestNumbers) ~= "boolean" then db.vignetteRadarQuestNumbers = false end

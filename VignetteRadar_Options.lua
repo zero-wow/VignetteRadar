@@ -340,7 +340,7 @@ local function BuildPanel()
     AddChoice(quests, "vignetteRadarQuestHaloRadius", 20, "20", 356, -250, 39)
     AddChoice(quests, "vignetteRadarQuestHaloRadius", 40, "40", 404, -250, 39)
     AddChoice(quests, "vignetteRadarQuestHaloRadius", 80, "80", 452, -250, 39)
-    AddCheckbox(quests, "vignetteRadarQuestAreaColors", "Match areas to diamond colors", 258, -282, nil, 205)
+    AddCheckbox(quests, "vignetteRadarQuestAreaColors", "Color estimated quest circles", 258, -282, nil, 205)
     AddCheckbox(quests, "vignetteRadarQuestKeyProgress", "Progress in quest key", 18, -282, nil, 203)
     AddButton(quests, "Toggle quest key", 18, -313, 203, function()
         if addon.VignetteRadarAPI and addon.VignetteRadarAPI.ToggleQuestKey then

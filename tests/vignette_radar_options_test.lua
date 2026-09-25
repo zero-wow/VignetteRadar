@@ -217,7 +217,7 @@ assert(byKey.vignetteRadarQuestDots.label.text == "Show quest diamonds"
     and byKey.vignetteRadarQuestAreas.label.text == "Shade Blizzard quest areas"
     and byKey.vignetteRadarQuestHalos.label.text == "Approximate quest circles"
     and byKey.vignetteRadarQuestColors.label.text == "Color quest diamonds"
-    and byKey.vignetteRadarQuestAreaColors.label.text == "Match areas to diamond colors",
+    and byKey.vignetteRadarQuestAreaColors.label.text == "Color estimated quest circles",
     "quest dots and areas need separate plain-language switches")
 local trailPickerButton
 for _, object in ipairs(objects) do
