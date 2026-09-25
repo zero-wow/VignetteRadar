@@ -225,6 +225,7 @@ assert(loadfile("VignetteRadar_Beacons.lua"))("VignetteRadar", addon)
 assert(loadfile(legendSourcePath))("VignetteRadar", addon)
 assert(loadfile(targetPickerSourcePath))("VignetteRadar", addon)
 assert(loadfile(sourcePath))("VignetteRadar", addon)
+assert(loadfile("VignetteRadar_RouteArrow.lua"))("VignetteRadar", addon)
 assert(loadfile(optionsSourcePath))("VignetteRadar", addon)
 assert(loadfile(quickSourcePath))("VignetteRadar", addon)
 
@@ -1721,6 +1722,9 @@ for _, object in ipairs(objects) do
 end
 assert(questEvents and questEvents.events.QUEST_LOG_UPDATE and questEvents.scripts.OnEvent,
     "quest update events must be registered on the radar event frame")
+assert(questEvents.events.QUEST_ACCEPTED and questEvents.events.QUEST_REMOVED
+    and questEvents.events.QUEST_TURNED_IN,
+    "quest acquisition and turn-in must trigger route refreshes")
 local savedDrawNone, savedDrawBlob = panel.questBlob.DrawNone, panel.questBlob.DrawBlob
 local drawNoneCount, drawBlobCount, shapeReady, shapeVersion = 0, 0, false, 1
 panel.questBlob.DrawNone = function(self)
@@ -1753,6 +1757,23 @@ now = 612
 addon.VignetteRadarAPI.Refresh(false)
 assert(panel.questBlob.renderedShape == "12345:3" and drawBlobCount == drawCount + 1,
     "a slow retry must repair native geometry when a quest update event was missed")
+do
+    local savedAfter, pendingQuestRefresh = C_Timer.After, {}
+    C_Timer.After = function(delay, callback)
+        pendingQuestRefresh[#pendingQuestRefresh + 1] = { delay = delay, callback = callback }
+    end
+    shapeVersion = 4
+    questEvents.scripts.OnEvent(questEvents, "QUEST_LOG_UPDATE")
+    questEvents.scripts.OnEvent(questEvents, "QUEST_POI_UPDATE")
+    assert(#pendingQuestRefresh == 1 and pendingQuestRefresh[1].delay > 0,
+        "a burst of quest events should schedule only one deferred scan")
+    assert(panel.questBlob.renderedShape == "12345:3",
+        "the quest route should wait briefly for Blizzard's new map POIs")
+    pendingQuestRefresh[1].callback()
+    assert(panel.questBlob.renderedShape == "12345:4",
+        "the coalesced quest scan should refresh the latest objective geometry")
+    C_Timer.After = savedAfter
+end
 panel.questBlob.DrawNone, panel.questBlob.DrawBlob = savedDrawNone, savedDrawBlob
 settings.vignetteRadarQuestDots = false
 C_Map.GetWorldPosFromMapPos = originalWorldPosition
@@ -2318,6 +2339,53 @@ settings.vignetteRadarRange = savedRange
 livePositions.treasure = savedTreasurePosition
 C_QuestLog = savedQuestLog
 
+-- Auto Route has its own movable heading widget, independent of either radar frame.
+do
+    local focus = addon.VignetteRadarWorldFocus
+    local originalRoutePoint = focus.GetRoutePoint
+    local snapshot = addon.VignetteRadarAPI.GetPlayerSnapshot()
+    local routeStep = { worldX = snapshot.worldX + 300, worldY = snapshot.worldY,
+        instanceID = snapshot.instanceID }
+    focus.GetRoutePoint = function() return routeStep, "treasure" end
+    settings.vignetteRadarRouteArrow = true
+    addon.VignetteRadarAPI.Refresh(false)
+    local widget = addon.VignetteRadarRouteArrow.GetFrame()
+    assert(widget and widget:IsShown() and widget.parent == UIParent
+        and widget.movable and widget.clamped and widget.dragButtons[1] == "LeftButton"
+        and widget.arrow[1].endPoint[3] > widget.arrow[1].startPoint[3],
+        "the independent arrow must point to the route stop beyond radar range")
+    routeStep.worldX, routeStep.worldY = snapshot.worldX, snapshot.worldY + 300
+    widget.scripts.OnUpdate(widget, .21)
+    assert(widget.arrow[1].endPoint[4] > widget.arrow[1].startPoint[4],
+        "the movable arrow must keep turning without a full radar redraw")
+    widget.left, widget.top = 220, 600
+    widget.scripts.OnDragStart(widget)
+    assert(widget.moving, "left-drag must move only the route widget")
+    widget.scripts.OnDragStop(widget)
+    assert(not widget.moving and settings.vignetteRadarRouteArrowPosition.x == 220
+        and settings.vignetteRadarRouteArrowPosition.y == -300,
+        "dropping the route widget must save its separate screen position")
+    widget.scripts.OnClick(widget, "RightButton")
+    assert(quick.pages["Auto Route"]:IsShown(),
+        "right-clicking the route widget should open its compact settings")
+    settings.vignetteRadarRouteArrow = false
+    addon.VignetteRadarAPI.Refresh(false)
+    assert(not widget:IsShown(), "turning off the standalone route arrow must hide it")
+    settings.vignetteRadarRouteArrow = true
+    routeStep.instanceID = (snapshot.instanceID or 0) + 1
+    addon.VignetteRadarAPI.Refresh(false)
+    assert(not widget:IsShown(),
+        "the movable arrow must hide a stop in another world instance")
+    routeStep.instanceID = snapshot.instanceID
+    focus.GetRoutePoint = function() return nil end
+    addon.VignetteRadarAPI.Refresh(false)
+    assert(not widget:IsShown(), "paused routes must hide the standalone arrow")
+    addon.VignetteRadarRouteArrow.ResetPosition()
+    assert(settings.vignetteRadarRouteArrowPosition == nil and widget.point[1] == "CENTER",
+        "reset positions must recenter the independently movable arrow")
+    focus.GetRoutePoint = originalRoutePoint
+end
+
 -- Exploration overlays stay inside the field and crowded detections remain selectable.
 local exploration = addon.VignetteRadarExploration
 local ok, pin = exploration.AddPin(addon.VignetteRadarAPI.GetPlayerSnapshot(), "Test cave")
@@ -2462,6 +2530,16 @@ for _, control in ipairs(trailPopup.controls) do
     end
 end
 local threeYards = quickControl("Auto Route", "vignetteRadarAutoRouteArrivalRadius", 3)
+do
+    local routeArrowCheck = quickControl("Auto Route", "vignetteRadarRouteArrow")
+    local worldPinCheck = quickControl("Auto Route", "vignetteRadarWorldFocusThemedWaypoint")
+    assert(routeArrowCheck and worldPinCheck
+        and routeArrowCheck.label.parent.point[4] + routeArrowCheck.label.parent.width
+            < worldPinCheck.point[4]
+        and worldPinCheck.label.parent.point[4] + worldPinCheck.label.parent.width
+            <= quick.width - 14,
+        "the mini route arrow toggle must fit beside the world-pin toggle")
+end
 assert(threeYards and threeYards.width == 59 and threeYards.point[4] == 14
     and -quick.pages["Auto Route"].status.point[5]
         + quick.pages["Auto Route"].status.height <= quick.pages["Auto Route"].height - 10,

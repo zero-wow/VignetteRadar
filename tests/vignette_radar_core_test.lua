@@ -58,6 +58,8 @@ assert(defaults.vignetteRadarQuestAreaColors == true,
 defaults.vignetteRadarQuestAreaColors = false
 assert(defaults.vignetteRadarAutoRouteArrivalRadius == 3,
     "Auto Route must wait for a three-yard arrival by default")
+assert(defaults.vignetteRadarRouteArrow == true,
+    "new and migrated settings should show the mini route arrow by default")
 assert(defaults.vignetteRadarBeaconsEnabled == false
     and defaults.vignetteRadarPerformance == "standard"
     and defaults.vignetteRadarBeaconRares == true

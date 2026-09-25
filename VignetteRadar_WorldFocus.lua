@@ -228,15 +228,26 @@ local function QuestProgress(questID)
     if not (questID and C_QuestLog and type(C_QuestLog.GetQuestObjectives) == "function") then return nil end
     local ok, objectives = pcall(C_QuestLog.GetQuestObjectives, questID)
     if not ok or type(objectives) ~= "table" or (issecretvalue and issecretvalue(objectives)) then return nil end
-    local result = {}
+    local result, finishedState = {}, {}
     for index = 1, math.min(#objectives, 16) do
         local read, complete, count = pcall(function()
             return objectives[index].finished, objectives[index].numFulfilled
         end)
         if not read or (issecretvalue and (issecretvalue(complete) or issecretvalue(count))) then return nil end
         result[#result + 1] = (complete and "1" or "0") .. ":" .. tostring(Number(count) or 0)
+        finishedState[#finishedState + 1] = complete and "1" or "0"
     end
-    return table.concat(result, ",")
+    return table.concat(result, ","), table.concat(finishedState)
+end
+
+local function NewlyFinishedObjective(previous, current)
+    if type(previous) ~= "string" or type(current) ~= "string" then return false end
+    for index = 1, #current do
+        if current:sub(index, index) == "1" and previous:sub(index, index) ~= "1" then
+            return true
+        end
+    end
+    return false
 end
 
 local function NextRouteStop()
@@ -401,9 +412,11 @@ local function Select(item, directPin)
     route, pausedRoute = nil, nil
     local kind = RouteKind(item)
     if kind and addon.GetSettings().vignetteRadarAutoRouteOnSelect then
+        local progress, finished
+        if kind == "quest" then progress, finished = QuestProgress(item.questID) end
         route = { kind = kind, questID = kind == "quest" and item.questID or nil,
             visited = {}, visitedPlaces = {}, waiting = false,
-            progress = kind == "quest" and QuestProgress(item.questID) or nil }
+            progress = progress, finished = finished }
     end
     ArmArrival()
     return true
@@ -437,9 +450,11 @@ function API.ToggleRoute()
         local ok, reason = Activate(item)
         if not ok then return false, reason end
     end
+    local progress, finished
+    if kind == "quest" then progress, finished = QuestProgress(item.questID) end
     route = { kind = kind, questID = kind == "quest" and item.questID or nil,
         visited = {}, visitedPlaces = {}, waiting = false,
-        progress = kind == "quest" and QuestProgress(item.questID) or nil }
+        progress = progress, finished = finished }
     ArmArrival()
     RouteNote("AUTO ROUTE", "Started · " .. (active and active.name or item.name or kind))
     return true, "Auto Route: " .. kind
@@ -451,6 +466,11 @@ function API.IsQuestRoute() return route and route.kind == "quest" or false end
 function API.HasFocus() return active ~= nil end
 function API.GetFocusedStep()
     return active and active.steps[active.index] or nil
+end
+
+function API.GetRoutePoint()
+    if not (route and not route.waiting and active) then return nil end
+    return active.steps[active.index], route.kind
 end
 
 function API.OwnsGuideWaypoint()
@@ -515,7 +535,7 @@ function API.SkipQuest()
     end
     route.skippedQuests = route.skippedQuests or {}
     route.skippedQuests[route.questID] = true
-    route.questID, route.progress, route.waiting = nil, nil, false
+    route.questID, route.progress, route.finished, route.waiting = nil, nil, nil, false
     local advanced, reason = AdvanceRoute()
     return advanced or not route, reason or "Quest skipped"
 end
@@ -531,15 +551,25 @@ function API.SelectTarget(target)
 end
 
 function API.SelectQuest(questID)
+    local nearest, nearestDistance, nearestOnMap
     for _, quest in ipairs(quests) do
-        if quest.questID == questID then
-            return Select({ key = "quest:" .. questID, questID = questID,
-                name = quest.name, kind = "quest",
-                colorSlot = quest.colorSlot,
-                mapID = quest.mapID or player and player.mapID,
-                mapX = quest.mapX, mapY = quest.mapY,
-                worldX = quest.worldX, worldY = quest.worldY, instanceID = quest.instanceID })
+        if quest.questID == questID and Number(quest.worldX) and Number(quest.worldY) then
+            local onMap = player and quest.mapID == player.mapID or false
+            local distance = onMap and Number(player.worldX) and Number(player.worldY)
+                and Distance(player.worldX, player.worldY, quest.worldX, quest.worldY)
+                or math.huge
+            if not nearest or (onMap and not nearestOnMap)
+                or (onMap == nearestOnMap and distance < nearestDistance) then
+                nearest, nearestDistance, nearestOnMap = quest, distance, onMap
+            end
         end
+    end
+    if nearest then
+        return Select({ key = "quest:" .. questID, questID = questID,
+            name = nearest.name, kind = "quest", colorSlot = nearest.colorSlot,
+            mapID = nearest.mapID, mapX = nearest.mapX, mapY = nearest.mapY,
+            worldX = nearest.worldX, worldY = nearest.worldY,
+            instanceID = nearest.instanceID })
     end
     return false, "Quest point unavailable"
 end
@@ -653,25 +683,20 @@ function API.Sync(mapID, snapshot, liveTargets, questPoints, mapNotes)
     end
     if route and route.kind == "quest" then
         if QuestComplete(route.questID) then
-            route.questID, route.progress = nil, nil
+            route.questID, route.progress, route.finished = nil, nil, nil
             AdvanceRoute()
             return
         end
-        local progress = QuestProgress(route.questID)
-        if progress and route.progress and progress ~= route.progress then
-            route.progress = progress
-            for key in pairs(route.visited) do
-                if key:find("^quest:" .. route.questID .. ":") then route.visited[key] = nil end
-            end
-            for index = #route.visitedPlaces, 1, -1 do
-                if route.visitedPlaces[index].questID == route.questID then
-                    table.remove(route.visitedPlaces, index)
-                end
-            end
+        local progress, finished = QuestProgress(route.questID)
+        if NewlyFinishedObjective(route.finished, finished) then
+            route.progress, route.finished = progress, finished
             MarkVisited(active.item)
             route.waiting = true
             RouteNote("AUTO ROUTE", "Waiting for the next quest objective")
-        else route.progress = progress or route.progress end
+        else
+            route.progress = progress or route.progress
+            route.finished = finished or route.finished
+        end
         if route.waiting then
             local nextItem = NextRouteStop()
             if nextItem then route.waiting = false; Activate(nextItem) end
@@ -683,6 +708,7 @@ function API.Sync(mapID, snapshot, liveTargets, questPoints, mapNotes)
     if not (Number(step.worldX) and Number(step.worldY)
         and Number(player.worldX) and Number(player.worldY)) then return end
     if pausedRoute or (not route and not addon.GetSettings().vignetteRadarWorldFocusAutoAdvance) then return end
+    if route and route.kind == "quest" then return end -- Objective events, not proximity, move quest routes.
     if Number(player.instanceID) and Number(step.instanceID)
         and player.instanceID ~= step.instanceID then return end
     local dx, dy = player.worldX - step.worldX, player.worldY - step.worldY

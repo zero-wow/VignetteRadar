@@ -5856,6 +5856,7 @@ RefreshRadar = function(rescan)
         if panel and panel:IsShown() then Morph.MoveLauncherToRadar(); panel:Hide() end
         Morph.SyncLauncherVisibility()
         if launcher then UpdateLauncher(0, true) end
+        if addon.VignetteRadarRouteArrow then addon.VignetteRadarRouteArrow.Refresh() end
         return
     end
     if manualPanelState == false then
@@ -5882,6 +5883,7 @@ RefreshRadar = function(rescan)
     Morph.SyncLauncherVisibility()
     if launcher then UpdateLauncher(0, true) end
     UpdateTargetButton()
+    if addon.VignetteRadarRouteArrow then addon.VignetteRadarRouteArrow.Refresh() end
 end
 
 addon.RefreshVignetteRadar = function(rescan) RefreshRadar(rescan ~= false) end
@@ -6001,6 +6003,7 @@ function addon.ResetVignetteRadarPositions()
     Settings().vignetteRadarPosition = nil
     Settings().vignetteRadarCirclePosition = nil
     Settings().vignetteRadarLauncherPosition = nil
+    if addon.VignetteRadarRouteArrow then addon.VignetteRadarRouteArrow.ResetPosition() end
     if panel then PlacePanel(30, UIParent:GetHeight() - 520, panel:GetScale()) end
     Settings().vignetteRadarLauncherVisible = true
     local button = EnsureLauncher()
@@ -6298,10 +6301,26 @@ addon.VignetteRadarPopupNames = {
     "VignetteRadarGuidePanel",
 }
 local events = CreateFrame("Frame")
+function events:RefreshAfterQuestUpdate()
+    if self._questRefreshQueued then return end
+    self._questRefreshQueued = true
+    if C_Timer and C_Timer.After then
+        -- Quest objectives and their map POIs can settle in separate events.
+        -- Merge a burst into one fresh scan instead of scanning every event.
+        C_Timer.After(0.12, function()
+            self._questRefreshQueued = false
+            RefreshRadar(true)
+        end)
+    else
+        self._questRefreshQueued = false
+        RefreshRadar(true)
+    end
+end
 for _, event in ipairs({
     "PLAYER_LOGIN", "PLAYER_ENTERING_WORLD", "ZONE_CHANGED_NEW_AREA",
     "VIGNETTES_UPDATED", "VIGNETTE_MINIMAP_UPDATED",
-    "QUEST_LOG_UPDATE", "QUEST_POI_UPDATE", "QUEST_WATCH_LIST_CHANGED", "SUPER_TRACKING_CHANGED",
+    "QUEST_LOG_UPDATE", "QUEST_POI_UPDATE", "QUEST_WATCH_LIST_CHANGED",
+    "QUEST_ACCEPTED", "QUEST_REMOVED", "QUEST_TURNED_IN", "SUPER_TRACKING_CHANGED",
     "PLAYER_REGEN_DISABLED", "PLAYER_REGEN_ENABLED", "ZONE_CHANGED", "ZONE_CHANGED_INDOORS",
     "LOOT_OPENED", "LOOT_SLOT_CLEARED", "LOOT_CLOSED",
     "GLOBAL_MOUSE_DOWN",
@@ -6363,27 +6382,29 @@ events:SetScript("OnEvent", function(_, event)
         VignetteRadar_CycleWorldFocus(message == "focus next" and 1 or -1)
         return
     end
+    local questUpdated = event == "QUEST_LOG_UPDATE" or event == "QUEST_POI_UPDATE"
+        or event == "QUEST_WATCH_LIST_CHANGED" or event == "QUEST_ACCEPTED"
+        or event == "QUEST_REMOVED" or event == "QUEST_TURNED_IN"
     if event == "QUEST_LOG_UPDATE" and addon.VignetteRadarRecent then
         addon.VignetteRadarRecent.InvalidateQuests()
     end
     local mapChanged = event == "PLAYER_ENTERING_WORLD" or event == "ZONE_CHANGED_NEW_AREA"
         or event == "ZONE_CHANGED" or event == "ZONE_CHANGED_INDOORS"
-    if addon.VignetteRadarQuestData and (mapChanged or event == "QUEST_LOG_UPDATE"
-        or event == "QUEST_POI_UPDATE" or event == "QUEST_WATCH_LIST_CHANGED") then
+    if addon.VignetteRadarQuestData and (mapChanged or questUpdated) then
         addon.VignetteRadarQuestData.Invalidate(mapChanged and "map" or "quest")
         addon.VignetteRadarStartsNextAt = nil
         addon._focusQuestCache = nil
     end
     if mapChanged then questMapBasis = nil end
-    if mapChanged or event == "QUEST_LOG_UPDATE" or event == "QUEST_POI_UPDATE"
-        or event == "QUEST_WATCH_LIST_CHANGED" or event == "SUPER_TRACKING_CHANGED" then
+    if mapChanged or questUpdated or event == "SUPER_TRACKING_CHANGED" then
         if panel and panel.questBlob then
             panel.questBlob.drawnKey = nil
             panel.questBlob.retryDelay = nil
             if mapChanged then panel.questBlob.mapContextID = nil end
         end
     end
-    RefreshRadar(true)
+    if questUpdated then events:RefreshAfterQuestUpdate()
+    else RefreshRadar(true) end
     if event == "PLAYER_LOGIN" and C_Timer and C_Timer.After then
         C_Timer.After(0.5, function() RefreshRadar(true) end)
     end

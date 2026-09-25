@@ -85,10 +85,14 @@ assert(focus.SelectTarget({ key = rareA.key, name = rareA.name, category = rareA
     mapID = rareA.mapID, mapX = rareA.mapX, mapY = rareA.mapY,
     worldX = rareA.worldX, worldY = rareA.worldY, instanceID = rareA.instanceID }))
 assert(focus.ToggleRoute() and focus.IsRouteActive(), "route button should use the last clicked rare")
+local routePoint, routeKind = focus.GetRoutePoint()
+assert(routePoint and routePoint.worldX == 600 and routeKind == "rare",
+    "the route arrow should receive the current stop and route category")
 local pauseOk, pauseReason = focus.ToggleRoute()
 assert(not pauseOk and pauseReason:find("paused", 1, true)
     and focus.IsRoutePaused() and not focus.IsRouteActive()
-    and focus.Status():find("paused", 1, true),
+    and focus.Status():find("paused", 1, true)
+    and focus.GetRoutePoint() == nil,
     "pausing should keep the route's visited state and explain its status")
 assert(routeNotes[#routeNotes][2]:find("Paused", 1, true),
     "pausing should show a brief route note")
@@ -121,11 +125,12 @@ questA.questID, questNext.questID, questB.questID = 11, 11, 22
 questA.name, questNext.name, questB.name = "First quest", "First quest", "Second quest"
 local questDone = {}
 local questActive, questTurnedIn = { [11] = true, [22] = true }, {}
+local firstQuestObjective = { finished = false, numFulfilled = 0 }
 C_QuestLog = {
     IsComplete = function(id) return questDone[id] == true end,
     IsOnQuest = function(id) return questActive[id] == true end,
     IsQuestFlaggedCompleted = function(id) return questTurnedIn[id] == true end,
-    GetQuestObjectives = function() return { { finished = false, numFulfilled = 0 } } end,
+    GetQuestObjectives = function() return { firstQuestObjective } end,
 }
 player.worldX = 300
 focus.Sync(123, player, {}, { questA, questNext, questB }, {})
@@ -134,11 +139,25 @@ local questStarted, questReason = focus.ToggleRoute()
 assert(questSelected and questStarted, "a clicked quest should anchor the quest route: " .. tostring(questReason))
 player.worldX = 350
 focus.Sync(123, player, {}, { questA, questNext, questB }, {})
-assert(waypoint.position.x == .5, "quest route should visit another point in the same quest")
+assert(waypoint.position.x == .35,
+    "arriving at an unfinished quest objective must keep its waypoint")
+firstQuestObjective.finished = true
+focus.Sync(123, player, {}, { questA, questNext, questB }, {})
+assert(waypoint.position.x == .5,
+    "completing a quest objective should choose the nearest remaining point")
 player.worldX = 500
 focus.Sync(123, player, {}, { questA, questNext, questB }, {})
-assert(waypoint.position.x == .5 and focus.Status():find("Waiting", 1, true),
-    "an unfinished quest must not jump to a different quest")
+assert(waypoint.position.x == .5 and focus.GetRoutePoint(),
+    "arriving at the next unfinished objective must not skip to another quest")
+firstQuestObjective.finished = false
+focus.Sync(123, player, {}, { questA, questNext, questB }, {})
+assert(waypoint.position.x == .5,
+    "a quest stage reset must not count as a newly completed objective")
+firstQuestObjective.finished = true
+focus.Sync(123, player, {}, { questA, questNext, questB }, {})
+assert(waypoint.position.x == .5 and focus.Status():find("Waiting", 1, true)
+    and focus.GetRoutePoint() == nil,
+    "completed quest points must not loop back to an earlier objective")
 focus.Sync(123, { worldX = nil, worldY = nil, instanceID = 42 },
     {}, { questA, questNext, questB }, {})
 focus.Sync(123, player, {}, { questA, questNext, questB }, {})
@@ -152,6 +171,29 @@ assert(waypoint.position.x == .7, "a completed quest should advance to the next 
 assert(focus.IsQuestRoute() and focus.SkipQuest()
     and not focus.IsRouteActive() and not focus.HasFocus() and waypoint == nil,
     "Skip Quest should move past a stuck quest and clear the final owned pin")
+
+local objectiveFar, objectiveNear, objectiveNext = Step(400), Step(320), Step(520)
+for _, objective in ipairs({ objectiveFar, objectiveNear, objectiveNext }) do
+    objective.questID, objective.name = 33, "Three objectives"
+end
+questActive[33] = true
+local objectiveProgress = { finished = false, numFulfilled = 0 }
+C_QuestLog.GetQuestObjectives = function() return { objectiveProgress } end
+player.worldX = 300
+focus.Sync(123, player, {}, { objectiveFar, objectiveNear, objectiveNext }, {})
+assert(focus.SelectQuest(33) and waypoint.position.x == .32,
+    "choosing a quest by name should pin its closest objective")
+assert(focus.ToggleRoute(), "the closest quest objective should start an Auto Route")
+objectiveProgress.numFulfilled = 1
+focus.Sync(123, player, {}, { objectiveFar, objectiveNear, objectiveNext }, {})
+assert(waypoint.position.x == .32,
+    "partial objective progress must keep the current waypoint")
+objectiveProgress.finished = true
+focus.Sync(123, player, {}, { objectiveFar, objectiveNear, objectiveNext }, {})
+assert(waypoint.position.x == .4,
+    "finishing an objective should pick the nearest remaining quest point")
+assert(focus.Clear(), "the objective route should release its waypoint")
+focus.Sync(123, player, {}, { questA, questNext, questB }, {})
 
 local customWaypoint
 WaypointUIAPI = { Navigation = { NewUserNavigation = function(options)

@@ -646,7 +646,8 @@ local function Build()
     Section(autoRoute, "AUTO ROUTE", -3)
     Check(autoRoute, "vignetteRadarAutoRouteOnSelect", "Start When I Click a Point", 14, -21)
     Check(autoRoute, "vignetteRadarAutoRouteMapNotes", "Include Current Map Data Pack", 14, -49)
-    Check(autoRoute, "vignetteRadarWorldFocusThemedWaypoint", "Color WaypointUI's World Marker", 14, -77)
+    Check(autoRoute, "vignetteRadarRouteArrow", "Mini Route Arrow", 14, -77, nil, 94)
+    Check(autoRoute, "vignetteRadarWorldFocusThemedWaypoint", "Color World Pin", 150, -77, nil, 92)
     Section(autoRoute, "TRAVEL MODE", -111)
     Choice(autoRoute, "vignetteRadarAutoRouteTravel", "auto", "Auto", 14, -129, 80)
     Choice(autoRoute, "vignetteRadarAutoRouteTravel", "ground", "Ground", 104, -129, 80)
@@ -659,6 +660,7 @@ local function Build()
     Button(autoRoute, "Start/Pause", 14, -207, 80, function()
         local focusAPI = addon.VignetteRadarWorldFocus
         if focusAPI then focusAPI.ToggleRoute() end
+        if addon.VignetteRadarRouteArrow then addon.VignetteRadarRouteArrow.Refresh() end
         API.Refresh()
     end)
     Button(autoRoute, "Skip Stop", 104, -207, 80, function()
