@@ -679,13 +679,14 @@ do
             "route chooser actions must fit inside the popup with a visible gutter")
     end
     assert(chooser.choices.rare.icon.texture == "Interface\\TargetingFrame\\UI-TargetingFrame-Skull"
+        and chooser.choices.closest.icon.texture:find("route%-crystal%-pointer%.tga$")
         and chooser.choices.treasure.icon.atlas == "VignetteLoot"
         and chooser.choices.quest.icon.texture:find("quest%-diamond%-hollow%.tga$")
         and chooser.choices.zygor.icon.texture:find("radar%-corner%-controls%.tga$")
         and chooser.choices.rare.height == 42 and chooser.choices.zygor.height == 42
         and chooser.choices.zygor.point[4] + chooser.choices.zygor.width
             <= chooser.width - 12,
-        "all four route choices need distinct artwork within the popup gutter")
+        "all five route choices need distinct artwork within the popup gutter")
     assert(not chooser.choices.quest.face:IsShown() and not chooser.choices.quest.edge:IsShown()
         and #chooser.choices.quest.statusSurface.face == 9
         and #chooser.choices.quest.statusSurface.edge == 9,
@@ -705,6 +706,12 @@ do
         and chooser.choices.quest.statusSurface.edge[1].vertexColor[4] > .4
         and chooser.choices.quest.statusSurface.edge[1].vertexColor[4] < .8,
         "a paused route should keep its category selected with a quieter border")
+    addon.VignetteRadarWorldFocus.GetRouteChoice = function() return "closest", "active" end
+    chooser.close.scripts.OnClick()
+    panel.routeToggle.scripts.OnClick(panel.routeToggle, "RightButton")
+    assert(chooser.choices.closest._routeSelected
+        and not chooser.choices.quest._routeSelected,
+        "Closest mode should visibly select its own route tile")
     addon.VignetteRadarWorldFocus.GetRouteChoice = originalChoice
     local bridge = addon.VignetteRadarZygor
     local originalFollowing = bridge.IsFollowing
@@ -3151,13 +3158,24 @@ do
 end
 
 local profileClock, performanceWarning = 0, nil
+recoveryTimers = {}
+originalTimerAfter = C_Timer.After
+C_Timer.After = function(delay, callback)
+    recoveryTimers[#recoveryTimers + 1] = { delay = delay, callback = callback }
+end
 debugprofilestop = function() profileClock = profileClock + 300; return profileClock end
 DEFAULT_CHAT_FRAME = { AddMessage = function(_, message) performanceWarning = message end }
 local launcherUpdate = assert(launcher.scripts.OnUpdate)
 launcherUpdate(launcher, .2)
 assert(launcher.scripts.OnUpdate == nil and performanceWarning
-    and performanceWarning:find("paused automatic launcher updates", 1, true),
-    "an excessive update must suspend the repeating work and alert the user")
+    and performanceWarning:find("Retrying in 10 seconds", 1, true)
+    and recoveryTimers[#recoveryTimers].delay == 10,
+    "an excessive update must pause briefly and schedule automatic recovery")
+recoveryTimers[#recoveryTimers].callback()
+assert(launcher.scripts.OnUpdate == launcherUpdate
+    and not addon.VignetteRadarBudget.paused.launcher
+    and addon.VignetteRadarBudget.softThrottle,
+    "the launcher must restart automatically at the safer update rate")
 debugprofilestop = nil
 
 sustainedClock = 0
@@ -3170,6 +3188,24 @@ while sustainedIterations < 40 and panel.scripts.OnUpdate do
 end
 assert(panel.scripts.OnUpdate == nil and addon.VignetteRadarBudget.paused.radar,
     "sustained costly redraws must trip the cumulative CPU guard")
+recoveryTimers[#recoveryTimers].callback()
+assert(panel.scripts.OnUpdate == radarUpdate
+    and not addon.VignetteRadarBudget.paused.radar,
+    "the full radar must recover without a reload")
+quietClock, quietCall = 0, 0
+debugprofilestop = function()
+    quietCall = quietCall + 1
+    quietClock = quietClock + (quietCall % 2 == 1 and 1200 or 1)
+    return quietClock
+end
+quietIterations = 0
+while quietIterations < 12 do
+    radarUpdate(panel, 0)
+    quietIterations = quietIterations + 1
+end
+assert(not addon.VignetteRadarBudget.softThrottle,
+    "a sustained quiet period must restore the user's selected update rate")
 debugprofilestop = nil
+C_Timer.After = originalTimerAfter
 
 io.write("vignette radar UI tests passed\n")

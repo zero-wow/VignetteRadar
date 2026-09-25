@@ -294,29 +294,71 @@ local function CheckUpdateBudget(owner, started, label)
         local recent = owner._budgetWindowCost * 1000
             / math.max(1000, finished - owner._budgetWindowStart)
         addon.VignetteRadarBudget.recent[label] = recent
-        if label == "radar" and recent >= 30
-            and not addon.VignetteRadarBudget.softThrottle then
-            owner._heavyWindows = (owner._heavyWindows or 0) + 1
-            if owner._heavyWindows >= 3 then
-                addon.VignetteRadarBudget.softThrottle = true
-                if DEFAULT_CHAT_FRAME and DEFAULT_CHAT_FRAME.AddMessage then
-                    DEFAULT_CHAT_FRAME:AddMessage("Vignette Radar temporarily switched to Low CPU updates after sustained high workload. /reload restores your selected rate.")
+        if label == "radar" then
+            if recent >= 30 and not addon.VignetteRadarBudget.softThrottle then
+                owner._heavyWindows = (owner._heavyWindows or 0) + 1
+                if owner._heavyWindows >= 3 then
+                    addon.VignetteRadarBudget.softThrottle = true
+                    if DEFAULT_CHAT_FRAME and DEFAULT_CHAT_FRAME.AddMessage then
+                        DEFAULT_CHAT_FRAME:AddMessage("Vignette Radar switched to Low CPU updates after sustained high workload. It will restore your selected rate when the load settles.")
+                    end
                 end
+            else
+                owner._heavyWindows = 0
             end
-        else owner._heavyWindows = 0 end
+        end
+        -- Let whichever updater is active prove that the load has settled.
+        -- The launcher/background can recover the rate while the radar is hidden.
+        if label == "radar" or not (panel and panel:IsShown()) then
+            if addon.VignetteRadarBudget.softThrottle and recent <= 10
+                and not next(addon.VignetteRadarBudget.paused) then
+                owner._quietWindows = (owner._quietWindows or 0) + 1
+                if owner._quietWindows >= 10 then
+                    addon.VignetteRadarBudget.softThrottle = false
+                    owner._quietWindows = 0
+                    if DEFAULT_CHAT_FRAME and DEFAULT_CHAT_FRAME.AddMessage then
+                        DEFAULT_CHAT_FRAME:AddMessage("Vignette Radar restored your selected update rate after the load settled.")
+                    end
+                end
+            else owner._quietWindows = 0 end
+        else owner._quietWindows = 0 end
+        if recent <= 10 then
+            owner._stableWindows = (owner._stableWindows or 0) + 1
+            if owner._stableWindows >= 20 then owner._budgetTrips = 0 end
+        else owner._stableWindows = 0 end
         if owner._budgetWindowCost >= 300 then owner._slowUpdates = 3 end
         owner._budgetWindowStart, owner._budgetWindowCost = finished, 0
     end
     if owner._slowUpdates < 3 then return end
+    local update = owner:GetScript("OnUpdate")
+    if not update then return end
+    addon.VignetteRadarBudget.softThrottle = true
+    owner._quietWindows = 0
+    if not (C_Timer and type(C_Timer.After) == "function") then
+        owner._slowUpdates = 0
+        return -- Never leave updates paused without a recovery timer.
+    end
+    owner._budgetTrips = (owner._budgetTrips or 0) + 1
+    local delay = math.floor(math.min(120, 10 * 2 ^ math.min(4, owner._budgetTrips - 1)))
+    owner._budgetUpdate = update
     owner:SetScript("OnUpdate", nil)
     addon.VignetteRadarBudget.paused[label] = true
     local message = "Vignette Radar paused automatic " .. label
-        .. " updates after excessive CPU time. /reload retries them; please report this."
+        .. " updates after excessive CPU time. Retrying in " .. delay .. " seconds."
     if DEFAULT_CHAT_FRAME and DEFAULT_CHAT_FRAME.AddMessage then
         DEFAULT_CHAT_FRAME:AddMessage(message)
     elseif print then
         print(message)
     end
+    C_Timer.After(delay, function()
+        if not addon.VignetteRadarBudget.paused[label]
+            or owner._budgetUpdate ~= update then return end
+        owner._slowUpdates, owner._heavyWindows = 0, 0
+        owner._budgetWindowStart, owner._budgetWindowCost = nil, 0
+        owner._budgetUpdate = nil
+        addon.VignetteRadarBudget.paused[label] = nil
+        owner:SetScript("OnUpdate", update)
+    end)
 end
 
 local function Call(func, ...)
@@ -3069,6 +3111,8 @@ function routeMenu.CategoryButton(parent, kind, label, width)
         button.icon:SetAtlas("VignetteLoot")
     elseif kind == "quest" then
         button.icon:SetTexture(addon.VignetteRadarQuestHollowTexture)
+    elseif kind == "closest" then
+        button.icon:SetTexture("Interface\\AddOns\\VignetteRadar\\Media\\route-crystal-pointer.tga")
     else
         button.icon:SetTexture("Interface\\AddOns\\VignetteRadar\\Media\\radar-corner-controls.tga")
     end
@@ -3078,7 +3122,8 @@ function routeMenu.CategoryButton(parent, kind, label, width)
     function button:RefreshRouteTile()
         local style = addon.VignetteRadarStyle
         local r, g, b = ACCENT[1], ACCENT[2], ACCENT[3]
-        if style then r, g, b = style.Color(kind == "zygor" and "accent" or kind) end
+        if style then r, g, b = style.Color((kind == "zygor" or kind == "closest")
+            and "accent" or kind) end
         local selected, hovered = self._routeSelected == true, self._hovered == true
         local paused = self._routeState == "paused"
         self.label:ClearAllPoints()
@@ -3146,7 +3191,7 @@ routeMenu.Refresh = function()
     routeMenu.popup.status:SetText(chosen == "zygor" and bridge and bridge.Status()
         or focus and focus.Status() or "Waypoint data unavailable")
     routeMenu.popup.status:SetTextColor(.7, .79, .8, 1)
-    for _, kind in ipairs({ "rare", "treasure", "quest", "zygor" }) do
+    for _, kind in ipairs({ "closest", "rare", "treasure", "quest", "zygor" }) do
         routeMenu.popup.choices[kind]:SetRouteSelected(chosen == kind, state)
     end
     local routing = focus and focus.IsRouteActive()
@@ -3236,15 +3281,15 @@ function routeMenu.Ensure()
         routeMenu.popup.choices[key] = button
         return button
     end
-    for index, kind in ipairs({ "rare", "treasure", "quest" }) do
-        Choice(kind, kind:sub(1, 1):upper() .. kind:sub(2), 13 + (index - 1) * 57,
-            -77, 52, function()
+    for index, kind in ipairs({ "closest", "rare", "treasure", "quest" }) do
+        Choice(kind, kind:sub(1, 1):upper() .. kind:sub(2), 12 + (index - 1) * 45,
+            -77, 42, function()
                 local focus = addon.VignetteRadarWorldFocus
                 if focus then return focus.StartNearest(kind) end
                 return false, "World Focus is unavailable"
             end, true)
     end
-    Choice("zygor", "Zygor", 184, -77, 52, function()
+    Choice("zygor", "Zygor", 192, -77, 42, function()
         local ok, reason = addon.VignetteRadarAPI.StartZygorRoute()
         routeMenu.ShowZygorPage()
         if not ok then
@@ -3673,7 +3718,8 @@ function addon.GetVignetteRadarDiagnostics()
         "Map pack: " .. tostring(source or (settings.vignetteRadarPOISource == "none" and "off" or "none here")),
         "Live detections: " .. #activeTargets .. "  ·  quest points: " .. #activeQuests,
         "Map notes: " .. #activeMapNotes,
-        "CPU guard: " .. (#pausedNames > 0 and ("paused " .. table.concat(pausedNames, ", ")) or "running"),
+        "CPU guard: " .. (#pausedNames > 0 and ("paused " .. table.concat(pausedNames, ", ")
+            .. " (auto-retrying)") or "running"),
         "Update rate: " .. (settings.vignetteRadarPerformance or "standard"),
     }
     for _, line in ipairs(addon.GetVignetteRadarStatusLines()) do

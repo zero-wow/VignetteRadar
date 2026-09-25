@@ -498,4 +498,52 @@ do
     assert(focus.OnLootEvent("LOOT_SLOT_CLEARED") and waypoint.position.x == .6,
         "looting the matched nearby treasure should advance even outside 3 yards")
 end
+do
+    local rare, cache, objective = Step(330), Step(320), Step(315)
+    rare.key, rare.name, rare.category = "closest:rare", "Nearby rare", "rare"
+    cache.key, cache.name, cache.kind = "closest:cache", "Nearby cache", "treasure"
+    objective.questID, objective.name = 99, "Nearby objective"
+    local progress = { finished = false, numFulfilled = 0 }
+    questActive[99], questDone[99], questTurnedIn[99] = true, false, false
+    C_QuestLog.GetQuestObjectives = function() return { progress } end
+    player.worldX = 300
+    focus.Sync(123, player, { rare }, { objective }, { cache })
+    assert(focus.StartNearest("closest") and waypoint.position.x == .315
+        and focus.GetRouteChoice() == "closest"
+        and select(2, focus.GetRoutePoint()) == "quest",
+        "Closest should start at the nearest eligible point and expose its actual type")
+    progress.finished = true
+    focus.Sync(123, player, { rare }, { objective }, { cache })
+    assert(waypoint.position.x == .32 and select(2, focus.GetRoutePoint()) == "treasure",
+        "a completed objective should let Closest choose the next nearest type")
+    player.worldX = 316.9
+    focus.Sync(123, player, { rare }, { objective }, { cache })
+    assert(waypoint.position.x == .32,
+        "a treasure stop in Closest must keep its three-yard arrival rule")
+    player.worldX = 317.1
+    focus.Sync(123, player, { rare }, { objective }, { cache })
+    assert(waypoint.position.x == .33 and select(2, focus.GetRoutePoint()) == "rare",
+        "Closest should continue from the treasure to the nearby rare")
+    player.worldX = 321
+    focus.Sync(123, player, { rare }, { objective }, { cache })
+    assert(focus.IsRouteActive() and focus.GetRoutePoint() == nil
+        and focus.Status():find("Waiting for Nearby Points", 1, true),
+        "Closest should remain armed after its current points are exhausted")
+    local later = Step(350)
+    later.key, later.name, later.kind = "closest:later", "Later cache", "treasure"
+    for _ = 1, 2 do
+        focus.Sync(123, player, { rare }, { objective }, { cache, later })
+    end
+    assert(waypoint.position.x == .35 and select(2, focus.GetRoutePoint()) == "treasure",
+        "the waiting route should acquire a newly available point without a reload")
+    assert(focus.Clear())
+    local tiedRare, tiedCache = Step(340), Step(340)
+    tiedRare.key, tiedRare.name, tiedRare.category = "closest:tied-rare", "Tied rare", "rare"
+    tiedCache.key, tiedCache.name, tiedCache.kind = "closest:tied-cache", "Tied cache", "treasure"
+    player.worldX = 300
+    focus.Sync(123, player, { tiedRare }, {}, { tiedCache })
+    assert(focus.StartNearest("closest") and select(2, focus.GetRoutePoint()) == "rare",
+        "equal-distance choices should prefer rare before treasure")
+    assert(focus.Clear())
+end
 io.write("vignette radar World Focus tests passed\n")

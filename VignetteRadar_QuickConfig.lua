@@ -322,9 +322,11 @@ function API.Refresh()
         local recent = budget and budget.recent or {}
         local total = (recent.radar or 0) + (recent.launcher or 0)
             + (recent.background or 0)
-        quick.pages.Performance.workload:SetText(budget and budget.softThrottle
-            and string.format("Recent update work: %.1f ms/sec · temporarily slowed", total)
-            or string.format("Recent update work: %.1f ms/sec", total))
+        quick.pages.Performance.workload:SetText(budget and next(budget.paused)
+            and string.format("Recent update work: %.1f ms/sec · retrying automatically", total)
+            or budget and budget.softThrottle
+                and string.format("Recent update work: %.1f ms/sec · temporarily slowed", total)
+                or string.format("Recent update work: %.1f ms/sec", total))
     end
     for _, box in ipairs(checks) do
         local value = db[box.optionKey]
@@ -1018,8 +1020,8 @@ local function Build()
     Label(performance, "Balanced: about 7 redraws/sec.", 14, -79, 9)
     Label(performance, "Low CPU: 4 redraws/sec and slower scans.", 14, -97, 9)
     Section(performance, "AUTOMATIC PROTECTION", -132)
-    Label(performance, "Sustained high load slows updates for this session.", 14, -152, 9)
-    Label(performance, "Extreme spikes pause them. /reload resets both.", 14, -170, 9)
+    Label(performance, "Sustained high load slows updates automatically.", 14, -152, 9)
+    Label(performance, "Extreme spikes pause briefly, then retry at Low CPU.", 14, -170, 9)
     performance.workload = Label(performance, "Measuring update work...", 14, -195, 9, 260)
     performance.workload:SetHeight(29)
     performance.workload:SetWordWrap(true)
