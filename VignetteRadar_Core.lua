@@ -84,7 +84,13 @@ function addon.GetSettings()
     if type(db.vignetteRadarEnabled) ~= "boolean" then db.vignetteRadarEnabled = true end
     if type(db.vignetteRadarHideWhenEmpty) ~= "boolean" then db.vignetteRadarHideWhenEmpty = true end
     if type(db.vignetteRadarLauncherVisible) ~= "boolean" then db.vignetteRadarLauncherVisible = true end
-    if type(db.vignetteRadarBeaconsEnabled) ~= "boolean" then db.vignetteRadarBeaconsEnabled = false end
+    -- dev.66 stored false as its initial value. Enable once for existing users,
+    -- then leave their later on/off choice alone.
+    if db.vignetteRadarBeaconDefaulted ~= true then
+        db.vignetteRadarBeaconsEnabled = true
+        db.vignetteRadarBeaconDefaulted = true
+    end
+    if type(db.vignetteRadarBeaconsEnabled) ~= "boolean" then db.vignetteRadarBeaconsEnabled = true end
     if type(db.vignetteRadarBeaconRares) ~= "boolean" then db.vignetteRadarBeaconRares = true end
     if type(db.vignetteRadarBeaconQuests) ~= "boolean" then db.vignetteRadarBeaconQuests = true end
     if db.vignetteRadarBeaconRange ~= 150 and db.vignetteRadarBeaconRange ~= 450

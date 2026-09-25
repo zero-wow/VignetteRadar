@@ -27,8 +27,8 @@ local paused, slowUpdates = false, 0
 local function Pause(reason)
     if paused then return end
     paused = true
-    if frame then frame:Hide() end
-    local message = "Vignette Radar: world beacons paused for this session (" .. reason
+    if frame then frame:SetScript("OnUpdate", nil); frame:Hide() end
+    local message = "Vignette Radar: World Beacons paused for this session (" .. reason
         .. "). /reload retries them."
     if DEFAULT_CHAT_FRAME and DEFAULT_CHAT_FRAME.AddMessage then
         DEFAULT_CHAT_FRAME:AddMessage(message)
@@ -136,11 +136,11 @@ local function MakeCard(index)
             GameTooltip:AddLine(item.name .. "  ·  " .. math.floor(item.distance + .5) .. " yd", r, g, b)
         end
         if (self.groupCount or 0) > 8 then
-            GameTooltip:AddLine("+" .. (self.groupCount - 8) .. " more nearby", .7, .8, .83)
+            GameTooltip:AddLine("+" .. (self.groupCount - 8) .. " More Nearby", .7, .8, .83)
         end
         GameTooltip:AddLine(self.group[1].source == "note"
-            and "Shift-click for a waypoint. Drag the top edge to move."
-            or "Click to focus; Shift-click to navigate. Drag the top edge to move.",
+            and "Shift-Click for a Waypoint. Drag the Top Edge to Move."
+            or "Click to Focus; Shift-Click to Navigate. Drag the Top Edge to Move.",
             .66, .76, .8)
         GameTooltip:Show()
     end)
@@ -188,11 +188,16 @@ local function EnsureFrame()
     frame.heading = frame:CreateFontString(nil, "OVERLAY")
     frame.heading:SetFont(FONT, 10, "OUTLINE")
     frame.heading:SetPoint("TOPLEFT", frame, "TOPLEFT", 16, -8)
-    frame.heading:SetText("RADAR BEACONS")
+    frame.heading:SetText("World Beacons")
     frame.summary = frame:CreateFontString(nil, "OVERLAY")
     frame.summary:SetFont(FONT, 9, "OUTLINE")
     frame.summary:SetPoint("TOPRIGHT", frame, "TOPRIGHT", -16, -9)
     frame.summary:SetTextColor(.73, .78, .81, .95)
+    frame.empty = frame:CreateFontString(nil, "OVERLAY")
+    frame.empty:SetFont(FONT, 10, "OUTLINE")
+    frame.empty:SetPoint("TOP", frame, "TOP", 0, -42)
+    frame.empty:SetTextColor(.73, .78, .81, .9)
+    frame.empty:Hide()
     frame.axis = frame:CreateTexture(nil, "ARTWORK")
     frame.axis:SetPoint("TOPLEFT", frame, "TOPLEFT", 18, -27)
     frame.axis:SetPoint("TOPRIGHT", frame, "TOPRIGHT", -18, -27)
@@ -202,7 +207,7 @@ local function EnsureFrame()
     frame.center:SetPoint("TOP", frame, "TOP", 0, -23)
     frame:SetScript("OnDragStart", function(self) self:StartMoving() end)
     frame:SetScript("OnDragStop", function(self) self:StopMovingOrSizing(); SavePosition() end)
-    frame:SetScript("OnUpdate", function(self, elapsed)
+    frame.update = function(self, elapsed)
         self.elapsed = (self.elapsed or 0) + elapsed
         if self.elapsed < .2 then return end
         self.elapsed = 0
@@ -214,7 +219,7 @@ local function EnsureFrame()
             slowUpdates = elapsedMS > 20 and slowUpdates + 1 or 0
             if elapsedMS > 100 or slowUpdates >= 3 then Pause("slow updates") end
         end
-    end)
+    end
     RefreshTheme()
     frame:Hide()
     return frame
@@ -233,7 +238,7 @@ local function Add(out, kind, source, raw, origin, player, mapID, range)
     out[#out + 1] = {
         kind = kind, source = origin, raw = raw,
         mapID = source.mapID or mapID, worldX = source.worldX, worldY = source.worldY,
-        name = type(source.name) == "string" and source.name or (kind == "quest" and "Quest point" or "Rare"),
+        name = type(source.name) == "string" and source.name or (kind == "quest" and "Quest Point" or "Rare"),
         distance2 = distance2, distance = math.sqrt(distance2),
         r = r, g = g, b = b, completed = source.completed == true,
         priority = source.isWorldBoss and 1 or kind == "rare" and 2 or 3,
@@ -292,19 +297,28 @@ end
 function API.Sync(mapID, player, targets, quests, notes, visible)
     if preview or paused then return end
     local db = addon.GetSettings()
-    if not (db.vignetteRadarBeaconsEnabled and db.vignetteRadarEnabled
-        and mapID and player and Number(player.worldX) and Number(player.worldY)) then
+    if not (db.vignetteRadarBeaconsEnabled and db.vignetteRadarEnabled) then
         candidates, lastMapID, lastPlayer = {}, nil, nil
-        if frame then frame:Hide() end
+        if frame then frame:SetScript("OnUpdate", nil); frame:Hide() end
+        return
+    end
+    if not (mapID and player and Number(player.worldX) and Number(player.worldY)) then
+        candidates, lastMapID, lastPlayer = {}, nil, nil
+        EnsureFrame():SetHeight(64)
+        frame:SetScript("OnUpdate", nil)
+        frame:Show()
+        local ok = pcall(API.Render)
+        if not ok then Pause("display error") end
         return
     end
     local ok, list = pcall(API.BuildCandidates,
         mapID, player, targets, quests, notes, visible, db)
     if not ok then Pause("scan error"); return end
     candidates, lastMapID, lastPlayer = list, mapID, player
-    if #list > 0 or preview then EnsureFrame():Show()
-    elseif frame then frame:Hide() end
-    if frame and frame:IsShown() then RefreshTheme() end
+    EnsureFrame():SetHeight(#list > 0 and HEIGHT or 64)
+    frame:SetScript("OnUpdate", #list > 0 and frame.update or nil)
+    frame:Show()
+    RefreshTheme()
     local ok = pcall(API.Render)
     if not ok then Pause("display error") end
 end
@@ -319,11 +333,28 @@ function API.Render()
     if not (frame and frame:IsShown()) then return end
     local player = lastPlayer
     local facing = Facing()
-    if not (facing and player and lastMapID) then
-        frame.summary:SetText("HEADING UNAVAILABLE")
+    if not (player and lastMapID) then
+        frame.summary:SetText("Position Unavailable")
+        frame.empty:SetText("Waiting for Map Position")
+        frame.empty:Show()
         for _, card in ipairs(cards) do card:Hide() end
         return
     end
+    if not facing then
+        frame.summary:SetText("Heading Unavailable")
+        frame.empty:SetText("Waiting for Player Heading")
+        frame.empty:Show()
+        for _, card in ipairs(cards) do card:Hide() end
+        return
+    end
+    if #candidates == 0 then
+        frame.summary:SetText("0 Points in " .. addon.GetSettings().vignetteRadarBeaconRange .. " yd")
+        frame.empty:SetText("No Rare or Quest Points in Range")
+        frame.empty:Show()
+        for _, card in ipairs(cards) do card:Hide() end
+        return
+    end
+    frame.empty:Hide()
     for index = 1, BINS do
         local bin = bins[index]
         if not bin then bin = {}; bins[index] = bin end
@@ -339,7 +370,7 @@ function API.Render()
         bin[#bin + 1] = item
         count = count + 1
     end
-    frame.summary:SetText(count .. " POINT" .. (count == 1 and "" or "S") .. "  ·  FACING")
+    frame.summary:SetText(count .. " Point" .. (count == 1 and "" or "s") .. "  ·  Facing")
     for row = 1, ROWS do lastX[row] = -math.huge end
     local shown = 0
     for index = BINS, 1, -1 do
@@ -383,7 +414,11 @@ function API.Preview(value)
             previewSaved = nil
         end
         if frame then
-            frame:SetShown(#candidates > 0 and addon.GetSettings().vignetteRadarBeaconsEnabled)
+            frame:SetHeight(#candidates > 0 and HEIGHT or 64)
+            local db = addon.GetSettings()
+            frame:SetScript("OnUpdate", #candidates > 0 and db.vignetteRadarBeaconsEnabled
+                and db.vignetteRadarEnabled and frame.update or nil)
+            frame:SetShown(db.vignetteRadarBeaconsEnabled and db.vignetteRadarEnabled)
             API.Render()
         end
         return
@@ -393,13 +428,15 @@ function API.Preview(value)
     end
     preview = true
     local demo = {
-        { kind = "rare", name = "Sample rare", worldX = 100, worldY = 20,
+        { kind = "rare", name = "Sample Rare", worldX = 100, worldY = 20,
             distance = 102, r = 1, g = .55, b = .35, priority = 2, raw = {} },
-        { kind = "quest", name = "Quest objective", worldX = 120, worldY = -35,
+        { kind = "quest", name = "Quest Objective", worldX = 120, worldY = -35,
             distance = 125, r = .46, g = .80, b = 1, priority = 3, raw = {} },
     }
     candidates, lastMapID, lastPlayer = demo, 1, { worldX = 0, worldY = 0 }
-    EnsureFrame():Show()
+    EnsureFrame():SetHeight(HEIGHT)
+    frame:SetScript("OnUpdate", frame.update)
+    frame:Show()
     API.Render()
 end
 

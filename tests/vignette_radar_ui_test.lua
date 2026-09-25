@@ -1716,11 +1716,11 @@ assert(tabCount == 12 and quick.pages.Themes and quick.pages.Guides and quick.pa
     "compact settings must visibly include exploration controls")
 local openBeacons, previewBeacons, backFromBeacons
 for _, object in ipairs(objects) do
-    if object.parent == quick.pages.Markers and object.text == "World beacons..." then
+    if object.parent == quick.pages.Markers and object.text == "World Beacons..." then
         openBeacons = object
     elseif object.parent == quick.pages.Beacons and object.text == "Preview" then
         previewBeacons = object
-    elseif object.parent == quick.pages.Beacons and object.text == "Back to markers" then
+    elseif object.parent == quick.pages.Beacons and object.text == "Back to Markers" then
         backFromBeacons = object
     end
 end
@@ -1730,7 +1730,8 @@ openBeacons.scripts.OnClick(openBeacons)
 assert(quick.pages.Beacons:IsShown(), "the marker settings must open beacon options")
 previewBeacons.scripts.OnClick(previewBeacons)
 local beaconRail = assert(_G.VignetteRadarBeaconRail)
-assert(beaconRail:IsShown() and beaconRail.width == 520 and beaconRail.height == 146,
+assert(beaconRail:IsShown() and beaconRail.width == 520 and beaconRail.height == 146
+    and beaconRail.heading.text == "World Beacons",
     "beacon preview must show a bounded movable display")
 local previewCards = 0
 for _, object in ipairs(objects) do
@@ -1744,8 +1745,14 @@ for _, object in ipairs(objects) do
 end
 assert(previewCards == 2, "preview should show both a rare and a quest point")
 backFromBeacons.scripts.OnClick(backFromBeacons)
-assert(quick.pages.Markers:IsShown() and not beaconRail:IsShown(),
-    "leaving preview must restore marker settings without a stuck overlay")
+assert(quick.pages.Markers:IsShown() and beaconRail:IsShown()
+    and beaconRail.summary.text == "1 Point  ·  Facing",
+    "leaving preview must restore real beacon data without a stuck sample")
+addon.VignetteRadarBeacons.Sync(1, { worldX = 0, worldY = 0 }, {}, {}, {})
+assert(beaconRail:IsShown() and beaconRail.height == 64 and beaconRail.empty:IsShown()
+    and beaconRail.scripts.OnUpdate == nil
+    and beaconRail.summary.text:find("0 Points in", 1, true),
+    "enabled beacons must show a compact explanation when no points are in range")
 local escapePanels = {}
 for _, name in ipairs(UISpecialFrames) do escapePanels[name] = true end
 assert(escapePanels.VignetteRadarExplorePanel

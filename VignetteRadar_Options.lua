@@ -381,7 +381,7 @@ local function BuildPanel()
     AddButton(explore, "Saved presets, pins & journal", 24, -286, 230, function()
         addon.VignetteRadarExploration.TogglePanel()
     end)
-    AddButton(explore, "World beacons", 266, -286, 230, function()
+    AddButton(explore, "World Beacons", 266, -286, 230, function()
         local quick = addon.VignetteRadarQuickConfig
         if quick and quick.OpenPage then quick.OpenPage("Beacons") end
     end)
