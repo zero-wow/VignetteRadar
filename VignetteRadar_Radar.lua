@@ -3057,6 +3057,65 @@ function addon.ShowVignetteRadarRouteNote(label, message)
     routeMenu.Note(label, message)
 end
 
+function routeMenu.CategoryButton(parent, kind, label, width)
+    local button = addon.VignetteRadarControls.Button(parent, label, width, 42)
+    button.label:SetFont(STANDARD_TEXT_FONT or "Fonts\\FRIZQT__.TTF", 9, "")
+    button.icon = button:CreateTexture(nil, "OVERLAY")
+    button.icon:SetSize(19, 19)
+    button.icon:SetPoint("TOP", button, "TOP", 0, -5)
+    if kind == "rare" then
+        button.icon:SetTexture(SKULL_TEXTURE)
+    elseif kind == "treasure" then
+        button.icon:SetAtlas("VignetteLoot")
+    elseif kind == "quest" then
+        button.icon:SetTexture(addon.VignetteRadarQuestHollowTexture)
+    else
+        button.icon:SetTexture("Interface\\AddOns\\VignetteRadar\\Media\\radar-corner-controls.tga")
+    end
+    button.rim = button:CreateTexture(nil, "ARTWORK")
+    button.rim:SetAllPoints(button)
+    button.rim:SetTexture("Interface\\AddOns\\VignetteRadar\\Media\\radar-rounded-border.tga")
+    function button:RefreshRouteTile()
+        local style = addon.VignetteRadarStyle
+        local r, g, b = ACCENT[1], ACCENT[2], ACCENT[3]
+        if style then r, g, b = style.Color(kind == "zygor" and "accent" or kind) end
+        local selected, hovered = self._routeSelected == true, self._hovered == true
+        local paused = self._routeState == "paused"
+        self.label:ClearAllPoints()
+        self.label:SetPoint("BOTTOM", self, "BOTTOM", 0, 5)
+        self.label:SetSize(width - 2, 11)
+        self.label:SetTextColor(selected and (r + 1) / 2 or .77,
+            selected and (g + 1) / 2 or .84, selected and (b + 1) / 2 or .85, 1)
+        self.selection:Hide()
+        self.face:SetVertexColor(r, g, b, selected and (paused and .10 or .22)
+            or hovered and .09 or .035)
+        self.edge:SetVertexColor(r, g, b, selected and .8 or hovered and .38 or .08)
+        self.rim:SetVertexColor(r, g, b, selected and (paused and .52 or .92)
+            or hovered and .32 or .07)
+        if kind == "zygor" then
+            local state = (selected and 2 or 0) + (hovered and 1 or 0)
+            self.icon:SetTexCoord((10 * 64 + 1) / 1024, (10 * 64 + 63) / 1024,
+                (state * 64 + 1) / 256, (state * 64 + 63) / 256)
+        end
+        self.icon:SetVertexColor(r, g, b, selected and 1 or hovered and .9 or .72)
+    end
+    local baseRefresh = button.RefreshAppearance
+    button.RefreshAppearance = function(self)
+        baseRefresh(self)
+        self:RefreshRouteTile()
+    end
+    for _, event in ipairs({ "OnEnter", "OnLeave", "OnMouseDown", "OnMouseUp", "OnHide" }) do
+        button:HookScript(event, function(self) self:RefreshRouteTile() end)
+    end
+    function button:SetRouteSelected(selected, state)
+        self._routeSelected, self._routeState = selected == true, state
+        if selected then self:LockHighlight() else self:UnlockHighlight() end
+        self:RefreshRouteTile()
+    end
+    button:RefreshRouteTile()
+    return button
+end
+
 routeMenu.Refresh = function()
     if not routeMenu.popup then return end
     local style, focus = addon.VignetteRadarStyle, addon.VignetteRadarWorldFocus
@@ -3073,8 +3132,20 @@ routeMenu.Refresh = function()
         return
     end
     routeMenu.popup.rule2:SetColorTexture(ar, ag, ab, .16)
-    routeMenu.popup.status:SetText(focus and focus.Status() or "Waypoint data unavailable")
+    local chosen, state
+    if focus and focus.GetRouteChoice then chosen, state = focus.GetRouteChoice() end
+    local bridge = addon.VignetteRadarZygor
+    if bridge and bridge.IsFollowing and bridge.IsFollowing() then
+        chosen, state = "zygor", "active"
+    elseif not chosen and bridge and bridge.IsPaused and bridge.IsPaused() then
+        chosen, state = "zygor", "paused"
+    end
+    routeMenu.popup.status:SetText(chosen == "zygor" and bridge and bridge.Status()
+        or focus and focus.Status() or "Waypoint data unavailable")
     routeMenu.popup.status:SetTextColor(.7, .79, .8, 1)
+    for _, kind in ipairs({ "rare", "treasure", "quest", "zygor" }) do
+        routeMenu.popup.choices[kind]:SetRouteSelected(chosen == kind, state)
+    end
     local routing = focus and focus.IsRouteActive()
     routeMenu.popup.pause:SetText(routing and "Pause Auto Route"
         or focus and focus.IsRoutePaused and focus.IsRoutePaused()
@@ -3129,15 +3200,16 @@ function routeMenu.Ensure()
     routeMenu.popup.status:SetPoint("TOPLEFT", 13, -39)
     routeMenu.popup.status:SetWidth(222)
     if routeMenu.popup.status.SetMaxLines then routeMenu.popup.status:SetMaxLines(1) end
-    routeMenu.popup.section = Text(routeMenu.popup, 9, "AUTO ROUTE TO NEAREST", true)
+    routeMenu.popup.section = Text(routeMenu.popup, 9, "CHOOSE A ROUTE", true)
     routeMenu.popup.section:SetPoint("TOPLEFT", 13, -61)
     routeMenu.popup.rule2 = routeMenu.popup:CreateTexture(nil, "ARTWORK")
-    routeMenu.popup.rule2:SetPoint("TOPLEFT", 12, -108)
-    routeMenu.popup.rule2:SetPoint("TOPRIGHT", -12, -108)
+    routeMenu.popup.rule2:SetPoint("TOPLEFT", 12, -128)
+    routeMenu.popup.rule2:SetPoint("TOPRIGHT", -12, -128)
     routeMenu.popup.rule2:SetHeight(1)
     routeMenu.popup.choices = {}
-    local function Choice(key, label, x, y, width, action)
-        local button = addon.VignetteRadarControls.Button(routeMenu.popup, label, width, 22)
+    local function Choice(key, label, x, y, width, action, category)
+        local button = category and routeMenu.CategoryButton(routeMenu.popup, key, label, width)
+            or addon.VignetteRadarControls.Button(routeMenu.popup, label, width, 22)
         button:SetPoint("TOPLEFT", routeMenu.popup, "TOPLEFT", x, y)
         button:SetScript("OnClick", function()
             local ok, reason = action()
@@ -3159,39 +3231,39 @@ function routeMenu.Ensure()
         return button
     end
     for index, kind in ipairs({ "rare", "treasure", "quest" }) do
-        Choice(kind, kind:sub(1, 1):upper() .. kind:sub(2), 13 + (index - 1) * 77,
-            -77, 69, function()
+        Choice(kind, kind:sub(1, 1):upper() .. kind:sub(2), 13 + (index - 1) * 57,
+            -77, 52, function()
                 local focus = addon.VignetteRadarWorldFocus
                 if focus then return focus.StartNearest(kind) end
                 return false, "World Focus is unavailable"
-            end)
+            end, true)
     end
-    Choice("zygor", "Zygor Objectives...", 13, -117, 222, function()
+    Choice("zygor", "Zygor", 184, -77, 52, function()
         routeMenu.ShowZygorPage()
         return "page"
-    end)
-    Choice("previous", "Previous Point", 13, -145, 107, function()
+    end, true)
+    Choice("previous", "Previous Point", 13, -137, 107, function()
         return addon.VignetteRadarWorldFocus.Cycle(-1)
     end)
-    Choice("next", "Next Point", 128, -145, 107, function()
+    Choice("next", "Next Point", 128, -137, 107, function()
         return addon.VignetteRadarWorldFocus.Cycle(1)
     end)
-    routeMenu.popup.pause = Choice("pause", "Resume Auto Route", 13, -173, 107, function()
+    routeMenu.popup.pause = Choice("pause", "Resume Auto Route", 13, -165, 107, function()
         local focus = addon.VignetteRadarWorldFocus
         local wasRouting = focus.IsRouteActive()
         local ok, reason = focus.ToggleRoute()
         return wasRouting or ok, wasRouting and nil or reason
     end)
-    routeMenu.popup.skip = Choice("skip", "Skip Stop", 128, -173, 107, function()
+    routeMenu.popup.skip = Choice("skip", "Skip Stop", 128, -165, 107, function()
         return addon.VignetteRadarWorldFocus.SkipRouteStop()
     end)
-    routeMenu.popup.skipQuest = Choice("skipQuest", "Skip Quest", 13, -201, 107, function()
+    routeMenu.popup.skipQuest = Choice("skipQuest", "Skip Quest", 13, -193, 107, function()
         return addon.VignetteRadarWorldFocus.SkipQuest()
     end)
-    routeMenu.popup.clear = Choice("clear", "Clear Focus", 128, -201, 107, function()
+    routeMenu.popup.clear = Choice("clear", "Clear Focus", 128, -193, 107, function()
         return addon.VignetteRadarWorldFocus.Clear()
     end)
-    Choice("settings", "Route Settings", 13, -229, 222, function()
+    Choice("settings", "Route Settings", 13, -221, 222, function()
         local quick = addon.VignetteRadarQuickConfig
         if quick and quick.OpenPage then quick.OpenPage("Auto Route", CircleOnly() and panel.field or panel) end
         return true

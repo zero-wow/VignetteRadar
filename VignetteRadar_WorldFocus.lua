@@ -463,6 +463,14 @@ end
 function API.IsRouteActive() return route ~= nil end
 function API.IsRoutePaused() return pausedRoute ~= nil end
 function API.IsQuestRoute() return route and route.kind == "quest" or false end
+function API.GetRouteChoice()
+    if route then return route.kind, "active" end
+    if pausedRoute then return pausedRoute.kind, "paused" end
+    if active then
+        if active.kind == "guide" then return "zygor", "focus" end
+        return RouteKind(active.item), "focus"
+    end
+end
 function API.HasFocus() return active ~= nil end
 function API.GetFocusedStep()
     return active and active.steps[active.index] or nil

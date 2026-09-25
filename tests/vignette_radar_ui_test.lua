@@ -677,7 +677,39 @@ do
             and -button.point[5] + button.height <= chooser.height - 12,
             "route chooser actions must fit inside the popup with a visible gutter")
     end
+    assert(chooser.choices.rare.icon.texture == "Interface\\TargetingFrame\\UI-TargetingFrame-Skull"
+        and chooser.choices.treasure.icon.atlas == "VignetteLoot"
+        and chooser.choices.quest.icon.texture:find("quest%-diamond%-hollow%.tga$")
+        and chooser.choices.zygor.icon.texture:find("radar%-corner%-controls%.tga$")
+        and chooser.choices.rare.height == 42 and chooser.choices.zygor.height == 42
+        and chooser.choices.zygor.point[4] + chooser.choices.zygor.width
+            <= chooser.width - 12,
+        "all four route choices need distinct artwork within the popup gutter")
+    local originalChoice = addon.VignetteRadarWorldFocus.GetRouteChoice
+    addon.VignetteRadarWorldFocus.GetRouteChoice = function() return "treasure", "active" end
+    chooser.close.scripts.OnClick()
+    panel.routeToggle.scripts.OnClick(panel.routeToggle, "RightButton")
+    assert(chooser.choices.treasure._routeSelected
+        and not chooser.choices.rare._routeSelected
+        and chooser.choices.treasure.rim.vertexColor[4] > .8,
+        "the active route category needs a strong themed selection")
+    addon.VignetteRadarWorldFocus.GetRouteChoice = function() return "quest", "paused" end
+    chooser.close.scripts.OnClick()
+    panel.routeToggle.scripts.OnClick(panel.routeToggle, "RightButton")
+    assert(chooser.choices.quest._routeSelected
+        and chooser.choices.quest.rim.vertexColor[4] > .4
+        and chooser.choices.quest.rim.vertexColor[4] < .8,
+        "a paused route should keep its category selected with a quieter border")
+    addon.VignetteRadarWorldFocus.GetRouteChoice = originalChoice
     local bridge = addon.VignetteRadarZygor
+    local originalFollowing = bridge.IsFollowing
+    bridge.IsFollowing = function() return true end
+    chooser.close.scripts.OnClick()
+    panel.routeToggle.scripts.OnClick(panel.routeToggle, "RightButton")
+    assert(chooser.choices.zygor._routeSelected
+        and chooser.choices.zygor.rim.vertexColor[4] > .8,
+        "following an active Zygor step should light its route choice")
+    bridge.IsFollowing = originalFollowing
     local originalPin = bridge.Pin
     local pinned
     bridge.Pin = function(mode) pinned = mode; return true end

@@ -84,7 +84,13 @@ focus.Sync(123, player, { rareA, rareB }, {}, { rareNote })
 assert(focus.SelectTarget({ key = rareA.key, name = rareA.name, category = rareA.kind,
     mapID = rareA.mapID, mapX = rareA.mapX, mapY = rareA.mapY,
     worldX = rareA.worldX, worldY = rareA.worldY, instanceID = rareA.instanceID }))
+local focusedKind, focusedState = focus.GetRouteChoice()
+assert(focusedKind == "rare" and focusedState == "focus",
+    "a manually focused point should identify its category before Auto Route starts")
 assert(focus.ToggleRoute() and focus.IsRouteActive(), "route button should use the last clicked rare")
+local chosenKind, chosenState = focus.GetRouteChoice()
+assert(chosenKind == "rare" and chosenState == "active",
+    "the route chooser should identify the active route category")
 local routePoint, routeKind = focus.GetRoutePoint()
 assert(routePoint and routePoint.worldX == 600 and routeKind == "rare",
     "the route arrow should receive the current stop and route category")
@@ -96,6 +102,9 @@ assert(not pauseOk and pauseReason:find("paused", 1, true)
     "pausing should keep the route's visited state and explain its status")
 assert(routeNotes[#routeNotes][2]:find("Paused", 1, true),
     "pausing should show a brief route note")
+chosenKind, chosenState = focus.GetRouteChoice()
+assert(chosenKind == "rare" and chosenState == "paused",
+    "the route chooser should retain a visible choice while the route is paused")
 player.worldX = 600
 focus.Sync(123, player, { rareA, rareB }, {}, { rareNote })
 assert(waypoint.position.x == .6 and focus.IsRoutePaused(),
