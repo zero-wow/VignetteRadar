@@ -1323,7 +1323,9 @@ end
 
 local function StyleQuestBlob(blob, slot)
     if blob.colorSlot == slot then return true end
-    local fill = slot and ("Interface\\AddOns\\VignetteRadar\\Media\\quest-area-%02d.tga"):format(slot)
+    -- Blob widgets use the same BLP asset path style as Blizzard's world map.
+    -- The former TGA paths rendered as missing-texture green in the client.
+    local fill = slot and ("Interface\\AddOns\\VignetteRadar\\Media\\quest-blob-%02d"):format(slot)
         or "Interface\\WorldMap\\UI-QuestBlob-Inside"
     local border = slot and fill or "Interface\\WorldMap\\UI-QuestBlob-Outside"
     local ok = pcall(function()

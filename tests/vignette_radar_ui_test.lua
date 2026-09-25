@@ -1361,6 +1361,21 @@ for _, object in ipairs(objects) do
 end
 assert(blobCount == 8 and #panel.questColorBlobs == 8,
     "quest colors must reuse at most eight native blob renderers across layouts")
+for index, blob in ipairs(panel.questColorBlobs) do
+    local asset = ("Interface\\AddOns\\VignetteRadar\\Media\\quest-blob-%02d"):format(index)
+    assert(blob.fillTexture == asset and blob.borderTexture == asset,
+        "native blob widgets must receive the matching BLP asset path")
+    local file = assert(io.open(("Media/quest-blob-%02d.blp"):format(index), "rb"))
+    local bytes = file:read("*a")
+    file:close()
+    local color = addon.VignetteRadarQuestColors[index]
+    assert(bytes:sub(1, 4) == "BLP2" and bytes:byte(9) == 1
+        and bytes:byte(149) == math.floor(color[3] * 255 + .5)
+        and bytes:byte(150) == math.floor(color[2] * 255 + .5)
+        and bytes:byte(151) == math.floor(color[1] * 255 + .5)
+        and bytes:byte(152) == 255,
+        "each native blob BLP must contain the exact quest diamond palette color")
+end
 SlashCmdList.VIGNETTERADAR("preview")
 addon.HandleVignetteClick(panel.blipByKey["preview-rare"].target, "LeftButton")
 for _, name in ipairs({ "classic", "compact", "squat" }) do
