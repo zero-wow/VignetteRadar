@@ -456,12 +456,6 @@ local function EnsurePanel()
     Surface(panel)
     if addon.VignetteRadarControls then addon.VignetteRadarControls.PopupSurface(panel) end
 
-    panel.accent = panel:CreateTexture(nil, "OVERLAY")
-    panel.accent:SetPoint("TOPLEFT", 1, -1)
-    panel.accent:SetPoint("BOTTOMLEFT", 1, 1)
-    panel.accent:SetWidth(2)
-    panel.accent:SetColorTexture(ACCENT[1], ACCENT[2], ACCENT[3], 0.8)
-
     panel.title = Text(panel, 11, "RADAR LEGEND")
     panel.title:SetPoint("TOPLEFT", 10, -10)
     panel.title:SetTextColor(ACCENT[1], ACCENT[2], ACCENT[3], 1)
@@ -798,7 +792,6 @@ function API.Refresh()
     local accentRed, accentGreen, accentBlue = ACCENT[1], ACCENT[2], ACCENT[3]
     if style then
         accentRed, accentGreen, accentBlue = style.Color("accent")
-        panel.accent:SetColorTexture(accentRed, accentGreen, accentBlue, .8)
         panel.title:SetTextColor(accentRed, accentGreen, accentBlue, 1)
         panel.divider:SetColorTexture(accentRed, accentGreen, accentBlue, .18)
     end

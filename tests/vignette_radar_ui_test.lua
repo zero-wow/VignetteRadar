@@ -265,8 +265,8 @@ assert(settings.vignetteRadarEnabled == false, "layout preview must not silently
 assert(panel:IsShown() and panel.width == 220 and panel.height == 278, "preview must reserve space for zoom controls")
 SlashCmdList.VIGNETTERADAR("explore")
 local explore = assert(_G.VignetteRadarExplorePanel)
-assert(explore:IsShown() and explore.width == 330 and explore.height == 425,
-    "exploration controls must fit the compact popout")
+assert(explore:IsShown() and explore.width == 330 and explore.height == 425
+    and not explore.rail, "exploration controls must fit without an outer edge rail")
 for _, content in pairs(explore.pages) do
     assert(content.point[3] == -73 and content.height == 346 and 73 + content.height < explore.height,
         "all exploration pages must stay inside the popout")
@@ -1675,8 +1675,8 @@ addon.SetVignetteRadarNorthUp(false)
 SlashCmdList.VIGNETTERADAR("preview")
 panel.settingsDot.scripts.OnClick(panel.settingsDot)
 local quick = assert(addon.VignetteRadarQuickConfig.GetPanel())
-assert(quick:IsShown() and quick.width == 288 and quick.height == 432,
-    "the settings dot must open the narrow, self-contained panel")
+assert(quick:IsShown() and quick.width == 288 and quick.height == 432
+    and not quick.rail, "the settings dot must open a panel without a left edge rail")
 assert(quick.tabs.Radar.backdrop == nil
     and quick.tabs.Radar.face.texture == "Interface\\Buttons\\WHITE8X8"
     and quick.tabs.Radar.edge.height == 1 and quick.find.width == 44,

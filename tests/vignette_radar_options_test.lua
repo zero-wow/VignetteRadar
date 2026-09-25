@@ -129,8 +129,8 @@ local panel = assert(_G.VignetteRadarOptionsPanel)
 assert(panel.width == 520 and panel.height == 365 and registered,
     "the registered Settings canvas must retain its compact size")
 assert(panel.pages and panel.pageButtons and panel.selectedPage == "Radar")
-assert(panel.backdrop and panel.rail and panel.headerLine and panel.tabLine,
-    "the full settings canvas must use the radar's dark surface and accent details")
+assert(panel.backdrop and not panel.rail and panel.headerLine and panel.tabLine,
+    "the full settings canvas must keep the dark surface without an edge rail")
 
 -- A page occupies the canvas. Check every clickable bounds and adjacent hit target
 -- while each page is selected, including the separate two-column behavior page.

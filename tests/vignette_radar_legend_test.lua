@@ -125,8 +125,8 @@ local anchor = CreateFrame("Frame", nil, UIParent)
 anchor.right = 500
 assert(legend.Toggle(anchor) == true and legend.IsShown(), "toggle must open the attached legend")
 local panel = assert(_G.VignetteRadarLegendPanel, "legend panel must have a stable global frame name")
-assert(panel.width == 232 and panel.height == 370 and panel.clamped == true,
-    "legend must fit its live and map guide within the screen")
+assert(panel.width == 232 and panel.height == 370 and panel.clamped == true
+    and not panel.accent, "legend must fit without a left edge rail")
 assert(panel.mouseEnabled == true and panel.divider.height == 1,
     "legend surface must capture input and preserve a visible header gutter")
 assert(panel.point[1] == "TOPLEFT" and panel.point[3] == "TOPRIGHT" and panel.point[4] == 8,

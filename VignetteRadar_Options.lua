@@ -30,13 +30,12 @@ local function Refresh()
         nextRange:SetEnabled(db.vignetteRadarRange ~= ranges[#ranges])
     end
     local style = addon.VignetteRadarStyle
-    if style and panel.rail then
+    if style then
         local ar, ag, ab = style.Color("accent")
         local br, bg, bb = style.Color("background")
         panel:SetBackdropColor(math.min(.14, br * 2.7), math.min(.14, bg * 2.7),
             math.min(.14, bb * 2.7), .99)
         addon.VignetteRadarControls.RefreshPopupSurface(panel)
-        panel.rail:SetColorTexture(ar, ag, ab, .8)
         panel.headerLine:SetColorTexture(ar, ag, ab, .24)
         panel.tabLine:SetColorTexture(ar, ag, ab, .16)
         panel.title:SetTextColor(ar, ag, ab, 1)
@@ -188,10 +187,6 @@ local function BuildPanel()
     panel:Hide()
     panel.pages, panel.pageButtons = {}, {}
 
-    panel.rail = panel:CreateTexture(nil, "ARTWORK")
-    panel.rail:SetPoint("TOPLEFT", panel, "TOPLEFT", 1, -1)
-    panel.rail:SetPoint("BOTTOMLEFT", panel, "BOTTOMLEFT", 1, 1)
-    panel.rail:SetWidth(2)
     panel.headerLine = panel:CreateTexture(nil, "ARTWORK")
     panel.headerLine:SetPoint("TOPLEFT", panel, "TOPLEFT", 18, -65)
     panel.headerLine:SetPoint("TOPRIGHT", panel, "TOPRIGHT", -18, -65)

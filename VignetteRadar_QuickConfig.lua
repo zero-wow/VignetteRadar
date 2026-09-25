@@ -314,7 +314,6 @@ function API.Refresh()
     if style then
         local ar, ag, ab = style.Color("accent")
         quick.title:SetTextColor(ar, ag, ab, 1)
-        quick.rail:SetColorTexture(ar, ag, ab, .75)
         quick.headerLine:SetColorTexture(ar, ag, ab, .18)
         quick.bead:SetColorTexture(ar, ag, ab, 1)
         if quick.poiThumb then quick.poiThumb:SetColorTexture(ar, ag, ab, .7) end
@@ -404,10 +403,6 @@ local function Build()
     quick:SetBackdropBorderColor(1, 1, 1, 0.22)
     addon.VignetteRadarControls.PopupSurface(quick)
     quick.pages, quick.tabs = {}, {}
-    quick.rail = quick:CreateTexture(nil, "ARTWORK")
-    quick.rail:SetPoint("TOPLEFT", 1, -1)
-    quick.rail:SetPoint("BOTTOMLEFT", 1, 1)
-    quick.rail:SetWidth(2)
     quick.bead = quick:CreateTexture(nil, "OVERLAY")
     quick.bead:SetSize(5, 5)
     quick.bead:SetPoint("TOPLEFT", 12, -13)

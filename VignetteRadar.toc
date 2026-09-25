@@ -2,7 +2,7 @@
 ## Title: Vignette Radar
 ## Notes: A radar for live vignettes, quests, and optional HandyNotes map notes.
 ## Author: Zero
-## Version: 0.1.0-dev.57
+## Version: 0.1.0-dev.58
 ## OptionalDeps: WaffleHouse_EllesmereUI, EllesmereUI, HandyNotes
 ## SavedVariables: VignetteRadarDB
 
