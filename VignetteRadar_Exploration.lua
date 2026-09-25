@@ -58,10 +58,17 @@ function API.Range(player, focused)
     return autoRange
 end
 
-function API.FocusQuest(questID)
+function API.FocusQuest(questID, point)
     questID = Number(questID)
     if focusedQuestID == questID then focusedQuestID = nil else focusedQuestID = questID end
     focusedQuestMisses = 0
+    if focusedQuestID and addon.VignetteRadarWorldFocus then
+        if point and Number(point.mapID) and Number(point.mapX) and Number(point.mapY) then
+            addon.VignetteRadarWorldFocus.SelectPoint({ kind = "quest", questID = focusedQuestID,
+                name = point.name, mapID = point.mapID, mapX = point.mapX, mapY = point.mapY,
+                worldX = point.worldX, worldY = point.worldY, instanceID = point.instanceID })
+        else addon.VignetteRadarWorldFocus.SelectQuest(focusedQuestID) end
+    end
     Refresh()
 end
 function API.GetFocusedQuest() return focusedQuestID end

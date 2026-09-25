@@ -381,9 +381,13 @@ local function BuildPanel()
     AddButton(explore, "Saved presets, pins & journal", 24, -286, 230, function()
         addon.VignetteRadarExploration.TogglePanel()
     end)
-    AddButton(explore, "Bearing Bar", 266, -286, 230, function()
+    AddButton(explore, "Bearing Bar", 266, -286, 107, function()
         local quick = addon.VignetteRadarQuickConfig
         if quick and quick.OpenPage then quick.OpenPage("Beacons") end
+    end)
+    AddButton(explore, "World Focus", 389, -286, 107, function()
+        local quick = addon.VignetteRadarQuickConfig
+        if quick and quick.OpenPage then quick.OpenPage("World Focus") end
     end)
     AddFooter(explore, "Ctrl-click a detection for a route stop; Ctrl-Alt-click to watch it.")
 

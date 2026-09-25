@@ -5,6 +5,8 @@ BINDING_HEADER_VIGNETTERADAR = "Vignette Radar"
 BINDING_NAME_VIGNETTERADAR_RAISE_LAUNCHER = "Hold to raise launcher"
 BINDING_NAME_VIGNETTERADAR_PEEK_RADAR = "Hold to peek at full radar"
 BINDING_NAME_VIGNETTERADAR_HOLD_LENS = "Hold to filter radar"
+BINDING_NAME_VIGNETTERADAR_FOCUS_NEXT = "World Focus: next point"
+BINDING_NAME_VIGNETTERADAR_FOCUS_PREVIOUS = "World Focus: previous point"
 
 addon.VignetteRadarRanges = { 10, 25, 50, 100, 150, 300, 450, 600, 1200, 2400, 4800 }
 addon.VignetteRadarLayouts = { "classic", "squat", "compact" }
@@ -91,6 +93,13 @@ function addon.GetSettings()
         db.vignetteRadarBearingBarDefaulted = true
     end
     if type(db.vignetteRadarBeaconsEnabled) ~= "boolean" then db.vignetteRadarBeaconsEnabled = false end
+    if type(db.vignetteRadarWorldFocusEnabled) ~= "boolean" then db.vignetteRadarWorldFocusEnabled = true end
+    if type(db.vignetteRadarWorldFocusAutoAdvance) ~= "boolean" then db.vignetteRadarWorldFocusAutoAdvance = false end
+    if type(db.vignetteRadarWorldFocusRoutes) ~= "boolean" then db.vignetteRadarWorldFocusRoutes = true end
+    if type(db.vignetteRadarWorldFocusSavedNotes) ~= "boolean" then db.vignetteRadarWorldFocusSavedNotes = false end
+    if type(db.vignetteRadarWorldFocusZygor) ~= "boolean" then db.vignetteRadarWorldFocusZygor = false end
+    if db.vignetteRadarWorldFocusArrivalRadius ~= 10 and db.vignetteRadarWorldFocusArrivalRadius ~= 20
+        and db.vignetteRadarWorldFocusArrivalRadius ~= 40 then db.vignetteRadarWorldFocusArrivalRadius = 20 end
     if type(db.vignetteRadarBeaconRares) ~= "boolean" then db.vignetteRadarBeaconRares = true end
     if type(db.vignetteRadarBeaconQuests) ~= "boolean" then db.vignetteRadarBeaconQuests = true end
     if db.vignetteRadarBeaconRange ~= 150 and db.vignetteRadarBeaconRange ~= 450
@@ -165,7 +174,8 @@ function addon.GetSettings()
     if type(db.vignetteRadarHideCleared) ~= "boolean" then db.vignetteRadarHideCleared = false end
     if type(db.vignetteRadarRecentKills) ~= "table" then db.vignetteRadarRecentKills = {} end
     if type(db.vignetteRadarPOITypes) ~= "table" then db.vignetteRadarPOITypes = {} end
-    for kind, enabled in pairs({ treasure = true, mob = true, item = true, note = true }) do
+    for kind, enabled in pairs({ treasure = true, mob = true, item = true, note = true,
+        entrance = true, guide = true }) do
         if type(db.vignetteRadarPOITypes[kind]) ~= "boolean" then
             db.vignetteRadarPOITypes[kind] = enabled
         end

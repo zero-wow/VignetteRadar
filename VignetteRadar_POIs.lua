@@ -11,6 +11,7 @@ local PROBE_NODES = 96
 local SOURCE_CACHE_SECONDS = 10
 local sourceCache, cacheOrder = {}, {}
 local autoChoice
+local ZYGOR_SOURCE = "Zygor POIs"
 local npcNames = {}
 local function Safe(value)
     return not (type(issecretvalue) == "function" and issecretvalue(value))
@@ -55,6 +56,15 @@ local function HandyNotes()
     return type(notes) == "table" and type(notes.plugins) == "table" and notes or nil
 end
 
+local function ZygorPoints(mapID)
+    local viewer = _G.ZygorGuidesViewer
+    local poi = viewer and Field(viewer, "Poi")
+    if not poi or Field(poi, "DoneLoadingPoints") ~= true then return nil end
+    local points = Field(poi, "Points")
+    local zone = points and Field(points, mapID)
+    return type(zone) == "table" and zone or nil
+end
+
 local function Enabled(notes, name)
     local profile = notes.db and notes.db.profile
     local enabled = profile and profile.enabledPlugins
@@ -63,12 +73,17 @@ end
 
 function POIs.Sources()
     local sources, notes = {}, HandyNotes()
-    if not notes then return sources end
-    for name, handler in pairs(notes.plugins) do
-        if type(name) == "string" and type(handler) == "table"
-            and type(handler.GetNodes2) == "function" then
-            sources[#sources + 1] = { id = name, enabled = Enabled(notes, name) }
+    if notes then
+        for name, handler in pairs(notes.plugins) do
+            if type(name) == "string" and type(handler) == "table"
+                and type(handler.GetNodes2) == "function" then
+                sources[#sources + 1] = { id = name, enabled = Enabled(notes, name) }
+            end
         end
+    end
+    local poi = _G.ZygorGuidesViewer and Field(_G.ZygorGuidesViewer, "Poi")
+    if poi and Field(poi, "DoneLoadingPoints") == true then
+        sources[#sources + 1] = { id = ZYGOR_SOURCE, enabled = true }
     end
     table.sort(sources, function(a, b) return a.id:lower() < b.id:lower() end)
     return sources
@@ -112,21 +127,25 @@ end
 -- ancestors. A short cache keeps config redraws and one-second scans cheap.
 function POIs.ZoneSources(mapID)
     local notes = HandyNotes()
-    if not (notes and type(mapID) == "number" and Safe(mapID)) then return {} end
+    if not (type(mapID) == "number" and Safe(mapID)) then return {} end
     local now = type(GetTime) == "function" and GetTime() or nil
     local registryCount = 0
-    for _ in pairs(notes.plugins) do registryCount = registryCount + 1 end
+    if notes then for _ in pairs(notes.plugins) do registryCount = registryCount + 1 end end
+    local poi = _G.ZygorGuidesViewer and Field(_G.ZygorGuidesViewer, "Poi")
+    if poi and Field(poi, "DoneLoadingPoints") == true then registryCount = registryCount + 1 end
     local snapshot = sourceCache[mapID]
     if snapshot and snapshot.registryCount == registryCount
         and now and snapshot.at and now - snapshot.at < SOURCE_CACHE_SECONDS then
         local cached = {}
         for _, entry in ipairs(snapshot.entries) do
-            if Enabled(notes, entry.id) then cached[#cached + 1] = entry end
+            if entry.id == ZYGOR_SOURCE or (notes and Enabled(notes, entry.id)) then
+                cached[#cached + 1] = entry
+            end
         end
         return cached
     end
     local maps, entries = CandidateMaps(mapID), {}
-    for name, handler in pairs(notes.plugins) do
+    for name, handler in pairs(notes and notes.plugins or {}) do
         if type(name) == "string" and type(handler) == "table"
             and type(handler.GetNodes2) == "function" and Enabled(notes, name) then
             for depth, candidate in ipairs(maps) do
@@ -137,6 +156,14 @@ function POIs.ZoneSources(mapID)
                     break
                 end
             end
+        end
+    end
+    for depth, candidate in ipairs(maps) do
+        local zone = ZygorPoints(candidate)
+        if zone and #zone > 0 then
+            entries[#entries + 1] = { id = ZYGOR_SOURCE, enabled = true,
+                mapID = candidate, depth = depth - 1, count = math.min(#zone, PROBE_NODES) }
+            break
         end
     end
     table.sort(entries, function(a, b) return a.id:lower() < b.id:lower() end)
@@ -191,7 +218,7 @@ function POIs.ResolveSource(mapID, chosen)
         if zoneChoice == entry.id and entry.enabled then return entry.id, entry.mapID end
         if chosen == "auto" and autoChoice and autoChoice.mapID == mapID
             and autoChoice.id == entry.id then sticky = entry end
-        if chosen == "auto" then
+        if chosen == "auto" and entry.id ~= ZYGOR_SOURCE then
             local affinity = NameAffinity(entry.id, names)
             if not best or affinity > bestAffinity
                 or (affinity == bestAffinity and entry.depth < best.depth)
@@ -236,6 +263,10 @@ local function GroupName(node)
 end
 
 function POIs.Kind(node, source)
+    local label = (String(Field(node, "label")) or ""):lower()
+    local atlas = (String(Field(node, "atlas")) or ""):lower()
+    if Field(node, "link") and atlas:find("caveunderground", 1, true) then return "entrance" end
+    if Field(node, "routes") and label:find("path to", 1, true) then return "entrance" end
     local group = GroupName(node):lower()
     local class = (String(Field(node, "class")) or ""):lower()
     local text = group .. " " .. class
@@ -252,12 +283,51 @@ function POIs.Kind(node, source)
 end
 
 local function Name(node, kind)
+    if kind == "entrance" then
+        local main = Field(node, "_main")
+        local parentName = main and (DisplayText(Field(main, "label")) or DisplayText(Field(main, "name")))
+        if parentName then return "Entrance to " .. parentName end
+    end
     local name = DisplayText(Field(node, "label")) or DisplayText(Field(node, "name"))
         or DisplayText(Field(node, "title"))
     if name == "Creature" then name = NPCName(Field(node, "npc")) end
     return name or NPCName(Field(node, "npc"))
         or ({ treasure = "Treasure location", mob = "Mob location",
-            item = "Item location", note = "Map note" })[kind]
+            item = "Item location", note = "Map note", entrance = "Cave entrance" })[kind]
+end
+
+local function Route(node, coord)
+    if Field(node, "_main") ~= node or Field(node, "_coord") ~= coord then return nil end
+    local path = Field(node, "path")
+    if type(path) ~= "number" and type(path) ~= "table" then return nil end
+    local values = type(path) == "table" and path or { path }
+    local route = {}
+    -- HandyNotes' path is stored destination-first. Walk it in reverse, then
+    -- finish at the treasure itself. Ignore metadata in mixed path tables.
+    for index = math.min(#values, 15), 1, -1 do
+        local value = values[index]
+        if type(value) == "number" and value >= 0 and value < 100010000 then
+            route[#route + 1] = value
+        end
+    end
+    route[#route + 1] = coord
+    return #route > 1 and route or nil
+end
+
+local function RouteSteps(route, mapID, mapToWorld, mapVector)
+    if not route then return nil end
+    local steps = {}
+    for _, coord in ipairs(route) do
+        local x, y = math.floor(coord / 10000) / 10000, (coord % 10000) / 10000
+        local ok, worldX, worldY, instanceID = pcall(mapToWorld, mapID, mapVector(x, y))
+        if ok and Safe(worldX) and Safe(worldY)
+            and type(worldX) == "number" and type(worldY) == "number"
+            and worldX == worldX and worldY == worldY then
+            steps[#steps + 1] = { mapID = mapID, mapX = x, mapY = y,
+                worldX = worldX, worldY = worldY, instanceID = instanceID }
+        end
+    end
+    return #steps > 1 and steps or nil
 end
 
 local function Finite(value)
@@ -298,8 +368,38 @@ end
 
 function POIs.Collect(mapID, source, mapToWorld, mapVector)
     local results, notes = {}, HandyNotes()
-    if not (notes and type(mapID) == "number" and type(source) == "string"
+    if not (type(mapID) == "number" and type(source) == "string"
         and type(mapToWorld) == "function" and type(mapVector) == "function") then return results end
+    if source == ZYGOR_SOURCE then
+        local zone = ZygorPoints(mapID)
+        if not zone then return results end
+        for index = 1, math.min(#zone, MAX_NODES) do
+            local point = zone[index]
+            local x, y = Finite(Field(point, "x")), Finite(Field(point, "y"))
+            local pointType = Field(point, "type")
+            local kind = pointType == "rare" and "mob"
+                or pointType == "treasure" and "treasure" or nil
+            if kind and x and y and x >= 0 and x <= 1 and y >= 0 and y <= 1 then
+                local ok, worldX, worldY, instanceID = pcall(function()
+                    return mapToWorld(mapID, mapVector(x, y))
+                end)
+                if ok and Finite(worldX) and Finite(worldY) then
+                    results[#results + 1] = {
+                        key = ZYGOR_SOURCE .. ":" .. mapID .. ":" .. index,
+                        mapID = mapID, mapX = x, mapY = y,
+                        worldX = worldX, worldY = worldY, instanceID = instanceID,
+                        source = ZYGOR_SOURCE, kind = kind,
+                        name = DisplayText(Field(point, "name")) or Name(nil, kind),
+                        note = DisplayText(Field(point, "comment")),
+                        questID = tonumber(Field(point, "quest")),
+                        zygorPoint = point,
+                    }
+                end
+            end
+        end
+        return results
+    end
+    if not notes then return results end
     local handler = notes.plugins[source]
     if not (type(handler) == "table" and type(handler.GetNodes2) == "function"
         and Enabled(notes, source)) then return results end
@@ -330,6 +430,42 @@ function POIs.Collect(mapID, source, mapToWorld, mapVector)
                     questID = tonumber(Field(node, "quest")),
                     note = DisplayText(Field(node, "note")),
                     icon = IconDescriptor(iconpath, iconScale, alpha),
+                    route = RouteSteps(Route(node, coord), pointMapID, mapToWorld, mapVector),
+                    parentCoord = kind == "entrance" and tonumber(Field(Field(node, "_main"), "_coord")) or nil,
+                }
+            end
+        end
+    end
+    -- Some packs suppress their own path pin while still exposing the parent
+    -- treasure's path. Keep our entrance visible when the user enabled that
+    -- note type, without making a second dot over an existing entrance pin.
+    local entranceAt = {}
+    local originalCount = #results
+    local function EntranceKey(entry)
+        return entry.mapID .. ":" .. math.floor(entry.mapX * 10000 + .5)
+            .. ":" .. math.floor(entry.mapY * 10000 + .5)
+    end
+    for index = 1, originalCount do
+        local note = results[index]
+        if note.kind == "entrance" then entranceAt[EntranceKey(note)] = true end
+    end
+    for index = 1, originalCount do
+        if #results >= MAX_NODES then break end
+        local note = results[index]
+        local first = note.kind == "treasure" and note.route and note.route[1]
+        if first and (math.abs(first.mapX - note.mapX) > .0002
+            or math.abs(first.mapY - note.mapY) > .0002) then
+            local key = EntranceKey(first)
+            if not entranceAt[key] then
+                entranceAt[key] = true
+                results[#results + 1] = {
+                    key = note.key .. ":entrance", mapID = first.mapID,
+                    mapX = first.mapX, mapY = first.mapY,
+                    worldX = first.worldX, worldY = first.worldY,
+                    instanceID = first.instanceID, source = source,
+                    kind = "entrance", name = "Entrance to " .. note.name,
+                    parentCoord = tonumber(note.key:match(":(%d+)$")),
+                    note = "First stop on the path to " .. note.name,
                 }
             end
         end

@@ -289,6 +289,10 @@ end
 function API.Refresh()
     if not quick then return end
     local db = Settings()
+    if quick.pages["World Focus"] and quick.pages["World Focus"].status then
+        local focus = addon.VignetteRadarWorldFocus
+        quick.pages["World Focus"].status:SetText(focus and focus.Status() or "Waypoint data unavailable")
+    end
     for _, box in ipairs(checks) do
         local value = db[box.optionKey]
         if box.subkey then value = type(value) == "table" and value[box.subkey] end
@@ -515,9 +519,43 @@ local function Build()
     Choice(markers, "vignetteRadarMarkerSize", 9, "Large", 194, -154, 80)
     Check(markers, "vignetteRadarShapes", "Recognizable icons", 14, -190)
     Check(markers, "vignetteRadarShowHealth", "Focused rare health", 14, -218)
-    Button(markers, "Bearing Bar...", 14, -251, 260, function()
+    Button(markers, "Bearing Bar...", 14, -251, 124, function()
         SelectPage("Beacons")
     end)
+    Button(markers, "World Focus...", 150, -251, 124, function()
+        SelectPage("World Focus")
+    end)
+
+    local focus = CreateFrame("Frame", nil, quick)
+    focus:SetSize(WIDTH, HEIGHT - 137)
+    focus:SetPoint("TOPLEFT", quick, "TOPLEFT", 0, -137)
+    focus.searchPage = "World Focus"
+    focus:Hide()
+    quick.pages["World Focus"] = focus
+    Section(focus, "SINGLE WORLD WAYPOINT", -3)
+    Check(focus, "vignetteRadarWorldFocusEnabled", "Click Markers to Focus a Waypoint", 14, -21)
+    Check(focus, "vignetteRadarWorldFocusAutoAdvance", "Advance When You Arrive", 14, -49)
+    Check(focus, "vignetteRadarWorldFocusRoutes", "Follow Pack Entrance + Path Steps", 14, -77)
+    Check(focus, "vignetteRadarWorldFocusSavedNotes", "Include Saved Treasure + Rare Notes", 14, -105)
+    Check(focus, "vignetteRadarWorldFocusZygor", "Show Zygor's Current Guide Step", 14, -133)
+    Section(focus, "ARRIVAL DISTANCE", -166)
+    Choice(focus, "vignetteRadarWorldFocusArrivalRadius", 10, "10 yd", 14, -184, 80)
+    Choice(focus, "vignetteRadarWorldFocusArrivalRadius", 20, "20 yd", 104, -184, 80)
+    Choice(focus, "vignetteRadarWorldFocusArrivalRadius", 40, "40 yd", 194, -184, 80)
+    Button(focus, "Previous", 14, -218, 80, function()
+        if addon.VignetteRadarWorldFocus then addon.VignetteRadarWorldFocus.Cycle(-1) end
+        API.Refresh()
+    end)
+    Button(focus, "Next", 104, -218, 80, function()
+        if addon.VignetteRadarWorldFocus then addon.VignetteRadarWorldFocus.Cycle(1) end
+        API.Refresh()
+    end)
+    Button(focus, "Back", 194, -218, 80, function() SelectPage("Markers") end)
+    Button(focus, "Next Route Step", 14, -246, 260, function()
+        if addon.VignetteRadarWorldFocus then addon.VignetteRadarWorldFocus.Advance() end
+        API.Refresh()
+    end)
+    focus.status = Label(focus, "", 14, -277, 9, 260)
 
     local beacons = CreateFrame("Frame", nil, quick)
     beacons:SetSize(WIDTH, HEIGHT - 137)
@@ -771,10 +809,10 @@ local function Build()
     Check(mapData, "vignetteRadarPOITypes", "Mobs", 147, -156, "mob", 91)
     Check(mapData, "vignetteRadarPOITypes", "Items", 14, -185, "item", 91)
     Check(mapData, "vignetteRadarPOITypes", "Other notes", 147, -185, "note", 91)
-    Check(mapData, "vignetteRadarPOIIcons", "Pack icons", 14, -218, nil, 95)
-    Check(mapData, "vignetteRadarHideCleared", "Hide cleared", 147, -218, nil, 95)
-    quick.poiStatus = Label(mapData, "", 14, -248, 9, 260)
-    Button(mapData, "Clear this zone's choice", 14, -262, 260, function()
+    Check(mapData, "vignetteRadarPOITypes", "Entrances", 14, -214, "entrance", 91)
+    Check(mapData, "vignetteRadarPOIIcons", "Pack icons", 147, -214, nil, 91)
+    quick.poiStatus = Label(mapData, "", 14, -243, 9, 260)
+    Button(mapData, "Clear zone choice", 14, -259, 124, function()
         local poi = addon.VignetteRadarPOIs
         local mapID = addon.VignetteRadarAPI.GetCurrentMapID()
         if poi and poi.SetZoneChoice and poi.SetZoneChoice(mapID, nil) then
@@ -782,6 +820,7 @@ local function Build()
             RefreshPOISources()
         end
     end)
+    Check(mapData, "vignetteRadarHideCleared", "Hide cleared", 147, -259, nil, 91)
 
     local status = quick.pages.Status
     Section(status, "LIVE DIAGNOSTICS", -3)

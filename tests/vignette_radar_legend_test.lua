@@ -125,7 +125,7 @@ local anchor = CreateFrame("Frame", nil, UIParent)
 anchor.right = 500
 assert(legend.Toggle(anchor) == true and legend.IsShown(), "toggle must open the attached legend")
 local panel = assert(_G.VignetteRadarLegendPanel, "legend panel must have a stable global frame name")
-assert(panel.width == 232 and panel.height == 390 and panel.clamped == true
+assert(panel.width == 232 and panel.height == 412 and panel.clamped == true
     and not panel.accent, "legend must fit without a left edge rail")
 assert(panel.mouseEnabled == true and panel.divider.height == 1,
     "legend surface must capture input and preserve a visible header gutter")
@@ -140,7 +140,7 @@ assert(panel.liveHint.text == "CLICK LIVE TYPE TO SPOTLIGHT"
     "the legend must identify spotlightable rows, visibility switches, and reference-only symbols")
 assert(panel.rows.rare and panel.rows.treasure and panel.rows.event and panel.rows.other,
     "legend must render one independent row for every supported filter")
-for _, kind in ipairs({ "treasure", "mob", "item", "note" }) do
+for _, kind in ipairs({ "treasure", "mob", "item", "note", "entrance", "guide" }) do
     local note = assert(panel.mapNotes[kind], "every map note type needs a legend entry")
     assert(note.rim.texture == "Interface\\CharacterFrame\\TempPortraitAlphaMask"
         and note.core.width == 3 and note.core.height == 3,

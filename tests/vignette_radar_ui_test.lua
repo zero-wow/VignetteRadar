@@ -218,6 +218,7 @@ assert(loadfile("VignetteRadar_QuestData.lua"))("VignetteRadar", addon)
 assert(loadfile("VignetteRadar_RouteDraft.lua"))("VignetteRadar", addon)
 assert(loadfile("VignetteRadar_Exploration.lua"))("VignetteRadar", addon)
 assert(loadfile("VignetteRadar_POIs.lua"))("VignetteRadar", addon)
+assert(loadfile("VignetteRadar_WorldFocus.lua"))("VignetteRadar", addon)
 assert(loadfile("VignetteRadar_Beacons.lua"))("VignetteRadar", addon)
 assert(loadfile(legendSourcePath))("VignetteRadar", addon)
 assert(loadfile(targetPickerSourcePath))("VignetteRadar", addon)
@@ -1701,15 +1702,19 @@ assert(quick.tabs.Radar.backdrop == nil
     and quick.tabs.Radar.face.texture == "Interface\\Buttons\\WHITE8X8"
     and quick.tabs.Radar.edge.height == 1 and quick.find.width == 44,
     "settings buttons need quiet flat artwork and an untruncated Find control")
-assert(quick.pages.Status and quick.pages.Search and quick.pages.Beacons and quick.find,
+assert(quick.pages.Status and quick.pages.Search and quick.pages.Beacons
+    and quick.pages["World Focus"] and quick.find,
     "diagnostics and search must be reachable from the compact settings panel")
 quick.find.scripts.OnClick(quick.find)
 quick.searchInput:SetText("arrival")
 quick.searchInput.scripts.OnTextChanged()
-assert(quick.searchRows[1]:IsShown() and quick.searchRows[1].result.page == "Wayfinding",
-    "search must find a newly added route option without a slash command")
+assert(quick.searchRows[1]:IsShown()
+    and (quick.searchRows[1].result.page == "Wayfinding"
+        or quick.searchRows[1].result.page == "World Focus"),
+    "search must find a route or waypoint arrival option without a slash command")
+local arrivalPage = quick.searchRows[1].result.page
 quick.searchRows[1].scripts.OnClick(quick.searchRows[1])
-assert(quick.pages.Wayfinding:IsShown())
+assert(quick.pages[arrivalPage]:IsShown())
 quick.tabs.Radar.scripts.OnClick(quick.tabs.Radar)
 local tabCount, exposed, colorSlots = 0, {}, {}
 for _ in pairs(quick.tabs) do tabCount = tabCount + 1 end
@@ -1801,7 +1806,10 @@ for _, key in ipairs({ "vignetteRadarEnabled", "vignetteRadarHideWhenEmpty", "vi
     "vignetteRadarBreadcrumbs", "vignetteRadarTrailStyle", "vignetteRadarApproachAlerts",
     "vignetteRadarJournalEnabled", "vignetteRadarApproachDistance",
     "vignetteRadarPOISource", "vignetteRadarPOITypes", "vignetteRadarPOIIcons",
-    "vignetteRadarHideCleared" }) do
+    "vignetteRadarHideCleared", "vignetteRadarWorldFocusEnabled",
+    "vignetteRadarWorldFocusAutoAdvance", "vignetteRadarWorldFocusRoutes",
+    "vignetteRadarWorldFocusSavedNotes", "vignetteRadarWorldFocusZygor",
+    "vignetteRadarWorldFocusArrivalRadius" }) do
     assert(exposed[key], "compact settings missing: " .. key)
 end
 for _, slot in ipairs(addon.VignetteRadarStyle.slots) do

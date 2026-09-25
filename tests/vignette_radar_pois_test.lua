@@ -173,4 +173,67 @@ assert(#tokenNotes == 1 and tokenNotes[1].name == "Ancient Watcher"
     and tokenNotes[1].npcID == 245699 and tokenNotes[1].questID == 12345
     and tooltipCalls == 1,
     "numeric NPC tokens must resolve to the real name and cache repeat lookups")
+
+local cache = { label = "Hidden cache", group = "treasures", path = { 45005000, 40005000 },
+    _coord = 50005000 }
+cache._main = cache
+local entrance = setmetatable({ label = "Path to treasure", path = false,
+    routes = { { 50005000, 45005000, 40005000 } } },
+    { __index = cache })
+HandyNotes.plugins.PathPack = { GetNodes2 = function()
+    local keys, index = { 50005000, 40005000 }, 0
+    return function()
+        index = index + 1
+        return keys[index], nil, nil, 1, 1
+    end, { [50005000] = cache, [40005000] = entrance }, nil
+end }
+local pathNotes = pois.Collect(123, "PathPack", function(_, vector)
+    return vector.x * 1000, vector.y * 1000, 42
+end, function(x, y) return { x = x, y = y } end)
+assert(#pathNotes == 2 and pathNotes[1].kind == "treasure"
+    and pathNotes[1].route and #pathNotes[1].route == 3
+    and pathNotes[1].route[1].worldX == 400
+    and pathNotes[1].route[2].worldX == 450
+    and pathNotes[1].route[3].worldX == 500
+    and pathNotes[2].kind == "entrance" and pathNotes[2].parentCoord == 50005000,
+    "a pack path must yield an informational entrance and ordered entrance-to-treasure stops")
+HandyNotes.plugins.PathPack.GetNodes2 = function()
+    local sent = false
+    return function()
+        if sent then return nil end
+        sent = true
+        return 50005000, nil, nil, 1, 1
+    end, { [50005000] = cache }, nil
+end
+local hiddenEntrance = pois.Collect(123, "PathPack", function(_, vector)
+    return vector.x * 1000, vector.y * 1000, 42
+end, function(x, y) return { x = x, y = y } end)
+assert(#hiddenEntrance == 2 and hiddenEntrance[2].kind == "entrance"
+    and hiddenEntrance[2].worldX == 400 and hiddenEntrance[2].parentCoord == 50005000,
+    "an explicit parent path should supply an entrance even if the pack hides its own path pin")
+assert(pois.Kind({ link = 123, atlas = "CaveUnderground-Down" }, "MapLinks") == "entrance")
+
+ZygorGuidesViewer = { Poi = { DoneLoadingPoints = true, Points = {
+    [123] = { { type = "treasure", name = "Zygor cache", x = .6, y = .4,
+        comment = "Find the key first", quest = 77 } },
+} } }
+local zygor, zygorMap = pois.ResolveSource(123, "Zygor POIs")
+assert(zygor == "Zygor POIs" and zygorMap == 123,
+    "Zygor must be selectable as a zone-scoped source")
+local zygorNotes = pois.Collect(123, "Zygor POIs", function(_, vector)
+    return vector.x * 1000, vector.y * 1000, 42
+end, function(x, y) return { x = x, y = y } end)
+assert(#zygorNotes == 1 and zygorNotes[1].name == "Zygor cache"
+    and zygorNotes[1].kind == "treasure" and zygorNotes[1].icon == nil
+    and zygorNotes[1].worldX == 600 and zygorNotes[1].zygorPoint,
+    "Zygor POIs should use bounded local coordinates and our default note dots")
+local handyNotes = HandyNotes
+HandyNotes = nil
+assert(#pois.Collect(123, "Zygor POIs", function(_, vector)
+    return vector.x * 1000, vector.y * 1000, 42
+end, function(x, y) return { x = x, y = y } end) == 1,
+    "Zygor POIs must remain usable without HandyNotes")
+HandyNotes = handyNotes
+assert(pois.ResolveSource(123, "auto") ~= "Zygor POIs",
+    "Auto should preserve HandyNotes pack choice until Zygor is explicitly chosen")
 io.write("vignette radar map-note tests passed\n")

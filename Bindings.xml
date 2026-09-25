@@ -8,4 +8,10 @@
     <Binding name="VIGNETTERADAR_HOLD_LENS" category="ADDONS" runOnUp="true">
         VignetteRadar_HoldLens(keystate)
     </Binding>
+    <Binding name="VIGNETTERADAR_FOCUS_NEXT" category="ADDONS">
+        VignetteRadar_CycleWorldFocus(1)
+    </Binding>
+    <Binding name="VIGNETTERADAR_FOCUS_PREVIOUS" category="ADDONS">
+        VignetteRadar_CycleWorldFocus(-1)
+    </Binding>
 </Bindings>

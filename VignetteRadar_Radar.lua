@@ -454,7 +454,8 @@ local function CollectQuests(mapID, force)
     local quests = {}
     if not (mapID and C_QuestLog and C_QuestLog.GetQuestsOnMap
         and (force or Settings().vignetteRadarQuestDots or Settings().vignetteRadarQuestAreas
-            or (Settings().vignetteRadarBeaconsEnabled and Settings().vignetteRadarBeaconQuests))) then
+            or (Settings().vignetteRadarBeaconsEnabled and Settings().vignetteRadarBeaconQuests)
+            or Settings().vignetteRadarWorldFocusEnabled)) then
         return quests
     end
     local records = Call(C_QuestLog.GetQuestsOnMap, mapID)
@@ -475,7 +476,7 @@ local function CollectQuests(mapID, force)
         seen[questID][coordinate] = true
         seenQuest[questID] = true
         quests[#quests + 1] = {
-            questID = questID, mapX = x, mapY = y, nextStep = nextStep,
+            questID = questID, mapID = mapID, mapX = x, mapY = y, nextStep = nextStep,
             worldX = worldX, worldY = worldY, instanceID = instanceID,
             completed = SafeBoolean(Call(C_QuestLog.IsComplete, questID)) == true,
             name = name or SafeString(Call(C_QuestLog.GetTitleForQuestID, questID))
@@ -750,7 +751,11 @@ function addon.HandleVignetteClick(target, button)
         local picker = TargetPickerAPI()
         if picker then
             if picker.GetFocus() == target.key then picker.ClearFocus()
-            else picker.SetFocus(target.key, target.name) end
+            else
+                picker.SetFocus(target.key, target.name)
+                local worldFocus = addon.VignetteRadarWorldFocus
+                if worldFocus then worldFocus.SelectTarget(target) end
+            end
         end
         return true
     end
@@ -984,8 +989,10 @@ local function HideMapNotes()
     for _, dot in ipairs(panel.mapNotes) do dot:Hide() end
 end
 
-local MAP_NOTE_COLOR = { treasure = "treasure", mob = "rare", item = "event", note = "other" }
-local MAP_NOTE_LABEL = { treasure = "Treasure", mob = "Mob", item = "Item", note = "Note" }
+local MAP_NOTE_COLOR = { treasure = "treasure", mob = "rare", item = "event",
+    note = "other", entrance = "accent", guide = "quest" }
+local MAP_NOTE_LABEL = { treasure = "Treasure", mob = "Mob", item = "Item",
+    note = "Note", entrance = "Entrance", guide = "Guide step" }
 function addon.VignetteRadarTesting.MapNoteMatchesLive(note, target)
     if not (note and target and SafeNumber(note.worldX) and SafeNumber(note.worldY)
         and SafeNumber(target.worldX) and SafeNumber(target.worldY)) then return false end
@@ -1019,8 +1026,8 @@ local function MapNoteMinimumDistance(range)
 end
 local function RenderMapNotes(player, range, targets)
     local settings = Settings()
-    if not (player and settings.vignetteRadarPOISource ~= "none")
-        or addon.VignetteRadarLensActive == "quest" then HideMapNotes(); return 0 end
+    if not (player and (settings.vignetteRadarPOISource ~= "none"
+        or settings.vignetteRadarWorldFocusZygor)) then HideMapNotes(); return 0 end
     -- A 60-yard grid bounds duplicate checks even when the selected pack
     -- contains hundreds of notes and the radar redraws frequently.
     local live = {}
@@ -1041,8 +1048,10 @@ local function RenderMapNotes(player, range, targets)
         if count >= MAX_MAP_NOTES then break end
         if settings.vignetteRadarPOITypes[note.kind] ~= false
             and (not addon.VignetteRadarLensActive
+                or (addon.VignetteRadarLensActive == "quest" and note.kind == "guide")
                 or (addon.VignetteRadarLensActive == "rare" and note.kind == "mob")
-                or (addon.VignetteRadarLensActive == "treasure" and note.kind == "treasure"))
+                or (addon.VignetteRadarLensActive == "treasure"
+                    and (note.kind == "treasure" or note.kind == "entrance")))
             and not (addon.VignetteRadarRecent and addon.VignetteRadarRecent.IsHidden(note, settings))
             and not (player.instanceID and note.instanceID and player.instanceID ~= note.instanceID) then
             local dx, dy = note.worldX - player.worldX, note.worldY - player.worldY
@@ -1102,7 +1111,17 @@ local function RenderMapNotes(player, range, targets)
                                 0.72, 0.8, 0.82)
                             GameTooltip:AddLine(math.floor(self.distance + 0.5) .. " yd from you", 0.65, 0.7, 0.73)
                             if entry.note then GameTooltip:AddLine(entry.note, 0.7, 0.76, 0.78, true) end
-                            GameTooltip:AddLine("Saved location, not a live detection.", 0.7, 0.78, 0.72, true)
+                            if entry.route then
+                                GameTooltip:AddLine(#entry.route .. " guided stops: entrance to target.", .58, .83, .73)
+                            end
+                            if Settings().vignetteRadarWorldFocusEnabled then
+                                GameTooltip:AddLine("Click to set World Focus.", .58, .83, .73)
+                            end
+                            if entry.zygorPoint then
+                                GameTooltip:AddLine("Shift-click: open Zygor's step-by-step guide.", .58, .83, .73)
+                            end
+                            GameTooltip:AddLine(entry.kind == "guide" and "Current Zygor guide waypoint."
+                                or "Saved location, not a live detection.", 0.7, 0.78, 0.72, true)
                             if (entry.kind == "mob" or entry.kind == "treasure")
                                 and Settings().vignetteRadarHideCleared then
                                 GameTooltip:AddLine("Right-click: hide this location for 1 hour.", .58, .83, .73)
@@ -1112,7 +1131,12 @@ local function RenderMapNotes(player, range, targets)
                         dot:SetScript("OnLeave", function() if GameTooltip then GameTooltip:Hide() end end)
                         dot:RegisterForClicks("LeftButtonUp", "RightButtonUp")
                         dot:SetScript("OnClick", function(self, button)
-                            if button == "RightButton" and self.note
+                            if button == "LeftButton" and self.note
+                                and addon.VignetteRadarWorldFocus then
+                                if IsShiftKeyDown and IsShiftKeyDown() and self.note.zygorPoint then
+                                    addon.VignetteRadarWorldFocus.LoadZygorGuide(self.note)
+                                else addon.VignetteRadarWorldFocus.SelectNote(self.note) end
+                            elseif button == "RightButton" and self.note
                                 and (self.note.kind == "mob" or self.note.kind == "treasure")
                                 and Settings().vignetteRadarHideCleared and addon.VignetteRadarRecent then
                                 addon.VignetteRadarRecent.HideNote(self.note)
@@ -1231,7 +1255,9 @@ local function RenderQuestDots(player, range)
                         dot:SetScript("OnLeave", function() if GameTooltip then GameTooltip:Hide() end end)
                         dot:SetScript("OnClick", function(self)
                             local exploration = addon.VignetteRadarExploration
-                            if exploration and self.quest then exploration.FocusQuest(self.quest.questID) end
+                            if exploration and self.quest then
+                                exploration.FocusQuest(self.quest.questID, self.quest)
+                            end
                         end)
                         panel.questDots[count] = dot
                     end
@@ -1396,9 +1422,22 @@ addon.RenderVignetteRadarQuestStarts = function(player, mapID, range)
                                         .. " your level.", .72, .79, .85)
                                 end
                                 GameTooltip:AddLine(math.floor(self.distance + .5) .. " yd straight-line", .7, .74, .76)
+                                if Settings().vignetteRadarWorldFocusEnabled then
+                                    GameTooltip:AddLine("Click to set World Focus.", .58, .83, .73)
+                                end
                                 GameTooltip:Show()
                             end)
                             dot:SetScript("OnLeave", function() if GameTooltip then GameTooltip:Hide() end end)
+                            dot:SetScript("OnClick", function(self)
+                                local focus = addon.VignetteRadarWorldFocus
+                                if focus and self.entry then
+                                    focus.SelectPoint({ kind = "quest", name = self.entry.questName
+                                        or self.entry.questLineName or "Quest start",
+                                        mapID = activeMapID, mapX = self.entry.x, mapY = self.entry.y,
+                                        worldX = self.entry.worldX, worldY = self.entry.worldY,
+                                        instanceID = self.entry.instanceID })
+                                end
+                            end)
                             panel.questStartDots[count] = dot
                         end
                         dot.entry, dot.distance = entry, distance
@@ -5012,13 +5051,27 @@ end
 
 ScanVignettes = function(mapID)
     local changedMap = activeMapID ~= mapID
+    local now = Now()
     if changedMap then questMapBasis = nil end
     if activeMapID ~= mapID or preview or Settings().vignetteRadarEnabled ~= true then
         pulseUntil, approachPulseKey, approachPulseUntil = 0, nil, nil
     end
     activeMapID = mapID
     activeTargets = CollectVignettes(mapID)
-    activeQuests = CollectQuests(mapID)
+    local db = Settings()
+    local focusOnlyQuests = db.vignetteRadarWorldFocusEnabled and not preview
+        and not db.vignetteRadarQuestDots and not db.vignetteRadarQuestAreas
+        and not (db.vignetteRadarBeaconsEnabled and db.vignetteRadarBeaconQuests)
+    local questCache = addon._focusQuestCache
+    if focusOnlyQuests and questCache and questCache.mapID == mapID
+        and now - questCache.at < 5 then
+        activeQuests = questCache.quests
+    else
+        activeQuests = CollectQuests(mapID)
+        if focusOnlyQuests then
+            addon._focusQuestCache = { quests = activeQuests, mapID = mapID, at = now }
+        else addon._focusQuestCache = nil end
+    end
     local startsEnabled = Settings().vignetteRadarQuestStartBadges == true
     local startsNow = Now()
     if addon.VignetteRadarStartsMapID ~= mapID
@@ -5052,7 +5105,6 @@ ScanVignettes = function(mapID)
         end
     end
     local source = Settings().vignetteRadarPOISource
-    local now = Now()
     if source == "none" or not mapID then
         activeMapNotes = {}
         mapNotesMapID, mapNotesSource, mapNotesUpdatedAt = nil, nil, nil
@@ -5063,6 +5115,14 @@ ScanVignettes = function(mapID)
         if pois then selected, dataMapID = pois.ResolveSource(mapID, source) end
         activeMapNotes = selected and pois.Collect(dataMapID, selected, MapToWorld, MapVector) or {}
         mapNotesMapID, mapNotesSource, mapNotesUpdatedAt = mapID, source, now
+    end
+    for index = #activeMapNotes, 1, -1 do
+        if activeMapNotes[index].kind == "guide" then table.remove(activeMapNotes, index) end
+    end
+    local worldFocus = addon.VignetteRadarWorldFocus
+    if worldFocus and mapID then
+        local guide = worldFocus.ZygorNote(mapID, MapToWorld, MapVector)
+        if guide then activeMapNotes[#activeMapNotes + 1] = guide end
     end
     if #activeMapNotes > 1 then
         local player = PlayerSnapshot(mapID)
@@ -5139,6 +5199,9 @@ ScanVignettes = function(mapID)
         addon.VignetteRadarBeacons.Sync(mapID, PlayerSnapshot(mapID),
             activeTargets, activeQuests, activeMapNotes, TargetVisible)
     end
+    if worldFocus and not preview then
+        worldFocus.Sync(mapID, PlayerSnapshot(mapID), SelectableTargets(), activeQuests, activeMapNotes)
+    end
 end
 
 RefreshRadar = function(rescan)
@@ -5157,7 +5220,8 @@ RefreshRadar = function(rescan)
     if settings.vignetteRadarLauncherVisible ~= false or launcherPeekActive then EnsureLauncher() end
     if rescan then ScanVignettes(CurrentMapID()) end
     local hasMapNotes = false
-    if #activeMapNotes > 0 and settings.vignetteRadarPOISource ~= "none" then
+    if #activeMapNotes > 0 and (settings.vignetteRadarPOISource ~= "none"
+        or settings.vignetteRadarWorldFocusZygor) then
         local player = PlayerSnapshot(mapID)
         local range = exploration and exploration.Range(player, nil) or settings.vignetteRadarRange
         if player and type(range) == "number" then
@@ -5500,6 +5564,11 @@ function addon.ToggleVignetteRadarPreview()
     RefreshRadar(true)
 end
 
+function VignetteRadar_CycleWorldFocus(direction)
+    local focus = addon.VignetteRadarWorldFocus
+    if focus then focus.Cycle(direction) end
+end
+
 SLASH_VIGNETTERADAR1 = "/vr"
 SLASH_VIGNETTERADAR2 = "/vradar"
 SLASH_VIGNETTERADAR3 = "/vignetteradar"
@@ -5610,6 +5679,12 @@ events:SetScript("OnEvent", function(_, event)
             end
             if panel.RefreshCornerTools then panel.RefreshCornerTools() end
         end
+        return
+    elseif message == "focus" then
+        if addon.VignetteRadarQuickConfig then addon.VignetteRadarQuickConfig.OpenPage("World Focus") end
+        return
+    elseif message == "focus next" or message == "focus previous" then
+        VignetteRadar_CycleWorldFocus(message == "focus next" and 1 or -1)
         return
     end
     if event == "QUEST_LOG_UPDATE" and addon.VignetteRadarRecent then

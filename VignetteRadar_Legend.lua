@@ -1,7 +1,7 @@
 local _, addon = ...
 if type(addon) ~= "table" then return end
 
-local PANEL_W, PANEL_H = 232, 390
+local PANEL_W, PANEL_H = 232, 412
 local QUEST_PANEL_W, QUEST_VISIBLE_ROWS = 224, 8
 local QUEST_ROW_H, QUEST_ROW_STEP = 22, 26
 local QUEST_DIAMOND_TEXTURE = "Interface\\AddOns\\VignetteRadar\\Media\\quest-diamond.tga"
@@ -18,12 +18,16 @@ local CATEGORIES = {
     treasure = { label = "TREASURE", color = { 1.00, 0.68, 0.16 } },
     event = { label = "EVENTS", color = { 0.67, 0.42, 1.00 } },
     other = { label = "OTHER", color = { 0.66, 0.72, 0.76 } },
+    quest = { label = "QUEST", color = { 1.00, 0.74, 0.27 } },
+    accent = { label = "ACCENT", color = { 0.05, 0.82, 0.62 } },
 }
 local MAP_NOTES = {
     { kind = "treasure", label = "Treasure", color = "treasure" },
     { kind = "mob", label = "Mob", color = "rare" },
     { kind = "item", label = "Item", color = "event" },
     { kind = "note", label = "Other note", color = "other" },
+    { kind = "entrance", label = "Cave entry", color = "accent" },
+    { kind = "guide", label = "Guide step", color = "quest" },
 }
 local TRAIL_STYLES = addon.VignetteRadarTrailStyleByID or {
     dashes = { label="Dashes", segments={{-3.5,0,3.5,0,2.5}} },
@@ -318,7 +322,7 @@ end
 
 local function CreateMapNote(parent, definition, index)
     local x = index % 2 == 1 and 10 or 120
-    local y = index <= 2 and 189 or 211
+    local y = 189 + math.floor((index - 1) / 2) * 22
     local row = GuideRow(parent, definition.label, x, y)
     row.kind, row.colorSlot = definition.kind, definition.color
     row.rim = Circle(row, 9)
@@ -508,24 +512,24 @@ local function EnsurePanel()
     for index, definition in ipairs(MAP_NOTES) do
         panel.mapNotes[definition.kind] = CreateMapNote(panel, definition, index)
     end
-    panel.mapCaption = GuideLabel(panel, "Saved in one pack; not live detections", 10, 233, PANEL_W - 20, 8)
+    panel.mapCaption = GuideLabel(panel, "Saved in one pack; not live detections", 10, 255, PANEL_W - 20, 8)
     panel.mapCaption:SetHeight(10)
     panel.mapCaption:SetTextColor(.5, .57, .59, 1)
 
-    panel.otherRule = SectionRule(panel, 250)
-    panel.otherHeading = GuideLabel(panel, "OTHER MARKS · REFERENCE ONLY", 10, 255, PANEL_W - 20, 9)
+    panel.otherRule = SectionRule(panel, 272)
+    panel.otherHeading = GuideLabel(panel, "OTHER MARKS · REFERENCE ONLY", 10, 277, PANEL_W - 20, 9)
     panel.otherHeading:SetHeight(12)
     panel.otherHeading:SetTextColor(.68, .75, .77, 1)
     panel.guides = {
-        quest = CreateOtherGuide(panel, "Quest diamond", 10, 273, "quest"),
-        area = CreateOtherGuide(panel, "Quest area", 120, 273, "area"),
-        pin = CreateOtherGuide(panel, "Saved pin", 10, 295, "pin"),
-        route = CreateOtherGuide(panel, "Route stop", 120, 295, "route"),
-        trail = CreateOtherGuide(panel, "Travel trail", 10, 317, "trail"),
-        stale = CreateOtherGuide(panel, "Last seen", 120, 317, "stale"),
-        edge = CreateOtherGuide(panel, "Off-range cue", 10, 339, "edge"),
+        quest = CreateOtherGuide(panel, "Quest diamond", 10, 295, "quest"),
+        area = CreateOtherGuide(panel, "Quest area", 120, 295, "area"),
+        pin = CreateOtherGuide(panel, "Saved pin", 10, 317, "pin"),
+        route = CreateOtherGuide(panel, "Route stop", 120, 317, "route"),
+        trail = CreateOtherGuide(panel, "Travel trail", 10, 339, "trail"),
+        stale = CreateOtherGuide(panel, "Last seen", 120, 339, "stale"),
+        edge = CreateOtherGuide(panel, "Off-range cue", 10, 361, "edge"),
     }
-    panel.footerRule = SectionRule(panel, 363)
+    panel.footerRule = SectionRule(panel, 385)
 
     panel.status = Text(panel, 8, "SPOTLIGHT OFF · SHOWN TYPES EQUAL")
     panel.status:SetPoint("BOTTOMLEFT", 10, 7)
@@ -856,14 +860,17 @@ function API.Refresh()
     for _, definition in ipairs(MAP_NOTES) do
         local row = panel.mapNotes[definition.kind]
         row.rim:SetVertexColor(Color(definition.color, CATEGORIES[definition.color].color))
-        local enabled = mapEnabled and (type(settings.vignetteRadarPOITypes) ~= "table"
+        local enabled = (mapEnabled or (definition.kind == "guide"
+            and settings.vignetteRadarWorldFocusZygor))
+            and (type(settings.vignetteRadarPOITypes) ~= "table"
             or settings.vignetteRadarPOITypes[definition.kind] ~= false)
         row:SetAlpha(enabled and 1 or .6)
         row.label:SetText(definition.label .. (enabled and "" or " off"))
     end
-    panel.mapCaption:SetText(not mapEnabled and "Map notes off · enable in Map Data"
+    panel.mapCaption:SetText(not mapEnabled and not settings.vignetteRadarWorldFocusZygor
+        and "Map notes off · enable in Map Data"
         or settings.vignetteRadarPOIIcons and "Pack icons vary · saved, not live"
-        or "Saved in one pack; not live detections")
+        or "Saved pack notes; not live detections")
     local questRed, questGreen, questBlue = Color("quest", { 1, .74, .27 })
     if settings.vignetteRadarQuestColors and addon.VignetteRadarQuestColors then
         local first = addon.VignetteRadarQuestColors[1]
