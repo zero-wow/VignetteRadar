@@ -17,6 +17,7 @@ local UPDATE_SECONDS, RESCAN_SECONDS = 0.05, 1
 local SLOW_UPDATE_MS, STALLED_UPDATE_MS = 50, 250
 local MAX_BLIPS = 64
 local MAX_QUEST_DOTS = 64
+local MAX_QUEST_BLOB_CANVAS = 4096
 local MAX_MAP_NOTES = 48
 local TRAIL_STYLES = addon.VignetteRadarTrailStyles
 local TRAIL_STYLE_BY_ID = addon.VignetteRadarTrailStyleByID
@@ -1321,20 +1322,29 @@ local function ColoredQuestBlobs()
     return blobs
 end
 
-local function StyleQuestBlob(blob, slot)
-    if blob.colorSlot == slot then return true end
-    -- Blob widgets use the same BLP asset path style as Blizzard's world map.
-    -- The former TGA paths rendered as missing-texture green in the client.
+local function StyleQuestBlob(blob, slot, range)
+    -- Blob widgets use Blizzard-style BLP paths. Unsupported custom fills
+    -- can otherwise appear as the client's missing-texture green.
     local fill = slot and ("Interface\\AddOns\\VignetteRadar\\Media\\quest-blob-%02d"):format(slot)
         or "Interface\\WorldMap\\UI-QuestBlob-Inside"
     local border = slot and fill or "Interface\\WorldMap\\UI-QuestBlob-Outside"
+    -- A close zoom can put the player inside a quest shape that covers the
+    -- entire radar. Fade the native mesh itself so markers remain legible.
+    local opacity = math.max(.2, math.min(1, (SafeNumber(range) or 300) / 300))
+    local fillAlpha = math.max(3, math.floor((slot and 38 or 48) * opacity + .5))
+    local borderAlpha = slot and math.max(5, math.floor(78 * opacity + .5)) or 0
     local ok = pcall(function()
-        blob:SetFillTexture(fill)
-        blob:SetBorderTexture(border)
-        blob:SetFillAlpha(slot and 38 or 48)
-        blob:SetBorderAlpha(slot and 78 or 0)
+        if blob.colorSlot ~= slot then
+            blob:SetFillTexture(fill)
+            blob:SetBorderTexture(border)
+        end
+        if blob._radarFillAlpha ~= fillAlpha then blob:SetFillAlpha(fillAlpha) end
+        if blob._radarBorderAlpha ~= borderAlpha then blob:SetBorderAlpha(borderAlpha) end
     end)
-    if ok then blob.colorSlot = slot end
+    if ok then
+        blob.colorSlot = slot
+        blob._radarFillAlpha, blob._radarBorderAlpha = fillAlpha, borderAlpha
+    end
     return ok
 end
 
@@ -1360,11 +1370,20 @@ local function UpdateQuestAreaTooltip()
         and fromCenterX * fromCenterX + fromCenterY * fromCenterY <= panel.fieldRadius * panel.fieldRadius
     local questID, estimated
     if inside and blob:IsShown() and type(blob.UpdateMouseOverTooltip) == "function" then
+        local blobScale = blob.GetScale and SafeNumber(blob:GetScale()) or 1
         local blobLeft, blobTop = SafeNumber(blob:GetLeft()), SafeNumber(blob:GetTop())
         local width, height = SafeNumber(blob:GetWidth()), SafeNumber(blob:GetHeight())
-        if blobLeft and blobTop and width and height and width > 0 and height > 0 then
-            local x, y = (cursorX - blobLeft) / width, (blobTop - cursorY) / height
-            if x >= 0 and x <= 1 and y >= 0 and y <= 1 then
+        if width and height and width > 0 and height > 0 then
+            local x, y
+            if blobScale > 1 and panel.questAreaPlayerMapX and panel.questAreaPlayerMapY then
+                -- A capped canvas is enlarged on screen; project from the
+                -- player instead of mixing the blob's scale with field pixels.
+                x = panel.questAreaPlayerMapX + fromCenterX / (width * blobScale)
+                y = panel.questAreaPlayerMapY - fromCenterY / (height * blobScale)
+            elseif blobLeft and blobTop then
+                x, y = (cursorX - blobLeft) / width, (blobTop - cursorY) / height
+            end
+            if x and y and x >= 0 and x <= 1 and y >= 0 and y <= 1 then
                 for _, source in ipairs(panel.questBlobSources or { blob }) do
                     if source:IsShown() and type(source.UpdateMouseOverTooltip) == "function" then
                         questID = SafeNumber(Call(source.UpdateMouseOverTooltip, source, x, y))
@@ -1448,7 +1467,12 @@ local function RenderQuestAreas(player, mapID, range)
     if not questMapBasis.horizontal then HideQuestAreas(); return end
     local pixelsPerYard = panel.plotRadius / range
     local width, height = questMapBasis.horizontal * pixelsPerYard, questMapBasis.vertical * pixelsPerYard
-    if width > 8192 or height > 8192 or width < 1 or height < 1 then HideQuestAreas(); return end
+    if width < 1 or height < 1 then HideQuestAreas(); return end
+    -- Keep each native widget's canvas bounded while preserving the full
+    -- map-to-radar projection at very close zoom levels.
+    local canvasScale = math.max(1, width / MAX_QUEST_BLOB_CANVAS,
+        height / MAX_QUEST_BLOB_CANVAS)
+    panel.questAreaPlayerMapX, panel.questAreaPlayerMapY = player.mapX, player.mapY
     local key = tostring(mapID) .. ":" .. tostring(width) .. ":" .. tostring(height)
     for _, quest in ipairs(activeQuests) do key = key .. ":" .. tostring(quest.questID) end
     local colored = ColoredQuestBlobs()
@@ -1456,7 +1480,7 @@ local function RenderQuestAreas(player, mapID, range)
     panel.questBlobSources = sources
     for index, source in ipairs(sources) do
         local slot = colored and index or nil
-        if not StyleQuestBlob(source, slot) then
+        if not StyleQuestBlob(source, slot, range) then
             if colored then
                 panel.questColorFailed = true
                 HideQuestAreas()
@@ -1465,10 +1489,14 @@ local function RenderQuestAreas(player, mapID, range)
             HideQuestAreas()
             return
         end
-        source:SetSize(width, height)
+        if source._radarCanvasScale ~= canvasScale then
+            source:SetScale(canvasScale)
+            source._radarCanvasScale = canvasScale
+        end
+        source:SetSize(width / canvasScale, height / canvasScale)
         source:ClearAllPoints()
-        source:SetPoint("CENTER", panel.field, "CENTER", (0.5 - player.mapX) * width,
-            (player.mapY - 0.5) * height)
+        source:SetPoint("CENTER", panel.field, "CENTER", (0.5 - player.mapX) * width / canvasScale,
+            (player.mapY - 0.5) * height / canvasScale)
         local sourceKey = key .. ":" .. tostring(index) .. ":" .. tostring(colored ~= nil)
         if source.drawnKey ~= sourceKey or now >= (source.nextDrawAt or 0) then
             local ok = true

@@ -1152,6 +1152,43 @@ assert(secondQuestDot:IsShown() and secondQuestDot.fill.vertexColor[1] ~= questD
     and panel.questColorBlobs[1].fillTexture ~= panel.questColorBlobs[2].fillTexture
     and panel.questColorBlobs[1].borderAlpha > 0,
     "each nearby quest needs matching diamond, circle, and bordered native area colors")
+local regularQuestFill = panel.questBlob.fillAlpha
+local regularQuestBorder = panel.questBlob.borderAlpha
+local regularQuestRange = settings.vignetteRadarRange
+settings.vignetteRadarRange = 50
+addon.VignetteRadarAPI.Refresh(false)
+assert(panel.questBlob:IsShown() and panel.questBlob.fillAlpha < regularQuestFill
+    and panel.questBlob.borderAlpha < regularQuestBorder,
+    "close zoom must soften both the exact quest area and its border")
+settings.vignetteRadarRange = 10
+local regularPlotRadius = panel.plotRadius
+panel.plotRadius = 150
+addon.VignetteRadarAPI.Refresh(false)
+assert(panel.questBlob:IsShown() and panel.questBlob:GetScale() > 1
+    and panel.questBlob:GetWidth() <= 4096 and panel.questBlob:GetHeight() <= 4096
+    and panel.questBlob.fillAlpha < regularQuestFill,
+    "minimum zoom must retain the exact area without an oversized native canvas")
+local scaledCanvas = panel.questBlob
+assert(math.abs(scaledCanvas:GetWidth() * scaledCanvas:GetScale()
+    - 1000 * panel.plotRadius / 10) < .01,
+    "the bounded quest canvas must preserve its full map projection")
+local closeCursor, closeLeft, closeTop = GetCursorPosition, panel.field.left, panel.field.top
+panel.field.left, panel.field.top = 0, panel.field:GetHeight()
+panel.questBlob.hoverQuestID = 12345
+GetCursorPosition = function() return panel.field:GetWidth() / 2, panel.field:GetHeight() / 2 end
+panel.scripts.OnUpdate(panel, .11)
+assert(GameTooltip:IsShown() and GameTooltip.text == "Nearby quest",
+    "the exact quest tooltip must stay aligned with the scaled close-zoom canvas")
+GetCursorPosition = closeCursor
+panel.field.left, panel.field.top = closeLeft, closeTop
+panel.questBlob.hoverQuestID = nil
+GameTooltip:Hide()
+panel.plotRadius = regularPlotRadius
+settings.vignetteRadarRange = regularQuestRange
+addon.VignetteRadarAPI.Refresh(false)
+assert(panel.questBlob:GetScale() == 1 and panel.questBlob.fillAlpha == regularQuestFill
+    and panel.questBlob.borderAlpha == regularQuestBorder,
+    "normal zoom must restore the original quest area opacity and canvas scale")
 local beforeQuestKeyLeft = panel:GetLeft()
 panel.legend.scripts.OnClick(panel.legend, "RightButton")
 local questKey = assert(_G.VignetteRadarQuestLegendPanel)
@@ -1265,6 +1302,11 @@ addon.VignetteRadarAPI.Refresh(false)
 assert(panel.questBlob.fillTexture == "Interface\\WorldMap\\UI-QuestBlob-Inside"
     and #panel.questBlob.drawnQuests == 2 and not panel.questColorBlobs[2]:IsShown(),
     "turning off individual colors must restore the shared Blizzard area renderer")
+settings.vignetteRadarRange = 50
+addon.VignetteRadarAPI.Refresh(false)
+assert(panel.questBlob:IsShown() and panel.questBlob.fillAlpha < 48,
+    "shared Blizzard quest areas must also fade when zoomed in")
+settings.vignetteRadarRange = regularQuestRange
 settings.vignetteRadarQuestColors = true
 C_QuestLog.GetQuestsOnMap = oneQuest
 addon.VignetteRadarAPI.Refresh(true)
