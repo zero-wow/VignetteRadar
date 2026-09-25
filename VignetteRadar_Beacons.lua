@@ -13,6 +13,8 @@ local FONT = STANDARD_TEXT_FONT or "Fonts\\FRIZQT__.TTF"
 local SURFACE = "Interface\\AddOns\\VignetteRadar\\Media\\beacon-surface.tga"
 local BORDER = "Interface\\AddOns\\VignetteRadar\\Media\\beacon-border.tga"
 local RARE = "Interface\\AddOns\\VignetteRadar\\Media\\beacon-rare.tga"
+local TREASURE = "Interface\\AddOns\\VignetteRadar\\Media\\beacon-treasure.tga"
+local ENTRANCE = "Interface\\AddOns\\VignetteRadar\\Media\\beacon-entrance.tga"
 local QUEST = "Interface\\AddOns\\VignetteRadar\\Media\\quest-diamond.tga"
 local QUEST_HOLLOW = "Interface\\AddOns\\VignetteRadar\\Media\\quest-diamond-hollow.tga"
 local WIDTH, HEIGHT, BINS, CARD_W, ROWS = 520, 146, 19, 88, 4
@@ -109,6 +111,7 @@ end
 local function MakeCard(index)
     local card = CreateFrame("Button", nil, frame)
     card:SetSize(CARD_W, 25)
+    card:RegisterForClicks("LeftButtonUp", "RightButtonUp")
     card:SetFrameLevel(frame:GetFrameLevel() + 1)
     card.icon = card:CreateTexture(nil, "OVERLAY")
     card.icon:SetSize(18, 18)
@@ -127,38 +130,53 @@ local function MakeCard(index)
     card.count:SetFont(FONT, 8, "OUTLINE")
     card.count:SetPoint("TOPRIGHT", card.icon, "TOPRIGHT", 3, 3)
     card.count:SetTextColor(1, 1, 1, 1)
+    card.focusLine = card:CreateTexture(nil, "OVERLAY")
+    card.focusLine:SetPoint("BOTTOMLEFT", card, "BOTTOMLEFT", 20, 0)
+    card.focusLine:SetSize(CARD_W - 20, 1)
+    card.focusLine:Hide()
     card:SetScript("OnEnter", function(self)
         if not GameTooltip then return end
         GameTooltip:SetOwner(self, "ANCHOR_BOTTOM")
+        GameTooltip:ClearLines()
         for n = 1, math.min(self.groupCount or 0, 8) do
             local item = self.group[n]
             local r, g, b = item.r, item.g, item.b
-            GameTooltip:AddLine(item.name .. "  ·  " .. math.floor(item.distance + .5) .. " yd", r, g, b)
+            GameTooltip:AddLine((n == self.groupIndex and "› " or "  ")
+                .. item.name .. (item.favorite and " · Favorite" or "")
+                .. (item.focused and " · Current Waypoint" or "")
+                .. "  ·  " .. math.floor(item.distance + .5) .. " yd", r, g, b)
         end
         if (self.groupCount or 0) > 8 then
             GameTooltip:AddLine("+" .. (self.groupCount - 8) .. " More Nearby", .7, .8, .83)
         end
-        GameTooltip:AddLine(self.group[1].source == "note"
-            and "Shift-Click for a Waypoint. Drag the Top Edge to Move."
-            or "Click to Focus; Shift-Click to Navigate. Drag the Top Edge to Move.",
+        GameTooltip:AddLine("Click to Focus · Shift-Click for a Waypoint"
+            .. ((self.groupCount or 0) > 1 and " · Right-Click to Choose" or ""),
             .66, .76, .8)
         GameTooltip:Show()
     end)
     card:SetScript("OnLeave", function() if GameTooltip then GameTooltip:Hide() end end)
     card:SetScript("OnClick", function(self, button)
-        local item = self.group and self.group[1]
+        if button == "RightButton" and (self.groupCount or 0) > 1 then
+            self.groupIndex = (self.groupIndex or 1) % self.groupCount + 1
+            API.Render()
+            if GameTooltip then self:GetScript("OnEnter")(self) end
+            return
+        end
+        local item = self.group and self.group[self.groupIndex or 1]
         if not item or preview then return end
         local shift = IsShiftKeyDown and IsShiftKeyDown()
+        if shift then NavigateToPoint(item); return end
         if item.kind == "quest" then
-            if shift then NavigateToPoint(item)
-            else
-                local exploration = addon.VignetteRadarExploration
-                if exploration and exploration.FocusQuest then exploration.FocusQuest(item.raw.questID) end
-            end
+            local exploration = addon.VignetteRadarExploration
+            if exploration and exploration.FocusQuest then exploration.FocusQuest(item.raw.questID) end
+            local focus = addon.VignetteRadarWorldFocus
+            if focus and focus.SelectQuest then focus.SelectQuest(item.raw.questID) end
         elseif item.source == "live" and addon.HandleVignetteClick then
             addon.HandleVignetteClick(item.raw, button)
-        elseif item.source == "note" and shift then
-            NavigateToPoint(item)
+        elseif item.source == "note" then
+            local focus = addon.VignetteRadarWorldFocus
+            local ok = focus and focus.SelectNote and focus.SelectNote(item.raw)
+            if not ok then NavigateToPoint(item) end
         end
     end)
     card:Hide()
@@ -192,6 +210,9 @@ local function EnsureFrame()
     frame.summary = frame:CreateFontString(nil, "OVERLAY")
     frame.summary:SetFont(FONT, 9, "OUTLINE")
     frame.summary:SetPoint("TOPRIGHT", frame, "TOPRIGHT", -16, -9)
+    frame.summary:SetWidth(375)
+    frame.summary:SetJustifyH("RIGHT")
+    frame.summary:SetWordWrap(false)
     frame.summary:SetTextColor(.73, .78, .81, .95)
     frame.empty = frame:CreateFontString(nil, "OVERLAY")
     frame.empty:SetFont(FONT, 10, "OUTLINE")
@@ -209,7 +230,8 @@ local function EnsureFrame()
     frame:SetScript("OnDragStop", function(self) self:StopMovingOrSizing(); SavePosition() end)
     frame.update = function(self, elapsed)
         self.elapsed = (self.elapsed or 0) + elapsed
-        if self.elapsed < .2 then return end
+        local mode = addon.GetSettings().vignetteRadarPerformance
+        if self.elapsed < (mode == "low" and .4 or mode == "balanced" and .3 or .2) then return end
         self.elapsed = 0
         local started = type(debugprofilestop) == "function" and debugprofilestop() or nil
         local ok = pcall(API.Render)
@@ -234,14 +256,25 @@ local function Add(out, kind, source, raw, origin, player, mapID, range)
     if distance2 > range * range then return end
     local r, g, b
     if kind == "quest" then r, g, b = QuestColor(source)
-    else r, g, b = StyleColor(source.isWorldBoss and "boss" or "rare") end
+    else r, g, b = StyleColor(source.isWorldBoss and "boss"
+        or kind == "entrance" and "accent" or kind) end
+    local focus = addon.VignetteRadarWorldFocus
+    local step = focus and focus.GetFocusedStep and focus.GetFocusedStep()
+    local focused = step and step.mapID == (source.mapID or mapID)
+        and Number(step.worldX) and Number(step.worldY)
+        and (source.worldX - step.worldX) ^ 2 + (source.worldY - step.worldY) ^ 2 <= 144
     out[#out + 1] = {
         kind = kind, source = origin, raw = raw,
         mapID = source.mapID or mapID, worldX = source.worldX, worldY = source.worldY,
-        name = type(source.name) == "string" and source.name or (kind == "quest" and "Quest Point" or "Rare"),
+        name = type(source.name) == "string" and source.name
+            or (kind == "quest" and "Quest Point" or kind == "treasure" and "Treasure"
+                or kind == "entrance" and "Entrance" or "Rare"),
         distance2 = distance2, distance = math.sqrt(distance2),
         r = r, g = g, b = b, completed = source.completed == true,
-        priority = source.isWorldBoss and 1 or kind == "rare" and 2 or 3,
+        favorite = source.favorite == true,
+        focused = focused == true,
+        priority = source.favorite == true and 0 or source.isWorldBoss and 1 or kind == "rare" and 2
+            or (kind == "treasure" or kind == "entrance") and 3 or 4,
     }
 end
 
@@ -261,27 +294,42 @@ function API.BuildCandidates(mapID, player, targets, quests, notes, visible, db)
             end
         end
     end
+    if db.vignetteRadarBeaconTreasures and type(targets) == "table" then
+        for index = 1, math.min(#targets, 128) do
+            local target = targets[index]
+            if target.category == "treasure" and not target.stale
+                and (not visible or visible(target)) then
+                Add(list, "treasure", target, target, "live", player, mapID, range)
+            end
+        end
+    end
     if db.vignetteRadarBeaconQuests and type(quests) == "table" then
         for index = 1, math.min(#quests, 128) do
             Add(list, "quest", quests[index], quests[index], "quest", player, mapID, range)
         end
     end
-    if db.vignetteRadarBeaconRares and type(notes) == "table"
-        and db.vignetteRadarPOISource ~= "none" and db.vignetteRadarPOITypes.mob ~= false then
+    if type(notes) == "table" and db.vignetteRadarPOISource ~= "none" then
         for index = 1, math.min(#notes, 64) do
             local note = notes[index]
-            if note.kind == "mob" and Number(note.worldX) and Number(note.worldY)
+            local kind = note.kind == "mob" and db.vignetteRadarBeaconRares
+                and db.vignetteRadarPOITypes.mob ~= false and "rare"
+                or note.kind == "treasure" and db.vignetteRadarBeaconTreasures
+                and db.vignetteRadarPOITypes.treasure ~= false and "treasure"
+                or note.kind == "entrance" and db.vignetteRadarBeaconTreasures
+                and db.vignetteRadarPOITypes.entrance ~= false and "entrance"
+            if kind and Number(note.worldX) and Number(note.worldY)
                 and not (addon.VignetteRadarRecent and addon.VignetteRadarRecent.IsHidden
                     and addon.VignetteRadarRecent.IsHidden(note, db)) then
                 local duplicate = false
                 for j = 1, #list do
                     local live = list[j]
-                    if live.kind == "rare" and live.source == "live" then
+                    if live.kind == kind and live.source == "live"
+                        and live.mapID == (note.mapID or mapID) then
                         local dx, dy = note.worldX - live.worldX, note.worldY - live.worldY
                         if dx * dx + dy * dy <= 45 * 45 then duplicate = true; break end
                     end
                 end
-                if not duplicate then Add(list, "rare", note, note, "note", player, mapID, range) end
+                if not duplicate then Add(list, kind, note, note, "note", player, mapID, range) end
             end
         end
     end
@@ -348,8 +396,11 @@ function API.Render()
         return
     end
     if #candidates == 0 then
-        frame.summary:SetText("0 Points in " .. addon.GetSettings().vignetteRadarBeaconRange .. " yd")
-        frame.empty:SetText("No Rare or Quest Points in Range")
+        local db = addon.GetSettings()
+        frame.summary:SetText("0 Points in " .. db.vignetteRadarBeaconRange .. " yd")
+        frame.empty:SetText((db.vignetteRadarBeaconRares or db.vignetteRadarBeaconTreasures
+            or db.vignetteRadarBeaconQuests) and "No Markers in Range"
+            or "Choose Marker Types in Settings")
         frame.empty:Show()
         for _, card in ipairs(cards) do card:Hide() end
         return
@@ -360,7 +411,7 @@ function API.Render()
         if not bin then bin = {}; bins[index] = bin end
         for j = #bin, 1, -1 do bin[j] = nil end
     end
-    local count = 0
+    local kinds = { rare = 0, treasure = 0, entrance = 0, quest = 0 }
     for _, item in ipairs(candidates) do
         local dx, dy = item.worldX - player.worldX, item.worldY - player.worldY
         local angle = (atan2(dy, dx) - facing + PI) % TWO_PI - PI
@@ -368,9 +419,16 @@ function API.Render()
             math.floor((angle + PI) / TWO_PI * BINS) + 1))
         local bin = bins[index]
         bin[#bin + 1] = item
-        count = count + 1
+        kinds[item.kind] = (kinds[item.kind] or 0) + 1
     end
-    frame.summary:SetText(count .. " Point" .. (count == 1 and "" or "s") .. "  ·  Facing")
+    local summary = {}
+    for _, entry in ipairs({ { "rare", "Rare" }, { "treasure", "Loot" },
+        { "entrance", "Cave" }, { "quest", "Quest" } }) do
+        local amount = kinds[entry[1]]
+        if amount > 0 then summary[#summary + 1] = amount .. " " .. entry[2]
+            .. (amount > 1 and entry[1] ~= "treasure" and "s" or "") end
+    end
+    frame.summary:SetText(table.concat(summary, "  ·  ") .. "  ·  Facing")
     for row = 1, ROWS do lastX[row] = -math.huge end
     local shown = 0
     for index = BINS, 1, -1 do
@@ -386,14 +444,29 @@ function API.Render()
                 lastX[row] = x
                 shown = shown + 1
                 local card = cards[shown] or MakeCard(shown)
-                local item = bin[1]
+                local first = bin[1]
+                local groupKey = tostring(first.raw and (first.raw.key or first.raw.questID)
+                    or first.name) .. ":" .. tostring(first.mapID)
+                if card.groupKey ~= groupKey then
+                    card.groupIndex = 1
+                    for position, candidate in ipairs(bin) do
+                        if candidate.focused then card.groupIndex = position; break end
+                    end
+                end
+                card.groupKey = groupKey
+                card.groupIndex = math.min(card.groupIndex or 1, #bin)
+                local item = bin[card.groupIndex]
                 card.group, card.groupCount = bin, #bin
                 card.icon:SetTexture(item.kind == "quest"
-                    and (item.completed and QUEST or QUEST_HOLLOW) or RARE)
+                    and (item.completed and QUEST or QUEST_HOLLOW)
+                    or item.kind == "treasure" and TREASURE
+                    or item.kind == "entrance" and ENTRANCE or RARE)
                 card.icon:SetVertexColor(item.r, item.g, item.b, 1)
                 card.label:SetText(item.name)
                 card.label:SetTextColor(item.r, item.g, item.b, 1)
                 card.distance:SetText(math.floor(item.distance + .5) .. " yd")
+                card.focusLine:SetShown(item.focused == true)
+                if item.focused then card.focusLine:SetColorTexture(item.r, item.g, item.b, .8) end
                 card.count:SetText(#bin > 1 and ("+" .. (#bin - 1)) or "")
                 card:ClearAllPoints()
                 card:SetPoint("TOP", frame, "TOP", x, -31 - (row - 1) * 28)

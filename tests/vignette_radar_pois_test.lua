@@ -236,4 +236,8 @@ end, function(x, y) return { x = x, y = y } end) == 1,
 HandyNotes = handyNotes
 assert(pois.ResolveSource(123, "auto") ~= "Zygor POIs",
     "Auto should preserve HandyNotes pack choice until Zygor is explicitly chosen")
+local beforeRescan = calls
+pois.Invalidate()
+pois.ZoneSources(123)
+assert(calls > beforeRescan, "manual rescan must refresh cached pack availability")
 io.write("vignette radar map-note tests passed\n")

@@ -67,9 +67,10 @@ local function Call(owner, name, ...)
     return a, b, c
 end
 
-function API.Invalidate()
+function API.Invalidate(reason)
     stepCache, stepCacheCount, stepCacheMap = {}, 0, nil
-    startsCache, requestedMap = nil, nil
+    startsCache = nil
+    if reason ~= "quest" then requestedMap = nil end
 end
 
 -- Returns a map point when Blizzard provides one and its separate instruction

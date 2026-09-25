@@ -7,7 +7,7 @@ local API = {}
 addon.VignetteRadarWorldFocus = API
 local targets, quests, notes, player = {}, {}, {}, nil
 local active, candidates = nil, {}
-local route, lastSelected = nil, nil
+local route, pausedRoute, lastSelected = nil, nil, nil
 local ROUTE_LIMIT, ROUTE_DUPLICATE_YARDS = 192, 60
 local QuestComplete
 
@@ -215,10 +215,10 @@ QuestComplete = function(questID)
     if type(C_QuestLog.IsOnQuest) == "function" then
         local ok, onQuest = pcall(C_QuestLog.IsOnQuest, questID)
         if ok and not (issecretvalue and issecretvalue(onQuest)) and onQuest == true then
-            return Done(C_QuestLog.IsComplete)
+            return false -- Objectives may be done, but the quest still needs its turn-in.
         end
     end
-    return Done(C_QuestLog.IsComplete) or Done(C_QuestLog.IsQuestFlaggedCompleted)
+    return Done(C_QuestLog.IsQuestFlaggedCompleted) or Done(C_QuestLog.IsComplete)
 end
 
 local function QuestProgress(questID)
@@ -256,6 +256,7 @@ local function NextRouteStop()
         end
         if RouteKind(item) ~= kind or not Valid(item) or item.mapID ~= player.mapID
             or Visited(item) or (kind == "quest" and (complete
+                or route.skippedQuests and route.skippedQuests[item.questID]
                 or route.questID and item.questID ~= route.questID)) then return end
         if kind == "quest" and C_QuestLog and type(C_QuestLog.IsOnQuest) == "function" then
             local ok, onQuest = pcall(C_QuestLog.IsOnQuest, item.questID)
@@ -362,7 +363,10 @@ local function AdvanceRoute()
         return ok, reason
     end
     route.waiting = route.kind == "quest" and route.questID ~= nil
-    if not route.waiting then route, active = nil, nil end
+    if not route.waiting then
+        route = nil
+        if API.Clear then API.Clear() else active = nil end
+    end
     return false
 end
 
@@ -374,7 +378,7 @@ local function Select(item)
     local ok, reason = Activate(item)
     if not ok then return false, reason end
     lastSelected = item
-    route = nil
+    route, pausedRoute = nil, nil
     local kind = RouteKind(item)
     if kind and addon.GetSettings().vignetteRadarAutoRouteOnSelect then
         route = { kind = kind, questID = kind == "quest" and item.questID or nil,
@@ -386,7 +390,20 @@ local function Select(item)
 end
 
 function API.ToggleRoute()
-    if route then route = nil; return false, "Auto Route paused; waypoint kept" end
+    if route then
+        pausedRoute, route = route, nil
+        return false, "Auto Route paused; waypoint kept"
+    end
+    if pausedRoute then
+        if not (active and active.steps[active.index]
+            and SameWaypoint(active.steps[active.index])) then
+            pausedRoute = nil
+            return false, "Route waypoint changed; choose a point to start again"
+        end
+        route, pausedRoute = pausedRoute, nil
+        ArmArrival()
+        return true, "Auto Route resumed"
+    end
     local item = active and active.item or lastSelected
     local kind = RouteKind(item)
     if not kind then return false, "Click a rare, treasure, or quest point first" end
@@ -406,6 +423,32 @@ function API.ToggleRoute()
 end
 
 function API.IsRouteActive() return route ~= nil end
+function API.IsRoutePaused() return pausedRoute ~= nil end
+function API.IsQuestRoute() return route and route.kind == "quest" or false end
+function API.HasFocus() return active ~= nil end
+function API.GetFocusedStep()
+    return active and active.steps[active.index] or nil
+end
+
+function API.Clear()
+    if not active then return false, "No focused waypoint" end
+    local step = active.steps[active.index]
+    if step and SameWaypoint(step) then
+        if not (C_Map and type(C_Map.ClearUserWaypoint) == "function") then
+            return false, "Waypoint removal is unavailable"
+        end
+        if type(InCombatLockdown) == "function" then
+            local checked, locked = pcall(InCombatLockdown)
+            if not checked or (issecretvalue and issecretvalue(locked)) or locked then
+                return false, "Leave combat to clear the waypoint"
+            end
+        end
+        local cleared = pcall(C_Map.ClearUserWaypoint)
+        if not cleared then return false, "Waypoint could not be cleared" end
+    end
+    active, route, pausedRoute, lastSelected = nil, nil, nil, nil
+    return true
+end
 
 function API.StartNearest(kind)
     if kind ~= "rare" and kind ~= "treasure" and kind ~= "quest" then
@@ -433,6 +476,17 @@ function API.SkipRouteStop()
     return AdvanceRoute()
 end
 
+function API.SkipQuest()
+    if not (route and route.kind == "quest" and route.questID) then
+        return false, "No active quest route"
+    end
+    route.skippedQuests = route.skippedQuests or {}
+    route.skippedQuests[route.questID] = true
+    route.questID, route.progress, route.waiting = nil, nil, false
+    local advanced, reason = AdvanceRoute()
+    return advanced or not route, reason or "Quest skipped"
+end
+
 function API.SelectTarget(target)
     if not target or target.stale or target.sample then return false, "No live target" end
     return Select({ key = target.key, name = target.name, kind = target.category,
@@ -449,7 +503,8 @@ function API.SelectQuest(questID)
             return Select({ key = "quest:" .. questID, questID = questID,
                 name = quest.name, kind = "quest",
                 colorSlot = quest.colorSlot,
-                mapID = player and player.mapID, mapX = quest.mapX, mapY = quest.mapY,
+                mapID = quest.mapID or player and player.mapID,
+                mapX = quest.mapX, mapY = quest.mapY,
                 worldX = quest.worldX, worldY = quest.worldY, instanceID = quest.instanceID })
         end
     end
@@ -458,7 +513,7 @@ end
 
 function API.SelectNote(note)
     if not note then return false, "No map note" end
-    if note.kind == "entrance" and note.parentCoord then
+    if note.kind == "entrance" and note.parentCoord and type(note.source) == "string" then
         for _, candidate in ipairs(notes) do
             if candidate.kind == "treasure" and candidate.mapID == note.mapID
                 and candidate.key == note.source .. ":" .. note.mapID .. ":" .. note.parentCoord then
@@ -485,10 +540,11 @@ end
 
 local function BuildCandidates()
     candidates = {}
-    if not player then return end
+    if not (player and Number(player.worldX) and Number(player.worldY)) then return end
     local db = addon.GetSettings()
     local function Add(item, priority)
-        if #candidates >= 128 or not Valid(item) then return end
+        if #candidates >= 128 or not Valid(item)
+            or not (Number(item.worldX) and Number(item.worldY)) then return end
         local dx, dy = item.worldX - player.worldX, item.worldY - player.worldY
         item.focusDistance = math.sqrt(dx * dx + dy * dy)
         item.focusPriority = priority
@@ -506,7 +562,7 @@ local function BuildCandidates()
     for _, quest in ipairs(quests) do
         Add({ key = "quest:" .. quest.questID .. ":" .. math.floor((quest.mapX or 0) * 10000),
             questID = quest.questID, colorSlot = quest.colorSlot,
-            name = quest.name, kind = "quest", mapID = player.mapID,
+            name = quest.name, kind = "quest", mapID = quest.mapID or player.mapID,
             mapX = quest.mapX, mapY = quest.mapY, worldX = quest.worldX,
             worldY = quest.worldY, instanceID = quest.instanceID }, 2)
     end
@@ -517,7 +573,9 @@ local function BuildCandidates()
             local duplicate = false
             if note.kind ~= "entrance" then
                 for _, target in ipairs(candidates) do
-                    if target.focusPriority == 1 and ((note.kind == "mob" and target.kind == "rare")
+                    if target.focusPriority == 1 and note.mapID == target.mapID
+                        and Number(note.worldX) and Number(note.worldY)
+                        and ((note.kind == "mob" and target.kind == "rare")
                         or note.kind == target.kind) then
                         local dx, dy = note.worldX - target.worldX, note.worldY - target.worldY
                         if dx * dx + dy * dy <= 3600 then duplicate = true; break end
@@ -538,10 +596,11 @@ function API.Sync(mapID, snapshot, liveTargets, questPoints, mapNotes)
     targets, quests, notes, player = liveTargets or {}, questPoints or {}, mapNotes or {}, snapshot
     if player then player.mapID = mapID end
     if addon.GetSettings().vignetteRadarWorldFocusEnabled then BuildCandidates()
-    else candidates, active, route = {}, nil, nil end
+    else candidates, active, route, pausedRoute = {}, nil, nil, nil end
     if not (active and player) then return end
     local step = active.steps[active.index]
-    if not step or not SameWaypoint(step) then active, route = nil, nil; return end
+    if not step or not SameWaypoint(step) then active, route, pausedRoute = nil, nil, nil; return end
+    if not (Number(player.worldX) and Number(player.worldY)) then return end
     if route and route.kind ~= "quest" and addon.VignetteRadarRecent
         and addon.VignetteRadarRecent.IsHidden(active.item) then
         AdvanceRoute()
@@ -581,8 +640,9 @@ function API.Sync(mapID, snapshot, liveTargets, questPoints, mapNotes)
             end
         end
     end
-    if not (Number(step.worldX) and Number(step.worldY)) then return end
-    if not route and not addon.GetSettings().vignetteRadarWorldFocusAutoAdvance then return end
+    if not (Number(step.worldX) and Number(step.worldY)
+        and Number(player.worldX) and Number(player.worldY)) then return end
+    if pausedRoute or (not route and not addon.GetSettings().vignetteRadarWorldFocusAutoAdvance) then return end
     if Number(player.instanceID) and Number(step.instanceID)
         and player.instanceID ~= step.instanceID then return end
     local dx, dy = player.worldX - step.worldX, player.worldY - step.worldY
@@ -614,12 +674,19 @@ function API.Cycle(direction)
 end
 
 function API.Status()
+    local step = active and active.steps[active.index]
+    local distance = step and player and Number(step.worldX) and Number(step.worldY)
+        and Number(player.worldX) and Number(player.worldY)
+        and math.floor(Distance(player.worldX, player.worldY,
+            step.worldX, step.worldY) + .5)
+    local prefix = distance and distance .. " yd · " or ""
     if route then
         local kind = route.kind == "rare" and "Rare" or route.kind == "treasure" and "Treasure" or "Quest"
-        return "Auto Route · " .. kind .. " · " .. (route.waiting and "Waiting for Next Objective"
+        return prefix .. "Auto Route · " .. kind .. " · " .. (route.waiting and "Waiting for Next Objective"
             or active and active.name or "Choosing Next Stop")
     end
-    if active then return active.name .. "  ·  " .. active.index .. "/" .. #active.steps end
+    if pausedRoute then return prefix .. "Auto Route paused · " .. (active and active.name or "Waypoint kept") end
+    if active then return prefix .. active.name .. "  ·  " .. active.index .. "/" .. #active.steps end
     return #candidates .. " possible focus points"
 end
 

@@ -1,9 +1,10 @@
 local source = arg[1] or "VignetteRadar_Beacons.lua"
 local settings = {
     vignetteRadarEnabled = true, vignetteRadarBeaconsEnabled = false,
-    vignetteRadarBeaconRares = true, vignetteRadarBeaconQuests = true,
+    vignetteRadarBeaconRares = true, vignetteRadarBeaconTreasures = false,
+    vignetteRadarBeaconQuests = true,
     vignetteRadarBeaconRange = 450, vignetteRadarBeaconMax = 8,
-    vignetteRadarPOISource = "auto", vignetteRadarPOITypes = { mob = true },
+    vignetteRadarPOISource = "auto", vignetteRadarPOITypes = { mob = true, treasure = true },
     vignetteRadarQuestColors = true,
 }
 local addon = {
@@ -11,6 +12,7 @@ local addon = {
     VignetteRadarStyle = { Color = function(slot)
         if slot == "rare" then return .8, .9, 1 end
         if slot == "boss" then return 1, .2, .1 end
+        if slot == "treasure" then return 1, .7, .2 end
         return .6, .8, 1
     end },
     VignetteRadarQuestColors = { { .3, .7, 1 } },
@@ -47,6 +49,37 @@ assert(result[2].name == "Live rare" and result[3].name == "Other rare",
     "a live rare should suppress the nearby data-pack copy")
 assert(result[4].kind == "quest" and result[4].r == .3,
     "quest diamonds should use their radar quest color")
+local favorite = { key = "favorite", name = "Favorite rare", category = "rare",
+    favorite = true, mapX = .1, mapY = .1, worldX = 400, worldY = 0, instanceID = 8 }
+assert(beacons.BuildCandidates(1, player, { boss, favorite }, {}, {}, nil, settings)[1].favorite,
+    "a favorite should stay visible ahead of ordinary and boss bearings when space is limited")
+
+settings.vignetteRadarBeaconTreasures = true
+addon.VignetteRadarWorldFocus = { GetFocusedStep = function()
+    return { mapID = 1, worldX = 155, worldY = 20 }
+end }
+local treasure = { key = "chest-1", name = "Live chest", category = "treasure",
+    mapX = .3, mapY = .5, worldX = 155, worldY = 20, instanceID = 8 }
+local withTreasure = beacons.BuildCandidates(1, player, { rare, treasure }, { quest }, notes,
+    function() return true end, settings)
+assert(#withTreasure == 5 and withTreasure[3].kind == "treasure"
+    and withTreasure[3].r == 1 and withTreasure[3].name == "Live chest",
+    "bearing markers should show live treasures with their theme color")
+assert(withTreasure[3].focused,
+    "the current focused waypoint should be recognizable in the bearing display")
+local overlapping = { kind = "treasure", name = "Copy of live chest", mapID = 1,
+    mapX = .31, mapY = .5, worldX = 160, worldY = 20, instanceID = 8 }
+assert(#beacons.BuildCandidates(1, player, { treasure }, {}, { overlapping }, nil, settings) == 1,
+    "a live treasure should suppress the nearby data-pack copy")
+overlapping.mapID = 2
+assert(#beacons.BuildCandidates(1, player, { treasure }, {}, { overlapping }, nil, settings) == 2,
+    "data-pack copies on a different map must not be suppressed")
+local cave = { kind = "entrance", name = "Cave Entrance", mapID = 1,
+    mapX = .25, mapY = .35, worldX = 220, worldY = 40, instanceID = 8 }
+local cavePoints = beacons.BuildCandidates(1, player, {}, {}, { cave }, nil, settings)
+assert(#cavePoints == 1 and cavePoints[1].kind == "entrance",
+    "the loot bearing filter should also guide players to pack cave entrances")
+settings.vignetteRadarBeaconTreasures = false
 
 settings.vignetteRadarBeaconMax = 4
 local moreQuests = { quest }

@@ -60,6 +60,35 @@ def rare(x, y):
 write_tga("beacon-rare.tga", 64, 64, rare)
 
 
+def treasure(x, y):
+    # A small chest silhouette, distinct from the rare reticle and quest diamond.
+    lid = rounded_rect(x - 14, y - 13, 36, 18, 5)
+    body = rounded_rect(x - 13, y - 27, 38, 25, 4)
+    lid_rim = max(0, coverage(lid) - coverage(lid + 3))
+    body_rim = max(0, coverage(body) - coverage(body + 3))
+    latch = coverage(rounded_rect(x - 28, y - 26, 8, 9, 1.5))
+    return max(lid_rim, body_rim, latch)
+
+
+write_tga("beacon-treasure.tga", 64, 64, treasure)
+
+
+def entrance(x, y):
+    def stroke(ax, ay, bx, by, radius=2.7):
+        dx, dy = bx - ax, by - ay
+        t = max(0.0, min(1.0, ((x - ax) * dx + (y - ay) * dy) / (dx * dx + dy * dy)))
+        return coverage(math.hypot(x - ax - t * dx, y - ay - t * dy) - radius)
+
+    return max(stroke(15, 47, 15, 28), stroke(15, 28, 32, 15),
+               stroke(32, 15, 49, 28), stroke(49, 28, 49, 47),
+               stroke(15, 47, 25, 47), stroke(39, 47, 49, 47),
+               stroke(25, 47, 25, 34), stroke(25, 34, 39, 34),
+               stroke(39, 34, 39, 47))
+
+
+write_tga("beacon-entrance.tga", 64, 64, entrance)
+
+
 def launcher_shape(x, y):
     lobe = math.hypot(x - 122, y - 128) - 119
     rect = rounded_rect(x - 116, y - 26, 392, 204, 31)

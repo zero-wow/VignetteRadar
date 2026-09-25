@@ -59,11 +59,19 @@ defaults.vignetteRadarQuestAreaColors = false
 assert(defaults.vignetteRadarAutoRouteArrivalRadius == 3,
     "Auto Route must wait for a three-yard arrival by default")
 assert(defaults.vignetteRadarBeaconsEnabled == false
+    and defaults.vignetteRadarPerformance == "standard"
     and defaults.vignetteRadarBeaconRares == true
+    and defaults.vignetteRadarBeaconTreasures == true
     and defaults.vignetteRadarBeaconQuests == true
     and defaults.vignetteRadarBeaconRange == 1200
     and defaults.vignetteRadarBeaconMax == 8,
     "the optional bearing bar should start disabled with bounded defaults")
+defaults.vignetteRadarPerformance = "low"
+fresh.GetSettings()
+assert(defaults.vignetteRadarPerformance == "low", "the user's chosen update rate must persist")
+defaults.vignetteRadarPerformance = "unsupported"
+fresh.GetSettings()
+assert(defaults.vignetteRadarPerformance == "standard", "invalid update rates must reset safely")
 defaults.vignetteRadarBearingBarDefaulted = nil
 defaults.vignetteRadarBeaconsEnabled = true
 fresh.GetSettings()

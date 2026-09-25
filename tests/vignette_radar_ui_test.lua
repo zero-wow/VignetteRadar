@@ -172,6 +172,7 @@ GameTooltip = {
         self.lines = self.lines or {}
         self.lines[#self.lines + 1] = value
     end,
+    ClearLines = function(self) self.lines = {} end,
     Show = function(self) self.shown = true end,
     Hide = function(self) self.shown = false end,
     IsShown = function(self) return self.shown == true end,
@@ -660,11 +661,13 @@ end
 do
     panel.routeToggle.scripts.OnClick(panel.routeToggle, "RightButton")
     local chooser = assert(_G.VignetteRadarRouteChooserPopup)
-    assert(chooser:IsShown() and chooser.width == 248 and chooser.height == 235
+    assert(chooser:IsShown() and chooser.width == 248 and chooser.height == 263
         and chooser.clamped and chooser.point[2] == panel.routeToggle
         and chooser.choices.rare and chooser.choices.treasure and chooser.choices.quest
         and chooser.choices.zygor and chooser.choices.previous and chooser.choices.next
-        and chooser.choices.pause and chooser.choices.skip and chooser.choices.settings
+        and chooser.choices.pause and chooser.choices.skip and chooser.choices.skipQuest
+        and chooser.choices.clear
+        and chooser.choices.settings
         and UISpecialFrames[#UISpecialFrames] == chooser.name,
         "right-click should open an accessible route chooser with every action")
     for _, button in pairs(chooser.choices) do
@@ -1793,14 +1796,28 @@ assert(quick.tabs.Radar.backdrop == nil
     and quick.tabs.Radar.edge.height == 1 and quick.find.width == 44,
     "settings buttons need quiet flat artwork and an untruncated Find control")
 assert(quick.pages.Status and quick.pages.Search and quick.pages.Beacons
-    and quick.pages["World Focus"] and quick.pages["Auto Route"] and quick.find,
+    and quick.pages["World Focus"] and quick.pages["Auto Route"]
+    and quick.pages.Performance and quick.find,
     "diagnostics and search must be reachable from the compact settings panel")
+settings.vignetteRadarPerformance = "low"
+assert(addon.VignetteRadarRenderSeconds() == .2
+    and addon.VignetteRadarScanSeconds() == 2.5,
+    "Low CPU mode must reduce both redraws and scans")
+settings.vignetteRadarPerformance = "balanced"
+assert(addon.VignetteRadarRenderSeconds() == .1
+    and addon.VignetteRadarScanSeconds() == 1.5,
+    "Balanced mode must offer a middle update rate")
+settings.vignetteRadarPerformance = "standard"
 quick.find.scripts.OnClick(quick.find)
+quick.searchInput:SetText("vignetteRadarPerformance")
+quick.searchInput.scripts.OnTextChanged()
+assert(quick.searchRows[1]:IsShown() and quick.searchRows[2]:IsShown()
+    and quick.searchRows[3]:IsShown() and not quick.searchRows[4]:IsShown(),
+    "settings search must show each update-rate choice once")
 quick.searchInput:SetText("arrival")
 quick.searchInput.scripts.OnTextChanged()
 assert(quick.searchRows[1]:IsShown()
-    and (quick.searchRows[1].result.page == "Wayfinding"
-        or quick.searchRows[1].result.page == "World Focus"),
+    and quick.searchRows[1].result.match:find("arrival", 1, true),
     "search must find a route or waypoint arrival option without a slash command")
 local arrivalPage = quick.searchRows[1].result.page
 quick.searchRows[1].scripts.OnClick(quick.searchRows[1])
@@ -1843,8 +1860,46 @@ end
 assert(previewCards == 2, "preview should show both a rare and a quest point")
 backFromBeacons.scripts.OnClick(backFromBeacons)
 assert(quick.pages.Markers:IsShown() and beaconRail:IsShown()
-    and beaconRail.summary.text == "1 Point  ·  Facing",
-    "leaving preview must restore real beacon data without a stuck sample")
+    and beaconRail.summary.text == "1 Quest  ·  Facing",
+    "leaving preview must restore real beacon data without a stuck sample: "
+        .. tostring(beaconRail.summary.text))
+do
+    local oldSource, oldTreasure = settings.vignetteRadarPOISource,
+        settings.vignetteRadarBeaconTreasures
+    local oldSelect = addon.VignetteRadarWorldFocus.SelectNote
+    local oldFocused = addon.VignetteRadarWorldFocus.GetFocusedStep
+    local selected
+    settings.vignetteRadarPOISource = "auto"
+    settings.vignetteRadarBeaconTreasures = true
+    settings.vignetteRadarPOITypes.treasure = true
+    addon.VignetteRadarWorldFocus.SelectNote = function(note) selected = note; return true end
+    addon.VignetteRadarWorldFocus.GetFocusedStep = function()
+        return { mapID = 1, worldX = 100, worldY = 0 }
+    end
+    local first = { kind = "treasure", key = "first", name = "First Chest", mapID = 1,
+        mapX = .2, mapY = .2, worldX = 100, worldY = 0 }
+    local second = { kind = "treasure", key = "second", name = "Second Chest", mapID = 1,
+        mapX = .3, mapY = .2, worldX = 110, worldY = 0 }
+    addon.VignetteRadarBeacons.Sync(1, { worldX = 0, worldY = 0 }, {}, {},
+        { first, second })
+    local grouped
+    for _, object in ipairs(objects) do
+        if object.parent == beaconRail and object.groupCount == 2 and object:IsShown() then
+            grouped = object; break
+        end
+    end
+    assert(grouped and grouped.icon.texture:find("beacon%-treasure%.tga$")
+        and grouped.label.text == "First Chest" and grouped.focusLine:IsShown(),
+        "treasures need distinct grouped art and an owned-waypoint cue")
+    grouped.scripts.OnClick(grouped, "RightButton")
+    assert(grouped.label.text == "Second Chest" and grouped.groupIndex == 2,
+        "right-click should choose a different point in a crowded bearing")
+    grouped.scripts.OnClick(grouped, "LeftButton")
+    assert(selected == second, "clicking a saved treasure bearing must focus the selected note")
+    addon.VignetteRadarWorldFocus.SelectNote = oldSelect
+    addon.VignetteRadarWorldFocus.GetFocusedStep = oldFocused
+    settings.vignetteRadarPOISource, settings.vignetteRadarBeaconTreasures = oldSource, oldTreasure
+end
 addon.VignetteRadarBeacons.Sync(1, { worldX = 0, worldY = 0 }, {}, {}, {})
 assert(beaconRail:IsShown() and beaconRail.height == 64 and beaconRail.empty:IsShown()
     and beaconRail.scripts.OnUpdate == nil
@@ -2889,6 +2944,18 @@ launcherUpdate(launcher, .2)
 assert(launcher.scripts.OnUpdate == nil and performanceWarning
     and performanceWarning:find("paused automatic launcher updates", 1, true),
     "an excessive update must suspend the repeating work and alert the user")
+debugprofilestop = nil
+
+sustainedClock = 0
+debugprofilestop = function() sustainedClock = sustainedClock + 15; return sustainedClock end
+radarUpdate = assert(panel.scripts.OnUpdate)
+sustainedIterations = 0
+while sustainedIterations < 40 and panel.scripts.OnUpdate do
+    radarUpdate(panel, 0)
+    sustainedIterations = sustainedIterations + 1
+end
+assert(panel.scripts.OnUpdate == nil and addon.VignetteRadarBudget.paused.radar,
+    "sustained costly redraws must trip the cumulative CPU guard")
 debugprofilestop = nil
 
 io.write("vignette radar UI tests passed\n")

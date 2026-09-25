@@ -13,6 +13,9 @@ local sourceCache, cacheOrder = {}, {}
 local autoChoice
 local ZYGOR_SOURCE = "Zygor POIs"
 local npcNames = {}
+function POIs.Invalidate()
+    sourceCache, cacheOrder, autoChoice = {}, {}, nil
+end
 local function Safe(value)
     return not (type(issecretvalue) == "function" and issecretvalue(value))
 end

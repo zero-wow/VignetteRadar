@@ -22,6 +22,7 @@ C_Map = {
         return true
     end,
     GetUserWaypoint = function() return waypoint end,
+    ClearUserWaypoint = function() waypoint = nil end,
 }
 C_SuperTrack = { SetSuperTrackedUserWaypoint = function() end }
 assert(loadfile("VignetteRadar_WorldFocus.lua"))("VignetteRadar", addon)
@@ -38,6 +39,7 @@ entrance.kind, entrance.parentCoord, entrance.source = "entrance", 50005000, "pa
 local player = { worldX = 300, worldY = 500, instanceID = 42 }
 focus.Sync(123, player, {}, {}, { treasure, entrance })
 assert(focus.SelectNote(entrance) and placed[1] == .4
+    and focus.Status():find("100 yd", 1, true)
     and focus.Status():find("1/3", 1, true),
     "clicking a linked entrance should begin the parent treasure's complete path")
 player.worldX = 400
@@ -71,6 +73,21 @@ assert(focus.SelectTarget({ key = rareA.key, name = rareA.name, category = rareA
     mapID = rareA.mapID, mapX = rareA.mapX, mapY = rareA.mapY,
     worldX = rareA.worldX, worldY = rareA.worldY, instanceID = rareA.instanceID }))
 assert(focus.ToggleRoute() and focus.IsRouteActive(), "route button should use the last clicked rare")
+local pauseOk, pauseReason = focus.ToggleRoute()
+assert(not pauseOk and pauseReason:find("paused", 1, true)
+    and focus.IsRoutePaused() and not focus.IsRouteActive()
+    and focus.Status():find("paused", 1, true),
+    "pausing should keep the route's visited state and explain its status")
+player.worldX = 600
+focus.Sync(123, player, { rareA, rareB }, {}, { rareNote })
+assert(waypoint.position.x == .6 and focus.IsRoutePaused(),
+    "arriving while paused must not advance through a waypoint")
+player.worldX = 300
+focus.Sync(123, player, { rareA, rareB }, {}, { rareNote })
+assert(focus.ToggleRoute() and focus.IsRouteActive() and not focus.IsRoutePaused(),
+    "resuming should continue the paused route")
+focus.Sync(123, { worldX = nil, worldY = nil, instanceID = 42 }, { rareA, rareB }, {}, {})
+focus.Sync(123, player, { rareA, rareB }, {}, { rareNote })
 player.worldX = 596.9
 focus.Sync(123, player, { rareA, rareB }, {}, { rareNote })
 assert(waypoint.position.x == .6,
@@ -89,8 +106,11 @@ local questA, questNext, questB = Step(350), Step(500), Step(700)
 questA.questID, questNext.questID, questB.questID = 11, 11, 22
 questA.name, questNext.name, questB.name = "First quest", "First quest", "Second quest"
 local questDone = {}
+local questActive, questTurnedIn = { [11] = true, [22] = true }, {}
 C_QuestLog = {
     IsComplete = function(id) return questDone[id] == true end,
+    IsOnQuest = function(id) return questActive[id] == true end,
+    IsQuestFlaggedCompleted = function(id) return questTurnedIn[id] == true end,
     GetQuestObjectives = function() return { { finished = false, numFulfilled = 0 } } end,
 }
 player.worldX = 300
@@ -105,9 +125,19 @@ player.worldX = 500
 focus.Sync(123, player, {}, { questA, questNext, questB }, {})
 assert(waypoint.position.x == .5 and focus.Status():find("Waiting", 1, true),
     "an unfinished quest must not jump to a different quest")
+focus.Sync(123, { worldX = nil, worldY = nil, instanceID = 42 },
+    {}, { questA, questNext, questB }, {})
+focus.Sync(123, player, {}, { questA, questNext, questB }, {})
 questDone[11] = true
 focus.Sync(123, player, {}, { questA, questNext, questB }, {})
+assert(waypoint.position.x == .5,
+    "finishing objectives must not skip a quest before its turn-in")
+questActive[11], questTurnedIn[11] = nil, true
+focus.Sync(123, player, {}, { questA, questNext, questB }, {})
 assert(waypoint.position.x == .7, "a completed quest should advance to the next available quest")
+assert(focus.IsQuestRoute() and focus.SkipQuest()
+    and not focus.IsRouteActive() and not focus.HasFocus() and waypoint == nil,
+    "Skip Quest should move past a stuck quest and clear the final owned pin")
 
 local customWaypoint
 WaypointUIAPI = { Navigation = { NewUserNavigation = function(options)
@@ -250,4 +280,24 @@ local missing, reason = focus.ZygorNote(124, function() end,
     function(x, y) return { x = x, y = y } end, true, true)
 assert(not missing and reason == "Zygor has no active guide waypoint",
     "an unavailable Zygor objective should produce a visible reason")
+local remoteQuest = Step(650)
+remoteQuest.questID, remoteQuest.name, remoteQuest.mapID = 81, "Nearby map quest", 124
+focus.Sync(123, player, {}, { remoteQuest }, {})
+assert(focus.SelectQuest(81) and waypoint.uiMapID == 124,
+    "quest focus must keep the quest point's map instead of replacing it with the player's map")
+assert(focus.HasFocus() and focus.Clear() and not focus.HasFocus() and waypoint == nil,
+    "clear focus should remove only the waypoint currently owned by the addon")
+assert(focus.SelectQuest(81))
+waypoint = UiMapPoint.CreateFromCoordinates(124, .1, .1)
+assert(focus.Clear() and waypoint.position.x == .1,
+    "clearing addon focus must preserve a waypoint another addon or the player set")
+do
+    local live = Step(700)
+    live.key, live.category, live.name = "valid-live", "rare", "Valid rare"
+    local incomplete = { key = "missing-coordinate", kind = "mob", mapID = 123 }
+    player.worldX = 690
+    focus.Sync(123, player, { live }, {}, { incomplete })
+    assert(focus.StartNearest("rare") and waypoint.position.x == .7,
+        "incomplete map notes must not break duplicate checking or valid rare routes")
+end
 io.write("vignette radar World Focus tests passed\n")

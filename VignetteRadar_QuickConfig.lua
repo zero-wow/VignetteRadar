@@ -201,24 +201,23 @@ local function ColorSwatch(page, slot, x, y)
     swatches[slot] = button
 end
 
-Button = function(page, title, x, y, width, action)
+Button = function(page, title, x, y, width, action, searchKey)
     local controls = addon.VignetteRadarControls
     local button = (title == "+" or title == "-" or title == "−")
         and controls.IconButton(page, title, width, 21) or controls.Button(page, title, width, 21)
     button:SetPoint("TOPLEFT", page, "TOPLEFT", x, y)
     button:SetScript("OnClick", action)
     if title ~= "+" and title ~= "-" and title ~= "−" then
-        RegisterSearch(page, nil, title)
+        RegisterSearch(page, searchKey, title)
     end
     return button
 end
 
 local function Choice(page, key, value, title, x, y, width)
-    local button = Button(page, title, x, y, width, function() Changed(key, value) end)
+    local button = Button(page, title, x, y, width, function() Changed(key, value) end, key)
     button.optionKey, button.optionValue = key, value
     if not groups[key] then groups[key] = {} end
     groups[key][value] = button
-    RegisterSearch(page, key, title)
     return button
 end
 
@@ -376,22 +375,36 @@ end
 local function RefreshSearch()
     if not (quick and quick.searchRows and quick.searchInput) then return end
     local query = (quick.searchInput:GetText() or ""):lower():match("^%s*(.-)%s*$")
-    local shown = 0
-    for _, result in ipairs(searchEntries) do
-        if query ~= "" and result.match:find(query, 1, true) then
-            shown = shown + 1
-            local row = quick.searchRows[shown]
-            if not row then break end
-            row.result = result
-            row:SetText(result.page .. "  ·  " .. result.title)
-            row:Show()
+    local matches = {}
+    if query ~= "" then
+        for _, result in ipairs(searchEntries) do
+            if result.match:find(query, 1, true) then
+                local title = result.title:lower()
+                local score = title == query and 0 or title:find(query, 1, true) == 1 and 1
+                    or result.page:lower():find(query, 1, true) and 2 or 3
+                matches[#matches + 1] = { result = result, score = score }
+            end
         end
+        table.sort(matches, function(a, b)
+            if a.score ~= b.score then return a.score < b.score end
+            if a.result.page ~= b.result.page then return a.result.page < b.result.page end
+            return a.result.title < b.result.title
+        end)
     end
-    for index = math.min(shown, #quick.searchRows) + 1, #quick.searchRows do
+    local shown = math.min(#matches, #quick.searchRows)
+    for index = 1, shown do
+        local row, result = quick.searchRows[index], matches[index].result
+        row.result = result
+        row:SetText(result.page .. "  ·  " .. result.title)
+        row:Show()
+    end
+    for index = shown + 1, #quick.searchRows do
         quick.searchRows[index]:Hide()
     end
     quick.searchHint:SetText(query == "" and "Type an option or button name."
-        or shown == 0 and "No matching setting." or "Choose a result to open its page.")
+        or shown == 0 and "No matching setting."
+        or #matches > shown and ("Showing " .. shown .. " of " .. #matches .. " matches.")
+        or "Choose a result to open its page.")
 end
 
 local function Build()
@@ -591,14 +604,19 @@ local function Build()
     Choice(autoRoute, "vignetteRadarAutoRouteArrivalRadius", 10, "10 yd", 81, -179, 59)
     Choice(autoRoute, "vignetteRadarAutoRouteArrivalRadius", 20, "20 yd", 148, -179, 59)
     Choice(autoRoute, "vignetteRadarAutoRouteArrivalRadius", 40, "40 yd", 215, -179, 59)
-    Button(autoRoute, "Start / Pause", 14, -207, 124, function()
+    Button(autoRoute, "Start/Pause", 14, -207, 80, function()
         local focusAPI = addon.VignetteRadarWorldFocus
         if focusAPI then focusAPI.ToggleRoute() end
         API.Refresh()
     end)
-    Button(autoRoute, "Skip Stop", 150, -207, 124, function()
+    Button(autoRoute, "Skip Stop", 104, -207, 80, function()
         local focusAPI = addon.VignetteRadarWorldFocus
         if focusAPI then focusAPI.SkipRouteStop() end
+        API.Refresh()
+    end)
+    Button(autoRoute, "Skip Quest", 194, -207, 80, function()
+        local focusAPI = addon.VignetteRadarWorldFocus
+        if focusAPI then focusAPI.SkipQuest() end
         API.Refresh()
     end)
     Button(autoRoute, "Back to World Focus", 14, -235, 260, function()
@@ -616,8 +634,9 @@ local function Build()
     quick.pages.Beacons = beacons
     Section(beacons, "Bearing Bar", -3)
     Check(beacons, "vignetteRadarBeaconsEnabled", "Show Multi-Point Bearing Display", 14, -22)
-    Check(beacons, "vignetteRadarBeaconRares", "Rares + Bosses", 14, -50, nil, 95)
-    Check(beacons, "vignetteRadarBeaconQuests", "Quest Points", 147, -50, nil, 95)
+    Check(beacons, "vignetteRadarBeaconRares", "Rares", 14, -50, nil, 55)
+    Check(beacons, "vignetteRadarBeaconTreasures", "Loot/Caves", 104, -50, nil, 55)
+    Check(beacons, "vignetteRadarBeaconQuests", "Quests", 194, -50, nil, 52)
     Section(beacons, "Show Within", -88)
     Choice(beacons, "vignetteRadarBeaconRange", 150, "150 yd", 14, -106, 60)
     Choice(beacons, "vignetteRadarBeaconRange", 450, "450 yd", 80, -106, 60)
@@ -911,8 +930,34 @@ local function Build()
         quick.searchRows[index] = row
     end
     quick.searchHint = Label(search, "Type an option or button name.", 14, -275, 9, 260)
-    Button(status, "Refresh status", 14, -255, 260, function()
+    Button(status, "Rescan Now", 14, -255, 124, function()
+        if addon.VignetteRadarAPI and addon.VignetteRadarAPI.RefreshMapData then
+            addon.VignetteRadarAPI.RefreshMapData()
+        end
         if API.RefreshStatus then API.RefreshStatus() end
+    end)
+    Button(status, "Performance...", 150, -255, 124, function()
+        SelectPage("Performance")
+    end)
+
+    local performance = CreateFrame("Frame", nil, quick)
+    performance:SetSize(WIDTH, HEIGHT - 137)
+    performance:SetPoint("TOPLEFT", quick, "TOPLEFT", 0, -137)
+    performance.searchPage = "Performance"
+    performance:Hide()
+    quick.pages.Performance = performance
+    Section(performance, "RADAR UPDATE RATE", -3)
+    Choice(performance, "vignetteRadarPerformance", "standard", "Standard", 14, -25, 80)
+    Choice(performance, "vignetteRadarPerformance", "balanced", "Balanced", 104, -25, 80)
+    Choice(performance, "vignetteRadarPerformance", "low", "Low CPU", 194, -25, 80)
+    Label(performance, "Standard: smoothest motion, scans each second.", 14, -61, 9)
+    Label(performance, "Balanced: half as many redraws.", 14, -79, 9)
+    Label(performance, "Low CPU: fewer redraws and slower scans.", 14, -97, 9)
+    Section(performance, "AUTOMATIC PROTECTION", -132)
+    Label(performance, "Excessive update time pauses the affected display", 14, -152, 9)
+    Label(performance, "for this session. /reload retries it.", 14, -170, 9)
+    Button(performance, "Back to Status", 14, -231, 260, function()
+        SelectPage("Status")
     end)
 
     local explore = quick.pages.Explore

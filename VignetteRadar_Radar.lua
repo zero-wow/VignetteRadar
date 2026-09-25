@@ -14,7 +14,6 @@ local LAYOUTS = {
 local LAUNCHER_DIMENSIONS = { width = 140, height = 64 }
 local LAUNCHER_RADIUS, LAUNCHER_RANGE = 16, 150
 local HEADING_HALF_WIDTH = 4
-local UPDATE_SECONDS, RESCAN_SECONDS = 0.05, 1
 local SLOW_UPDATE_MS, STALLED_UPDATE_MS = 50, 250
 local MAX_BLIPS = 64
 local MAX_QUEST_DOTS = 64
@@ -89,6 +88,16 @@ local PREVIEW_TARGETS = {
 
 local function Settings()
     return addon.GetSettings()
+end
+
+function addon.VignetteRadarRenderSeconds()
+    local mode = Settings().vignetteRadarPerformance
+    return mode == "low" and .2 or mode == "balanced" and .1 or .05
+end
+
+function addon.VignetteRadarScanSeconds()
+    local mode = Settings().vignetteRadarPerformance
+    return mode == "low" and 2.5 or mode == "balanced" and 1.5 or 1
 end
 
 local function CircleOnly()
@@ -269,6 +278,14 @@ local function CheckUpdateBudget(owner, started, label)
         owner._slowUpdates = (owner._slowUpdates or 0) + 1
     else
         owner._slowUpdates = 0
+    end
+    if not owner._budgetWindowStart or finished < owner._budgetWindowStart then
+        owner._budgetWindowStart, owner._budgetWindowCost = started, 0
+    end
+    owner._budgetWindowCost = (owner._budgetWindowCost or 0) + duration
+    if finished - owner._budgetWindowStart >= 1000 then
+        if owner._budgetWindowCost >= 300 then owner._slowUpdates = 3 end
+        owner._budgetWindowStart, owner._budgetWindowCost = finished, 0
     end
     if owner._slowUpdates < 3 then return end
     owner:SetScript("OnUpdate", nil)
@@ -1596,7 +1613,7 @@ local function RenderQuestAreas(player, mapID, range)
         local downX, downY, downInstance = MapToWorld(mapID, MapVector(0, 1))
         -- A zone's map coordinates can be unavailable on the first attempt.
         -- Retry a failed projection instead of caching that failure for the zone.
-        questMapBasis = { mapID = mapID, retryAt = now + RESCAN_SECONDS }
+        questMapBasis = { mapID = mapID, retryAt = now + addon.VignetteRadarScanSeconds() }
         if originX and rightX and downX
             and (not originInstance or not rightInstance or originInstance == rightInstance)
             and (not originInstance or not downInstance or originInstance == downInstance) then
@@ -1649,7 +1666,7 @@ local function RenderQuestAreas(player, mapID, range)
         if not ok then HideQuestAreas(); return end
         blob.drawnKey = key
         -- DrawBlob can succeed before Blizzard loads the shape data.
-        blob.nextDrawAt = now + RESCAN_SECONDS
+        blob.nextDrawAt = now + addon.VignetteRadarScanSeconds()
     end
     blob:Show()
     return true
@@ -2920,8 +2937,12 @@ routeMenu.Refresh = function()
     routeMenu.popup.status:SetText(focus and focus.Status() or "Waypoint data unavailable")
     routeMenu.popup.status:SetTextColor(.7, .79, .8, 1)
     local routing = focus and focus.IsRouteActive()
-    routeMenu.popup.pause:SetText(routing and "Pause Auto Route" or "Resume Auto Route")
+    routeMenu.popup.pause:SetText(routing and "Pause Auto Route"
+        or focus and focus.IsRoutePaused and focus.IsRoutePaused()
+            and "Resume Auto Route" or "Start Auto Route")
     routeMenu.popup.skip:SetEnabled(routing == true)
+    routeMenu.popup.skipQuest:SetEnabled(focus and focus.IsQuestRoute and focus.IsQuestRoute() or false)
+    routeMenu.popup.clear:SetEnabled(focus and focus.HasFocus and focus.HasFocus() or false)
 end
 
 function routeMenu.Position(anchor)
@@ -2950,7 +2971,7 @@ end
 function routeMenu.Ensure()
     if routeMenu.popup then return routeMenu.popup end
     routeMenu.popup = CreateFrame("Frame", "VignetteRadarRouteChooserPopup", UIParent, "BackdropTemplate")
-    routeMenu.popup:SetSize(248, 235)
+    routeMenu.popup:SetSize(248, 263)
     routeMenu.popup:SetFrameStrata("DIALOG")
     routeMenu.popup:SetClampedToScreen(true)
     routeMenu.popup:EnableMouse(true)
@@ -3024,7 +3045,13 @@ function routeMenu.Ensure()
     routeMenu.popup.skip = Choice("skip", "Skip Stop", 128, -173, 107, function()
         return addon.VignetteRadarWorldFocus.SkipRouteStop()
     end)
-    Choice("settings", "Route Settings", 13, -201, 222, function()
+    routeMenu.popup.skipQuest = Choice("skipQuest", "Skip Quest", 13, -201, 107, function()
+        return addon.VignetteRadarWorldFocus.SkipQuest()
+    end)
+    routeMenu.popup.clear = Choice("clear", "Clear Focus", 128, -201, 107, function()
+        return addon.VignetteRadarWorldFocus.Clear()
+    end)
+    Choice("settings", "Route Settings", 13, -229, 222, function()
         local quick = addon.VignetteRadarQuickConfig
         if quick and quick.OpenPage then quick.OpenPage("Auto Route", CircleOnly() and panel.field or panel) end
         return true
@@ -3097,11 +3124,12 @@ function routeMenu.SetupButtons(panel, ToolbarIcon)
         routeMenu.Hide()
         local focus = addon.VignetteRadarWorldFocus
         if not focus then return end
+        local wasRouting = focus.IsRouteActive()
         local ok, reason = focus.ToggleRoute()
         self._selected = focus.IsRouteActive()
         self:RefreshAppearance()
         if panel.RefreshCornerTools then panel.RefreshCornerTools() end
-        if reason and not ok and UIErrorsFrame and UIErrorsFrame.AddMessage then
+        if reason and not ok and not wasRouting and UIErrorsFrame and UIErrorsFrame.AddMessage then
             UIErrorsFrame:AddMessage(reason, 1, .65, .25)
         end
     end)
@@ -3109,7 +3137,9 @@ function routeMenu.SetupButtons(panel, ToolbarIcon)
         if not GameTooltip then return end
         local focus = addon.VignetteRadarWorldFocus
         GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
-        GameTooltip:SetText(focus and focus.IsRouteActive() and "Pause Auto Route" or "Start Auto Route", 1, 1, 1)
+        GameTooltip:SetText(focus and focus.IsRouteActive() and "Pause Auto Route"
+            or focus and focus.IsRoutePaused and focus.IsRoutePaused()
+                and "Resume Auto Route" or "Start Auto Route", 1, 1, 1)
         GameTooltip:AddLine("Click a rare, treasure, or quest first. The route chooses the next stop as you arrive.", .7, .8, .8, true)
         GameTooltip:AddLine("Right-click to choose a route, pin Zygor, or manage stops.", .55, .86, .76, true)
         GameTooltip:Show()
@@ -3190,6 +3220,7 @@ function addon.GetVignetteRadarDiagnostics()
         "Live detections: " .. #activeTargets .. "  ·  quest points: " .. #activeQuests,
         "Map notes: " .. #activeMapNotes,
         "CPU guard: " .. (#pausedNames > 0 and ("paused " .. table.concat(pausedNames, ", ")) or "running"),
+        "Update rate: " .. (settings.vignetteRadarPerformance or "standard"),
     }
     for _, line in ipairs(addon.GetVignetteRadarStatusLines()) do
         lines[#lines + 1] = line
@@ -4228,7 +4259,8 @@ EnsureLauncher = function()
             self._targetElapsed = 0
             UpdateLauncher(0, true)
         end
-        if self._scanElapsed >= RESCAN_SECONDS and Settings().vignetteRadarEnabled == true
+        if self._scanElapsed >= addon.VignetteRadarScanSeconds()
+            and Settings().vignetteRadarEnabled == true
             and (not panel or not panel:IsShown()) then
             self._scanElapsed = 0
             RefreshRadar(true)
@@ -5072,7 +5104,7 @@ local function EnsurePanel()
     HoverTool("plus", "Zoom in", panel.zoomIn, "TOPRIGHT", -30, -10)
     HoverTool("north", "North up / facing up", panel.compass, "TOPRIGHT", -10, -30)
     HoverTool("trail", "Trail: left toggle, right style", panel.trailToggle, "BOTTOMLEFT", 10, 10)
-    HoverTool("route", "Auto Route: click to start or pause; right-click to choose",
+    HoverTool("route", "Auto Route: start, pause, or resume; right-click to choose",
         panel.routeToggle, "BOTTOMRIGHT", -10, 30)
     HoverTool("eye", "Stay fully visible", panel.combatToggle, "BOTTOMLEFT", 30, 10)
     HoverTool("help", "Radar status", nil, "BOTTOMLEFT", 10, 30)
@@ -5116,7 +5148,7 @@ local function EnsurePanel()
             self._questTooltipElapsed = 0
             UpdateQuestAreaTooltip()
         end
-        if self._scanElapsed >= RESCAN_SECONDS then
+        if self._scanElapsed >= addon.VignetteRadarScanSeconds() then
             self._scanElapsed = 0
             RefreshRadar(true)
             if not self:IsShown() then
@@ -5124,7 +5156,7 @@ local function EnsurePanel()
                 return
             end
         end
-        if self._renderElapsed >= UPDATE_SECONDS then
+        if self._renderElapsed >= addon.VignetteRadarRenderSeconds() then
             local renderElapsed = self._renderElapsed
             self._renderElapsed = 0
             UpdateFullSweep(renderElapsed)
@@ -5267,7 +5299,9 @@ ScanVignettes = function(mapID)
         activeMapNotes = {}
         mapNotesMapID, mapNotesSource, mapNotesUpdatedAt = nil, nil, nil
     elseif mapNotesMapID ~= mapID or mapNotesSource ~= source
-        or not mapNotesUpdatedAt or now - mapNotesUpdatedAt >= 5 then
+        or not mapNotesUpdatedAt or now - mapNotesUpdatedAt >=
+            (Settings().vignetteRadarPerformance == "low" and 20
+                or Settings().vignetteRadarPerformance == "balanced" and 10 or 5) then
         local pois = addon.VignetteRadarPOIs
         local selected, dataMapID
         if pois then selected, dataMapID = pois.ResolveSource(mapID, source) end
@@ -5472,6 +5506,14 @@ end
 addon.VignetteRadarAPI = {
     GetTargets = function() return activeTargets end,
     GetCurrentMapID = CurrentMapID,
+    RefreshMapData = function()
+        if addon.VignetteRadarPOIs and addon.VignetteRadarPOIs.Invalidate then
+            addon.VignetteRadarPOIs.Invalidate()
+        end
+        mapNotesUpdatedAt = nil
+        RefreshRadar(true)
+        return #activeMapNotes
+    end,
     PinZygorStep = function()
         local worldFocus, mapID = addon.VignetteRadarWorldFocus, CurrentMapID()
         if not worldFocus then return false, "World Focus is unavailable" end
@@ -5735,6 +5777,64 @@ function VignetteRadar_CycleWorldFocus(direction)
     if focus then focus.Cycle(direction) end
 end
 
+function addon.VignetteRadarBindingError(reason)
+    if type(reason) ~= "string" or reason == "" then return end
+    if UIErrorsFrame and UIErrorsFrame.AddMessage then
+        UIErrorsFrame:AddMessage(reason, 1, .65, .25)
+    end
+end
+
+function VignetteRadar_ToggleRadar()
+    addon.SetVignetteRadarEnabled(not Settings().vignetteRadarEnabled)
+end
+
+function VignetteRadar_ToggleSettings()
+    local quick = addon.VignetteRadarQuickConfig
+    if quick then quick.Toggle() end
+end
+
+function VignetteRadar_ToggleBearingBar()
+    Settings().vignetteRadarBeaconsEnabled = not Settings().vignetteRadarBeaconsEnabled
+    RefreshRadar(false)
+    local quick = addon.VignetteRadarQuickConfig
+    if quick and quick.Refresh then quick.Refresh() end
+end
+
+function VignetteRadar_ToggleAutoRoute()
+    local focus = addon.VignetteRadarWorldFocus
+    if not focus then return addon.VignetteRadarBindingError("World Focus is unavailable") end
+    local wasRouting = focus.IsRouteActive()
+    local ok, reason = focus.ToggleRoute()
+    if not ok and not wasRouting then addon.VignetteRadarBindingError(reason) end
+    RefreshRadar(false)
+    return wasRouting or ok
+end
+
+function VignetteRadar_PinZygorStep()
+    local ok, reason = addon.VignetteRadarAPI.PinZygorStep()
+    if not ok then addon.VignetteRadarBindingError(reason) end
+    RefreshRadar(false)
+    return ok
+end
+
+function VignetteRadar_StartNearestRoute(kind)
+    local focus = addon.VignetteRadarWorldFocus
+    if not focus then return addon.VignetteRadarBindingError("World Focus is unavailable") end
+    local ok, reason = focus.StartNearest(kind)
+    if not ok then addon.VignetteRadarBindingError(reason) end
+    RefreshRadar(false)
+    return ok
+end
+
+function VignetteRadar_ClearFocus()
+    local focus = addon.VignetteRadarWorldFocus
+    if not focus then return addon.VignetteRadarBindingError("World Focus is unavailable") end
+    local ok, reason = focus.Clear()
+    if not ok then addon.VignetteRadarBindingError(reason) end
+    RefreshRadar(false)
+    return ok
+end
+
 SLASH_VIGNETTERADAR1 = "/vr"
 SLASH_VIGNETTERADAR2 = "/vradar"
 SLASH_VIGNETTERADAR3 = "/vignetteradar"
@@ -5862,7 +5962,7 @@ events:SetScript("OnEvent", function(_, event)
         or event == "ZONE_CHANGED" or event == "ZONE_CHANGED_INDOORS"
     if addon.VignetteRadarQuestData and (mapChanged or event == "QUEST_LOG_UPDATE"
         or event == "QUEST_POI_UPDATE" or event == "QUEST_WATCH_LIST_CHANGED") then
-        addon.VignetteRadarQuestData.Invalidate()
+        addon.VignetteRadarQuestData.Invalidate(mapChanged and "map" or "quest")
         addon.VignetteRadarStartsNextAt = nil
     end
     if mapChanged then questMapBasis = nil end
@@ -5886,7 +5986,7 @@ events:SetScript("OnUpdate", function(self, elapsed)
         return
     end
     self._idleElapsed = (self._idleElapsed or 0) + elapsed
-    if self._idleElapsed >= RESCAN_SECONDS then
+    if self._idleElapsed >= addon.VignetteRadarScanSeconds() then
         self._idleElapsed = 0
         local started = ProfileTime()
         RefreshRadar(true)

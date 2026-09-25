@@ -2,11 +2,20 @@ local _, addon = ...
 if type(addon) ~= "table" then return end
 
 BINDING_HEADER_VIGNETTERADAR = "Vignette Radar"
-BINDING_NAME_VIGNETTERADAR_RAISE_LAUNCHER = "Hold to raise launcher"
-BINDING_NAME_VIGNETTERADAR_PEEK_RADAR = "Hold to peek at full radar"
-BINDING_NAME_VIGNETTERADAR_HOLD_LENS = "Hold to filter radar"
-BINDING_NAME_VIGNETTERADAR_FOCUS_NEXT = "World Focus: next point"
-BINDING_NAME_VIGNETTERADAR_FOCUS_PREVIOUS = "World Focus: previous point"
+BINDING_NAME_VIGNETTERADAR_RAISE_LAUNCHER = "Hold to Raise Launcher"
+BINDING_NAME_VIGNETTERADAR_PEEK_RADAR = "Hold to Peek at Full Radar"
+BINDING_NAME_VIGNETTERADAR_HOLD_LENS = "Hold to Filter Radar"
+BINDING_NAME_VIGNETTERADAR_FOCUS_NEXT = "World Focus: Next Point"
+BINDING_NAME_VIGNETTERADAR_FOCUS_PREVIOUS = "World Focus: Previous Point"
+BINDING_NAME_VIGNETTERADAR_TOGGLE_RADAR = "Toggle Radar"
+BINDING_NAME_VIGNETTERADAR_TOGGLE_SETTINGS = "Toggle Radar Settings"
+BINDING_NAME_VIGNETTERADAR_TOGGLE_BEARING = "Toggle Bearing Bar"
+BINDING_NAME_VIGNETTERADAR_TOGGLE_ROUTE = "Auto Route: Start, Pause, or Resume"
+BINDING_NAME_VIGNETTERADAR_PIN_ZYGOR = "Pin Zygor's Current Step"
+BINDING_NAME_VIGNETTERADAR_ROUTE_RARE = "Auto Route: Nearest Rare"
+BINDING_NAME_VIGNETTERADAR_ROUTE_TREASURE = "Auto Route: Nearest Treasure"
+BINDING_NAME_VIGNETTERADAR_ROUTE_QUEST = "Auto Route: Nearest Quest Point"
+BINDING_NAME_VIGNETTERADAR_CLEAR_FOCUS = "World Focus: Clear Waypoint"
 
 addon.VignetteRadarRanges = { 10, 25, 50, 100, 150, 300, 450, 600, 1200, 2400, 4800 }
 addon.VignetteRadarLayouts = { "classic", "squat", "compact" }
@@ -93,6 +102,8 @@ function addon.GetSettings()
         db.vignetteRadarBearingBarDefaulted = true
     end
     if type(db.vignetteRadarBeaconsEnabled) ~= "boolean" then db.vignetteRadarBeaconsEnabled = false end
+    if db.vignetteRadarPerformance ~= "standard" and db.vignetteRadarPerformance ~= "balanced"
+        and db.vignetteRadarPerformance ~= "low" then db.vignetteRadarPerformance = "standard" end
     if type(db.vignetteRadarWorldFocusEnabled) ~= "boolean" then db.vignetteRadarWorldFocusEnabled = true end
     if type(db.vignetteRadarWorldFocusAutoAdvance) ~= "boolean" then db.vignetteRadarWorldFocusAutoAdvance = false end
     if type(db.vignetteRadarWorldFocusRoutes) ~= "boolean" then db.vignetteRadarWorldFocusRoutes = true end
@@ -110,6 +121,7 @@ function addon.GetSettings()
     if db.vignetteRadarWorldFocusArrivalRadius ~= 10 and db.vignetteRadarWorldFocusArrivalRadius ~= 20
         and db.vignetteRadarWorldFocusArrivalRadius ~= 40 then db.vignetteRadarWorldFocusArrivalRadius = 20 end
     if type(db.vignetteRadarBeaconRares) ~= "boolean" then db.vignetteRadarBeaconRares = true end
+    if type(db.vignetteRadarBeaconTreasures) ~= "boolean" then db.vignetteRadarBeaconTreasures = true end
     if type(db.vignetteRadarBeaconQuests) ~= "boolean" then db.vignetteRadarBeaconQuests = true end
     if db.vignetteRadarBeaconRange ~= 150 and db.vignetteRadarBeaconRange ~= 450
         and db.vignetteRadarBeaconRange ~= 1200 and db.vignetteRadarBeaconRange ~= 2400 then

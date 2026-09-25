@@ -98,6 +98,10 @@ Q.Invalidate()
 now = 116
 assert(#Q.GetAvailableQuestStarts(77) == 2 and calls.requests == 3,
     "quest-log changes should be able to invalidate both caches")
+now = 116.5
+Q.Invalidate("quest")
+assert(#Q.GetAvailableQuestStarts(77) == 2 and calls.requests == 3,
+    "quest updates must refresh the list without repeating the map request")
 C_QuestLine.GetAvailableQuestLines = function() error("unavailable") end
 now = 122
 assert(#Q.GetAvailableQuestStarts(77) == 0, "unavailable Blizzard data must fail safely")

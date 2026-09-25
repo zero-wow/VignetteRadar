@@ -14,4 +14,31 @@
     <Binding name="VIGNETTERADAR_FOCUS_PREVIOUS" category="ADDONS">
         VignetteRadar_CycleWorldFocus(-1)
     </Binding>
+    <Binding name="VIGNETTERADAR_TOGGLE_RADAR" category="ADDONS">
+        VignetteRadar_ToggleRadar()
+    </Binding>
+    <Binding name="VIGNETTERADAR_TOGGLE_SETTINGS" category="ADDONS">
+        VignetteRadar_ToggleSettings()
+    </Binding>
+    <Binding name="VIGNETTERADAR_TOGGLE_BEARING" category="ADDONS">
+        VignetteRadar_ToggleBearingBar()
+    </Binding>
+    <Binding name="VIGNETTERADAR_TOGGLE_ROUTE" category="ADDONS">
+        VignetteRadar_ToggleAutoRoute()
+    </Binding>
+    <Binding name="VIGNETTERADAR_PIN_ZYGOR" category="ADDONS">
+        VignetteRadar_PinZygorStep()
+    </Binding>
+    <Binding name="VIGNETTERADAR_ROUTE_RARE" category="ADDONS">
+        VignetteRadar_StartNearestRoute("rare")
+    </Binding>
+    <Binding name="VIGNETTERADAR_ROUTE_TREASURE" category="ADDONS">
+        VignetteRadar_StartNearestRoute("treasure")
+    </Binding>
+    <Binding name="VIGNETTERADAR_ROUTE_QUEST" category="ADDONS">
+        VignetteRadar_StartNearestRoute("quest")
+    </Binding>
+    <Binding name="VIGNETTERADAR_CLEAR_FOCUS" category="ADDONS">
+        VignetteRadar_ClearFocus()
+    </Binding>
 </Bindings>
