@@ -118,6 +118,9 @@ function addon.GetSettings()
     end
     if type(db.vignetteRadarAutoRouteOnSelect) ~= "boolean" then db.vignetteRadarAutoRouteOnSelect = false end
     if type(db.vignetteRadarRouteArrow) ~= "boolean" then db.vignetteRadarRouteArrow = true end
+    if type(db.vignetteRadarActiveCue) ~= "boolean" then db.vignetteRadarActiveCue = true end
+    if type(db.vignetteRadarRouteHorizonExpanded) ~= "boolean" then db.vignetteRadarRouteHorizonExpanded = false end
+    if type(db.vignetteRadarSourceBadges) ~= "boolean" then db.vignetteRadarSourceBadges = true end
     if type(db.vignetteRadarAutoRouteMapNotes) ~= "boolean" then db.vignetteRadarAutoRouteMapNotes = true end
     if type(db.vignetteRadarWorldFocusThemedWaypoint) ~= "boolean" then db.vignetteRadarWorldFocusThemedWaypoint = true end
     if db.vignetteRadarAutoRouteArrivalRadius ~= 10 and db.vignetteRadarAutoRouteArrivalRadius ~= 20
@@ -241,7 +244,18 @@ function addon.GetSettings()
         -- visual choice when these two controls become independent.
         db.vignetteRadarKeepVisibleCombat = db.vignetteRadarQuietCombat == false
     end
-    if type(db.vignetteRadarCircleOnly) ~= "boolean" then db.vignetteRadarCircleOnly = true end
+    -- Move existing characters to the finalized rounded radar once, while
+    -- retaining the legacy setting for imported profiles and API callers.
+    if db.vignetteRadarMainViewMigrated ~= true then
+        if db.vignetteRadarCircleOnly == false and not db.vignetteRadarCirclePosition
+            and type(db.vignetteRadarPosition) == "table" then
+            db.vignetteRadarCirclePosition = {
+                x = db.vignetteRadarPosition.x, y = db.vignetteRadarPosition.y }
+        end
+        db.vignetteRadarCircleOnly = true
+        db.vignetteRadarLayout = "classic"
+        db.vignetteRadarMainViewMigrated = true
+    end
     if type(db.vignetteRadarMarkerSize) ~= "number" or db.vignetteRadarMarkerSize ~= db.vignetteRadarMarkerSize then
         db.vignetteRadarMarkerSize = 7
     else
@@ -302,6 +316,14 @@ function addon.GetSettings()
             db[key] = math.max(limits[2], math.min(limits[3], value))
         end
     end
+    if type(db.vignetteRadarBorderOpacity) ~= "number"
+        or db.vignetteRadarBorderOpacity ~= db.vignetteRadarBorderOpacity
+        or db.vignetteRadarBorderOpacity == math.huge
+        or db.vignetteRadarBorderOpacity == -math.huge then
+        -- Keep the existing outline when separating border and ring controls.
+        db.vignetteRadarBorderOpacity = db.vignetteRadarRingOpacity
+    end
+    db.vignetteRadarBorderOpacity = math.max(0, math.min(4, db.vignetteRadarBorderOpacity))
     local labelOpacity = db.vignetteRadarRangeLabelOpacity
     if type(labelOpacity) ~= "number" or labelOpacity ~= labelOpacity
         or labelOpacity == math.huge or labelOpacity == -math.huge then

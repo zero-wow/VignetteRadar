@@ -101,6 +101,18 @@ assert(r == 0.78 and g == 0.88 and b == 1,
     "the shared rare filter must use silver-blue rather than boss red")
 local _, _, _, _, alpha, normalized = legend.DotStyle("unrecognized")
 assert(normalized == "other" and alpha == 1, "dot style must normalize unknown categories without inventing data")
+assert(legend.VignetteSource({ source = "minimap" }) == "minimap"
+    and legend.VignetteSource({ source = "worldMap" }) == "worldMap"
+    and legend.VignetteSource({ source = "minimap", stale = true }) == "lastSeen"
+    and legend.VignetteSource({ sample = true }) == "preview",
+    "vignette source states must distinguish live, map-only, remembered, and preview marks")
+assert(legend.QuestPointSource({ nextStep = { onCurrentMap = true, x = .2, y = .3 } }) == "objective"
+    and legend.QuestPointSource({ nextStep = { onCurrentMap = false, x = .2, y = .3 } }) == "questMap"
+    and legend.QuestPointSource({}) == "questMap",
+    "only a current-map Blizzard waypoint is an objective point")
+assert(legend.SourceDescription("estimated"):find("estimated location", 1, true)
+    and legend.SourceDescription("saved"):find("not a live detection", 1, true),
+    "source descriptions must avoid presenting estimates and saved notes as live data")
 
 legend.SetHighlight("rare")
 assert(settings.vignetteRadarHighlight == "rare", "spotlight selection must persist")
@@ -149,7 +161,7 @@ for _, kind in ipairs({ "treasure", "mob", "item", "note", "entrance", "guide" }
         and -note.point[5] + note.height < panel.height - 20,
         "map note entries must stay within the legend's visible gutters")
 end
-assert(panel.mapCaption.text:find("not live detections", 1, true)
+assert(panel.mapCaption.text:find("saved, not live", 1, true)
     and panel.guides.quest.fill.width == 8
     and panel.guides.quest.fill.texture == "Interface\\AddOns\\VignetteRadar\\Media\\quest-diamond.tga"
     and panel.guides.area.fill.width == 11
@@ -201,8 +213,8 @@ settings.vignetteRadarShapes = false
 legend.Refresh()
 assert(panel.mapNotes.treasure.alpha == 1 and panel.mapNotes.mob.alpha == .6
     and panel.guides.quest.alpha == 1 and panel.guides.quest.halo:IsShown()
-    and panel.guides.quest.label.text == "Quest + halo"
-    and panel.guides.area.label.text == "Native area" and panel.guides.trail.alpha == 1
+    and panel.guides.quest.label.text == "Quest + estimate"
+    and panel.guides.area.label.text == "Blizzard area" and panel.guides.trail.alpha == 1
     and panel.guides.area.fill.vertexColor[3] > panel.guides.area.fill.vertexColor[1]
     and panel.guides.quest.halo.vertexColor[3] > panel.guides.quest.halo.vertexColor[1]
     and panel.guides.trail.label.text == "Trail: Ticks"

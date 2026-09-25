@@ -8,6 +8,7 @@ addon.VignetteRadarWorldFocus = API
 local targets, quests, notes, player = {}, {}, {}, nil
 local active, candidates = nil, {}
 local route, pausedRoute, lastSelected = nil, nil, nil
+local horizonCache, horizonCachedAt
 local lootSession
 local ROUTE_LIMIT, ROUTE_DUPLICATE_YARDS = 192, 60
 local QuestComplete
@@ -125,7 +126,7 @@ end
 
 local function QuestRouteItem(quest)
     return { kind = "quest", questID = quest.questID, name = quest.name,
-        colorSlot = quest.colorSlot,
+        colorSlot = quest.colorSlot, nextStep = quest.nextStep,
         mapID = quest.mapID or player.mapID, mapX = quest.mapX, mapY = quest.mapY,
         worldX = quest.worldX, worldY = quest.worldY, instanceID = quest.instanceID }
 end
@@ -207,6 +208,7 @@ end
 
 local function MarkVisited(item)
     if not route or not item then return end
+    horizonCache = nil
     local id = RouteID(item)
     if id then route.visited[id] = true end
     if #route.visitedPlaces < ROUTE_LIMIT and Number(item.worldX) and Number(item.worldY) then
@@ -348,7 +350,7 @@ local function NextRouteStop()
                 and (target.category == "rare" or target.category == "treasure"))
                 and not target.stale and not target.sample then
                 live[#live + 1] = { key = target.key, kind = target.category, name = target.name,
-                    live = true,
+                    live = true, source = target.source,
                     isWorldBoss = target.isWorldBoss,
                     mapID = target.mapID, mapX = target.mapX, mapY = target.mapY,
                     worldX = target.worldX, worldY = target.worldY,
@@ -417,6 +419,7 @@ end
 
 local function Activate(item)
     lootSession = nil
+    horizonCache = nil
     local steps = { item }
     if item.kind == "treasure" and addon.GetSettings().vignetteRadarWorldFocusRoutes
         and type(item.route) == "table" and #item.route > 1 then steps = item.route end
@@ -445,8 +448,9 @@ local function RecordQuestAdvance()
     route.forward = {}
 end
 
-local function AdvanceRoute()
+local function AdvanceRoute(force)
     if not (route and active) then return false end
+    if route.locked and not force then return false, "Current stop is locked" end
     RecordQuestAdvance()
     MarkVisited(active.item)
     local nextItem = NextRouteStop()
@@ -537,6 +541,14 @@ end
 
 function API.IsRouteActive() return route ~= nil end
 function API.IsRoutePaused() return pausedRoute ~= nil end
+function API.IsRouteLocked() return (route or pausedRoute) and (route or pausedRoute).locked == true or false end
+function API.ToggleRouteLock()
+    local current = route or pausedRoute
+    if not (current and active) then return false, "Start an Auto Route first" end
+    current.locked = not current.locked
+    RouteNote("AUTO ROUTE", current.locked and "Current stop locked" or "Current stop unlocked")
+    return true, current.locked
+end
 function API.IsQuestRoute() return route and route.kind == "quest" or false end
 function API.GetRouteChoice()
     if route then return route.kind, "active" end
@@ -558,12 +570,61 @@ function API.GetRoutePoint()
         active.index, #active.steps
 end
 
+function API.ExplainActive()
+    if not (active and active.item) then return "No active destination" end
+    local item = active.item
+    local source = item.kind == "quest" and (item.nextStep and "Blizzard next step" or "Blizzard quest point")
+        or item.kind == "guide" and "Zygor guide"
+        or item.live and (item.source == "worldMap" and "Blizzard world map" or "Live vignette")
+        or item.source and ("Saved map note · " .. item.source) or "Selected location"
+    local rule = item.kind == "quest" and "advances on objective progress"
+        or item.kind == "treasure" and "advances at 3 yd or on matching loot"
+        or item.kind == "rare" and "advances at the chosen arrival distance"
+        or "follows its guide step"
+    return source .. " · " .. rule
+end
+
+function API.GetHorizon()
+    if not (route and active and player) then return {} end
+    local now = type(GetTime) == "function" and GetTime() or 0
+    if horizonCache and now >= (horizonCachedAt or 0)
+        and now - (horizonCachedAt or 0) < 3 then return horizonCache end
+    local result = {}
+    if not route.waiting then
+        result[1] = { name = active.name, kind = RouteKind(active.item) or active.kind,
+            item = active.item, current = true }
+    end
+    local original = route
+    local previewRoute = { kind = original.kind, questID = original.questID,
+        skippedQuests = original.skippedQuests, visited = {}, visitedPlaces = {} }
+    for id, seen in pairs(original.visited or {}) do previewRoute.visited[id] = seen end
+    for index, place in ipairs(original.visitedPlaces or {}) do
+        previewRoute.visitedPlaces[index] = place
+    end
+    route = previewRoute
+    local ok = pcall(function()
+        if not original.waiting then MarkVisited(active.item) end
+        for _ = #result + 1, 3 do
+            local nextItem = NextRouteStop()
+            if not nextItem then break end
+            result[#result + 1] = { name = nextItem.name, kind = RouteKind(nextItem),
+                item = nextItem, current = false }
+            MarkVisited(nextItem)
+        end
+    end)
+    route = original
+    if not ok then return result end
+    horizonCache, horizonCachedAt = result, now
+    return result
+end
+
 function API.OwnsGuideWaypoint()
     return active and active.kind == "guide" and active.steps[active.index]
         and SameWaypoint(active.steps[active.index]) or false
 end
 
 function API.Clear(silent)
+    horizonCache = nil
     if not active then return false, "No focused waypoint" end
     local name = active.name
     local step = active.steps[active.index]
@@ -636,7 +697,7 @@ end
 
 function API.SkipRouteStop()
     if not (route and active) then return false, "No active route" end
-    return AdvanceRoute()
+    return AdvanceRoute(true)
 end
 
 function API.SkipQuest()
@@ -646,7 +707,7 @@ function API.SkipQuest()
     route.skippedQuests = route.skippedQuests or {}
     route.skippedQuests[route.questID] = true
     route.questID, route.progress, route.finished, route.waiting = nil, nil, nil, false
-    local advanced, reason = AdvanceRoute()
+    local advanced, reason = AdvanceRoute(true)
     return advanced or not route, reason or "Quest skipped"
 end
 
@@ -700,13 +761,14 @@ function API.NextQuestStep()
         if ok then route.waiting = false end
         return ok, reason
     end
-    local ok, reason = AdvanceRoute()
+    local ok, reason = AdvanceRoute(true)
     return ok, reason or (not ok and "Waiting for the next quest point")
 end
 
 function API.SelectTarget(target)
     if not target or target.stale or target.sample then return false, "No live target" end
     return Select({ key = target.key, name = target.name, kind = target.category,
+        live = true, source = target.source,
         isWorldBoss = target.isWorldBoss, rewardQuestID = target.rewardQuestID,
         npcID = target.npcID, objectGUID = target.objectGUID,
         objectID = target.objectID, isDead = target.isDead,
@@ -731,6 +793,7 @@ function API.SelectQuest(questID)
     if nearest then
         return Select({ key = "quest:" .. questID, questID = questID,
             name = nearest.name, kind = "quest", colorSlot = nearest.colorSlot,
+            nextStep = nearest.nextStep,
             mapID = nearest.mapID, mapX = nearest.mapX, mapY = nearest.mapY,
             worldX = nearest.worldX, worldY = nearest.worldY,
             instanceID = nearest.instanceID })
@@ -840,6 +903,7 @@ function API.Sync(mapID, snapshot, liveTargets, questPoints, mapNotes)
         return
     end
     if not (Number(player.worldX) and Number(player.worldY)) then return end
+    if route and route.locked then return end
     if route and route.kind == "closest" and route.waiting then
         -- A waiting mixed route stays armed, but retries only on every second
         -- data scan. An empty zone should stay cheap while new points appear.
@@ -936,7 +1000,7 @@ function API.Status()
     if route then
         local kind = route.kind == "rare" and "Rare" or route.kind == "treasure"
             and "Treasure" or route.kind == "closest" and "Closest" or "Quest"
-        return prefix .. "Auto Route · " .. kind .. " · " .. (route.waiting
+        return prefix .. "Auto Route · " .. kind .. (route.locked and " · Locked" or "") .. " · " .. (route.waiting
             and (route.kind == "closest" and "Waiting for Nearby Points"
                 or "Waiting for Next Objective")
             or active and active.name or "Choosing Next Stop")
@@ -1007,6 +1071,7 @@ end
 
 function API.OnLootEvent(event)
     if event == "LOOT_CLOSED" then lootSession = nil; return false end
+    if route and route.locked then return false end
     if event == "LOOT_OPENED" then
         lootSession = nil
         if not (route and route.kind == "treasure" and active

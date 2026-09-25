@@ -896,14 +896,13 @@ local function Tooltip(owner)
         GameTooltip:AddLine("Specific vignette focus is active.", ACCENT[1], ACCENT[2], ACCENT[3])
     end
     if Favorite(target) then GameTooltip:AddLine("Favorite", 1, 0.82, 0.30) end
+    local legend = LegendAPI()
+    local source = legend and legend.VignetteSource and legend.VignetteSource(target)
     if target.stale then
         GameTooltip:AddLine("Last seen " .. math.floor(math.max(0, Now() - target.lastSeenAt)) .. " seconds ago; not a live detection.", 0.75, 0.75, 0.75, true)
     end
-    if target.sample then
-        GameTooltip:AddLine("Layout preview; this is not a live detection.", 0.55, 0.86, 0.76, true)
-    elseif not target.stale then
-        GameTooltip:AddLine(target.source == "worldMap" and "Shown on Blizzard's world map; availability follows the game."
-            or "Shown from Blizzard's active minimap vignette data.", 0.55, 0.86, 0.76, true)
+    if legend and legend.SourceDescription and source then
+        GameTooltip:AddLine(legend.SourceDescription(source), 0.55, 0.86, 0.76, true)
     end
     GameTooltip:AddLine("Click: focus; click again to show all.", 0.65, 0.80, 0.77, true)
     if not target.sample then
@@ -994,6 +993,11 @@ local function AcquireBlip()
         blip.dot:SetPoint("CENTER")
         blip.dot:SetTexture(CIRCLE_TEXTURE)
         blip.dot:SetVertexColor(RED[1], RED[2], RED[3], 1)
+        blip.sourceBadge = blip:CreateTexture(nil, "OVERLAY")
+        blip.sourceBadge:SetTexture("Interface\\Buttons\\WHITE8X8")
+        blip.sourceBadge:SetSize(3, 3)
+        blip.sourceBadge:SetPoint("BOTTOMRIGHT", blip, "BOTTOMRIGHT", -1, 1)
+        blip.sourceBadge:Hide()
         blip:SetScript("OnEnter", Tooltip)
         blip:SetScript("OnLeave", function() if GameTooltip then GameTooltip:Hide() end end)
         blip:RegisterForClicks("LeftButtonUp", "RightButtonUp")
@@ -1314,6 +1318,11 @@ local function RenderQuestDots(player, range)
                             GameTooltip:SetText(self.quest.name, 1, 0.82, 0.35)
                             GameTooltip:AddLine(self.quest.completed and "Complete · solid diamond"
                                 or "In progress · hollow diamond", .68, .82, .8)
+                            local legend = LegendAPI()
+                            if legend and legend.QuestPointSource and legend.SourceDescription then
+                                GameTooltip:AddLine(legend.SourceDescription(legend.QuestPointSource(self.quest)),
+                                    .58, .83, .73, true)
+                            end
                             GameTooltip:AddLine(math.floor(self.distance + 0.5) .. " yd from you", 0.72, 0.76, 0.78)
                             if self.quest.nextStep then
                                 GameTooltip:AddLine("Blizzard's next quest step", .58, .83, .73)
@@ -1326,7 +1335,9 @@ local function RenderQuestDots(player, range)
                                 end
                             end
                             if self.halo and self.halo:IsShown() then
-                                GameTooltip:AddLine("Soft circle: estimated location, not a Blizzard quest area.", .72, .76, .78, true)
+                                GameTooltip:AddLine(legend and legend.SourceDescription
+                                    and legend.SourceDescription("estimated")
+                                    or "Approximate quest radius.", .72, .76, .78, true)
                             end
                             AddQuestTooltipObjectives(self.quest.questID)
                             GameTooltip:AddLine("Click to spotlight; click again to clear.", .6, .8, .72, true)
@@ -1767,6 +1778,11 @@ local function PlaceBlip(key, screenX, screenY, target)
     local hitSize = math.max(14, size + (target.isWorldBoss and 11 or 8))
     blip:SetSize(hitSize, hitSize)
     StyleMarker(blip, blip.dot, target, size, r, g, b)
+    local legend = LegendAPI()
+    blip.sourceBadge:SetShown(Settings().vignetteRadarSourceBadges ~= false
+        and legend and legend.VignetteSource
+        and legend.VignetteSource(target) == "worldMap")
+    blip.sourceBadge:SetVertexColor(r, g, b, .95)
     blip.favorite:SetShown(Favorite(target))
     local flashing = not Quiet() and target.newUntil and target.newUntil > Now()
     blip.glow:SetVertexColor(r, g, b, flashing and (0.4 + 0.3 * math.sin(Now() * 9)) or 0.18)
@@ -2089,7 +2105,7 @@ local function ApplyPanelLayout(focused)
     local left, top = PanelPosition()
     panel.layout, panel.layoutFocused, panel.squarePlot = name, focused, square
     local highlightTexture = square and ROUNDED_CONTROL_TEXTURE or CIRCLE_TEXTURE
-    for _, control in ipairs({ panel.zoomOut, panel.zoomIn, panel.compass, panel.trailToggle, panel.routeToggle,
+    for _, control in ipairs({ panel.zoomOut, panel.zoomIn, panel.compass, panel.trailToggle, panel.routeToggle, panel.arrowToggle,
         panel.combatToggle, panel.target, panel.legend, panel.minimize, panel.close, panel.frameToggle }) do
         if control and control.glow then control.glow:SetTexture(highlightTexture) end
     end
@@ -2159,6 +2175,7 @@ local function ApplyPanelLayout(focused)
         Place(panel.compass, "BOTTOMLEFT", 185, 8)
         Place(panel.trailToggle, "BOTTOMLEFT", 211, 8)
         Place(panel.routeToggle, "BOTTOMLEFT", 235, 8, 22, 20)
+        Place(panel.arrowToggle, "BOTTOMLEFT", 195, 34, 16, 16)
         Place(panel.target, "BOTTOMLEFT", 259, 8)
         Place(panel.legend, "BOTTOMLEFT", 285, 8)
         Place(panel.minimize, "BOTTOMLEFT", 311, 8)
@@ -2178,6 +2195,7 @@ local function ApplyPanelLayout(focused)
             Place(panel.combatToggle, "BOTTOMLEFT", 178, 32)
             Place(panel.trailToggle, "BOTTOMLEFT", 18, 30)
             Place(panel.routeToggle, "BOTTOMLEFT", 153, 32, 22, 18)
+            Place(panel.arrowToggle, "BOTTOMLEFT", 180, 34, 16, 16)
         else
             Place(panel.zoomLabel, "BOTTOMLEFT", 118, 10, 62, 12)
             Place(panel.combatToggle, "BOTTOMLEFT", 72, 7)
@@ -2198,6 +2216,7 @@ local function ApplyPanelLayout(focused)
             panel.zoomIn:SetPoint("BOTTOMRIGHT", panel, "BOTTOMRIGHT", -12, 6)
             Place(panel.compass, "BOTTOMLEFT", 42, 6)
             Place(panel.routeToggle, "BOTTOMLEFT", 185, 6, 22, 20)
+            Place(panel.arrowToggle, "BOTTOMLEFT", 187, 30, 18, 18)
             Place(panel.target, "TOPRIGHT", -83, -5)
             Place(panel.legend, "TOPRIGHT", -57, -5)
             Place(panel.minimize, "TOPRIGHT", -31, -5)
@@ -2358,7 +2377,7 @@ local function UpdatePanelChrome()
         control:SetShown(not circleOnly)
     end
     for _, control in ipairs({ panel.zoomOut, panel.zoomIn, panel.combatToggle,
-        panel.trailToggle, panel.routeToggle, panel.compass, panel.target, panel.legend, panel.minimize, panel.close }) do
+        panel.trailToggle, panel.routeToggle, panel.arrowToggle, panel.compass, panel.target, panel.legend, panel.minimize, panel.close }) do
         control:SetShown(showButtons)
     end
     if panel.emptyHelp then panel.emptyHelp:SetShown(not circleOnly and panel.emptyReason ~= nil) end
@@ -2406,7 +2425,8 @@ ApplyAppearance = function()
     if not style then return end
     local db = Settings()
     local key = table.concat({ db.vignetteRadarTheme or "verdant", style.revision or 0,
-        db.vignetteRadarRingOpacity or .5, db.vignetteRadarChevronOpacity or .72,
+        db.vignetteRadarRingOpacity or .5, db.vignetteRadarBorderOpacity or .5,
+        db.vignetteRadarChevronOpacity or .72,
         db.vignetteRadarHeadingOpacity or .46, db.vignetteRadarRangeLabelOpacity or .5 }, ":")
     if key == appearanceKey and panel == appearancePanel and launcher == appearanceLauncher then return end
     appearanceKey, appearancePanel, appearanceLauncher = key, panel, launcher
@@ -2418,15 +2438,19 @@ ApplyAppearance = function()
     RED[1], RED[2], RED[3] = style.Color("boss")
     if panel then
         panel:SetBackdropColor(math.min(.14, br * 2.7), math.min(.14, bg * 2.7),
-            math.min(.14, bb * 2.7), .98)
+            math.min(.14, bb * 2.7), CircleOnly() and 0 or .98)
+        panel:SetBackdropBorderColor(1, 1, 1, CircleOnly() and 0 or .15)
         panel.title:SetTextColor(ar, ag, ab, 1)
         panel.field.background:SetVertexColor(br, bg, bb, .94)
-        panel.field.halo:SetVertexColor(rr, rg, rb, .18 * db.vignetteRadarRingOpacity)
-        panel.squareBorder:SetVertexColor(rr, rg, rb, .12 * db.vignetteRadarRingOpacity)
-        for _, group in ipairs({ { panel.outerRing, .02 }, { panel.rangeRing, .045 },
+        panel.field.halo:SetVertexColor(rr, rg, rb, .18 * db.vignetteRadarBorderOpacity)
+        panel.squareBorder:SetVertexColor(rr, rg, rb, .12 * db.vignetteRadarBorderOpacity)
+        local ringStrength = 2 * db.vignetteRadarRingOpacity * db.vignetteRadarRingOpacity
+        for _, group in ipairs({ { panel.outerRing, .02 * db.vignetteRadarBorderOpacity, true },
+            { panel.rangeRing, .045 },
             { panel.middleRing, .04 }, { panel.innerRing, .03 } }) do
             for _, line in ipairs(group[1]) do
-                line:SetColorTexture(rr, rg, rb, group[2] * db.vignetteRadarRingOpacity)
+                line:SetColorTexture(rr, rg, rb,
+                    math.min(.75, group[3] and group[2] or group[2] * ringStrength))
             end
         end
         panel.direction:SetColorTexture(hr, hg, hb, db.vignetteRadarHeadingOpacity)
@@ -2448,7 +2472,7 @@ ApplyAppearance = function()
         panel.minimize.glow:SetVertexColor(ar, ag, ab, panel.minimize._hovered and .18 or 0)
         panel.close.glow:SetVertexColor(ar, ag, ab, panel.close._hovered and .18 or 0)
         for _, button in ipairs({ panel.zoomOut, panel.zoomIn, panel.compass,
-            panel.trailToggle, panel.routeToggle }) do
+            panel.trailToggle, panel.routeToggle, panel.arrowToggle }) do
             if button and button.RefreshAppearance then button:RefreshAppearance() end
         end
         if panel.RefreshCornerTools then panel.RefreshCornerTools() end
@@ -3119,6 +3143,10 @@ function routeMenu.CategoryButton(parent, kind, label, width)
     addon.VignetteRadarControls.RoundedStatusSurface(button)
     button.face:Hide()
     button.edge:Hide()
+    button.chosenPip = button:CreateTexture(nil, "OVERLAY")
+    button.chosenPip:SetTexture(CIRCLE_TEXTURE)
+    button.chosenPip:SetSize(6, 6)
+    button.chosenPip:SetPoint("TOPRIGHT", button, "TOPRIGHT", -4, -4)
     function button:RefreshRouteTile()
         local style = addon.VignetteRadarStyle
         local r, g, b = ACCENT[1], ACCENT[2], ACCENT[3]
@@ -3133,13 +3161,15 @@ function routeMenu.CategoryButton(parent, kind, label, width)
             selected and (g + 1) / 2 or .84, selected and (b + 1) / 2 or .85, 1)
         self.selection:Hide()
         for _, texture in ipairs(self.statusSurface.face) do
-            texture:SetVertexColor(r, g, b, selected and (paused and .10 or .22)
-                or hovered and .09 or .035)
+            texture:SetVertexColor(r, g, b, selected and (paused and .32 or .62)
+                or hovered and .13 or .025)
         end
         for _, texture in ipairs(self.statusSurface.edge) do
-            texture:SetVertexColor(r, g, b, selected and (paused and .52 or .92)
-                or hovered and .32 or .07)
+            texture:SetVertexColor(r, g, b, selected and (paused and .70 or 1)
+                or hovered and .38 or .08)
         end
+        self.chosenPip:SetVertexColor(r, g, b, paused and .65 or 1)
+        self.chosenPip:SetShown(selected)
         if kind == "zygor" then
             local state = (selected and 2 or 0) + (hovered and 1 or 0)
             self.icon:SetTexCoord((10 * 64 + 1) / 1024, (10 * 64 + 63) / 1024,
@@ -3851,6 +3881,10 @@ Render = function()
         panel.routeToggle._selected = routing
         panel.routeToggle:RefreshAppearance()
     end
+    if panel.arrowToggle and panel.arrowToggle._selected ~= Settings().vignetteRadarRouteArrow then
+        panel.arrowToggle._selected = Settings().vignetteRadarRouteArrow == true
+        panel.arrowToggle:RefreshAppearance()
+    end
     UpdateFullSweep(0)
     BeginBlips()
     local mapID = CurrentMapID()
@@ -3899,6 +3933,7 @@ Render = function()
     UpdatePanelChrome()
 
     if preview then
+        if panel.activeCue then panel.activeCue:Hide() end
         HideEdgeCues()
         panel.emptyReason = nil
         if panel.emptyHelp then panel.emptyHelp:Hide() end
@@ -3927,6 +3962,7 @@ Render = function()
     end
 
     if not player then
+        if panel.activeCue then panel.activeCue:Hide() end
         HideEdgeCues()
         panel.emptyReason = EmptyExplanation(nil, 0, 0, 0, false)
         if panel.emptyHelp then panel.emptyHelp:SetShown(not CircleOnly() and panel.emptyReason ~= nil) end
@@ -3955,11 +3991,52 @@ Render = function()
     DrawPlayerChevron(panel.headingChevron, panel.field, player.facing)
     panel.direction:SetShown(player.headingAvailable)
     for _, line in ipairs(panel.headingChevron) do line:SetShown(player.headingAvailable) end
-    local questAreasShown = RenderQuestAreas(player, mapID, range)
+    local layerBudget = addon.VignetteRadarLayerBudget
+    local blobToken = layerBudget and layerBudget.Begin("questBlobs",
+        panel._layerMapID ~= mapID or panel._layerRange ~= range)
+    local questAreasShown = panel._questAreasShown or 0
+    if not layerBudget or blobToken then
+        questAreasShown = RenderQuestAreas(player, mapID, range)
+        panel._questAreasShown = questAreasShown
+        if blobToken then layerBudget.Finish(blobToken) end
+    end
+    local focusAPI = addon.VignetteRadarWorldFocus
+    local activeStep, activeKind = focusAPI and focusAPI.GetRoutePoint and focusAPI.GetRoutePoint()
+    if not activeStep and focusAPI and focusAPI.GetFocusedStep then
+        activeStep = focusAPI.GetFocusedStep()
+        activeKind = activeStep and activeStep.kind
+    end
+    local cueX, cueY
+    if Settings().vignetteRadarActiveCue ~= false and activeStep
+        and SafeNumber(activeStep.worldX) and SafeNumber(activeStep.worldY)
+        and activeStep.mapID == mapID then
+        local dx, dy = activeStep.worldX - player.worldX, activeStep.worldY - player.worldY
+        local distance = math.sqrt(dx * dx + dy * dy)
+        if distance <= range then
+            cueX, cueY = Project(dx, dy, distance, ViewFacing(player.facing), panel.plotRadius, range)
+        end
+    end
+    if cueX and cueY then
+        local r, g, b = addon.VignetteRadarStyle.Color(activeKind or "quest")
+        panel.activeCue:ClearAllPoints()
+        panel.activeCue:SetPoint("CENTER", panel.field, "CENTER", cueX, cueY)
+        panel.activeCue:SetVertexColor(r, g, b, .10 + .09 * (.5 + .5 * math.sin(Now() * 4)))
+        panel.activeCue:Show()
+    else
+        panel.activeCue:Hide()
+    end
     local questsInRange = RenderQuestDots(player, range)
     local startsInRange = addon.RenderVignetteRadarQuestStarts(player, mapID, range)
     addon.UpdateVignetteRadarQuestKey()
-    local notesInRange = RenderMapNotes(player, range, targets)
+    local notesToken = layerBudget and layerBudget.Begin("mapNotes",
+        panel._layerMapID ~= mapID or panel._layerRange ~= range)
+    local notesInRange = panel._notesInRange or 0
+    if not layerBudget or notesToken then
+        notesInRange = RenderMapNotes(player, range, targets)
+        panel._notesInRange = notesInRange
+        if notesToken then layerBudget.Finish(notesToken) end
+    end
+    panel._layerMapID, panel._layerRange = mapID, range
     local edgeCueCount = RenderEdgeCues(player, range, targets)
     local exploreNow = Now()
     local trailSettings = Settings()
@@ -3969,13 +4046,22 @@ Render = function()
         or panel._exploreEnabled ~= trailSettings.vignetteRadarBreadcrumbs
         or panel._exploreStyle ~= trailSettings.vignetteRadarTrailStyle
         or panel._exploreLens ~= addon.VignetteRadarLensActive then
-        RenderExploration(player, range)
-        panel._exploreNextAt = exploreNow + .2
-        panel._exploreRange, panel._exploreMapID = range, mapID
-        panel._exploreRadius = panel.plotRadius
-        panel._exploreEnabled = trailSettings.vignetteRadarBreadcrumbs
-        panel._exploreStyle = trailSettings.vignetteRadarTrailStyle
-        panel._exploreLens = addon.VignetteRadarLensActive
+        local trailForce = panel._exploreRange ~= range or panel._exploreMapID ~= mapID
+            or panel._exploreRadius ~= panel.plotRadius
+            or panel._exploreEnabled ~= trailSettings.vignetteRadarBreadcrumbs
+            or panel._exploreStyle ~= trailSettings.vignetteRadarTrailStyle
+            or panel._exploreLens ~= addon.VignetteRadarLensActive
+        local trailToken = layerBudget and layerBudget.Begin("trail", trailForce)
+        if not layerBudget or trailToken then
+            RenderExploration(player, range)
+            if trailToken then layerBudget.Finish(trailToken) end
+            panel._exploreNextAt = exploreNow + .2
+            panel._exploreRange, panel._exploreMapID = range, mapID
+            panel._exploreRadius = panel.plotRadius
+            panel._exploreEnabled = trailSettings.vignetteRadarBreadcrumbs
+            panel._exploreStyle = trailSettings.vignetteRadarTrailStyle
+            panel._exploreLens = addon.VignetteRadarLensActive
+        end
     end
     local shown, staleShown, totalInRange = 0, 0, 0
     local groups = {}
@@ -5138,12 +5224,10 @@ local function EnsurePanel()
         end
     end)
     panel.field:SetFrameLevel(panel:GetFrameLevel() + 1)
+    -- Retain the old frame switch internally for profile/API compatibility,
+    -- but the finalized rounded view no longer shows an edge chevron.
     panel.frameToggle = CreateFrame("Button", nil, panel)
     panel.frameToggle:SetSize(16, 20)
-    panel.frameToggle:SetFrameLevel(panel.field:GetFrameLevel() + 6)
-    if type(panel.frameToggle.SetIgnoreParentAlpha) == "function" then
-        panel.frameToggle:SetIgnoreParentAlpha(true)
-    end
     panel.frameToggle.glow = panel.frameToggle:CreateTexture(nil, "BACKGROUND")
     panel.frameToggle.glow:SetSize(16, 16)
     panel.frameToggle.glow:SetPoint("CENTER")
@@ -5154,25 +5238,10 @@ local function EnsurePanel()
         line:SetThickness(1.8)
         panel.frameToggle.chevron[index] = line
     end
-    panel.frameToggle:Show()
     panel.frameToggle:SetScript("OnClick", function()
         addon.SetVignetteRadarCircleOnly(Settings().vignetteRadarCircleOnly ~= true)
     end)
-    panel.frameToggle:SetScript("OnEnter", function(self)
-        self._hovered = true
-        UpdatePanelChrome()
-        if not GameTooltip then return end
-        local circleOnly = CircleOnly()
-        GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
-        GameTooltip:SetText(circleOnly and "Show full radar frame" or "Show only the radar", 1, 1, 1)
-        GameTooltip:AddLine("Click to switch views. Your choice is saved.", .7, .8, .8, true)
-        GameTooltip:Show()
-    end)
-    panel.frameToggle:SetScript("OnLeave", function(self)
-        self._hovered = false
-        UpdatePanelChrome()
-        if GameTooltip then GameTooltip:Hide() end
-    end)
+    panel.frameToggle:Hide()
     panel.field.background = panel.field:CreateTexture(nil, "BACKGROUND")
     panel.field.background:SetAllPoints()
     panel.field.background:SetTexture(CIRCLE_TEXTURE)
@@ -5216,6 +5285,10 @@ local function EnsurePanel()
     panel.rangeRing = AddRing(panel.field, PLOT_RADIUS, 0.045)
     panel.middleRing = AddRing(panel.field, PLOT_RADIUS * (2 / 3), .04)
     panel.innerRing = AddRing(panel.field, PLOT_RADIUS / 3, .03)
+    panel.activeCue = panel.field:CreateTexture(nil, "ARTWORK")
+    panel.activeCue:SetTexture(CIRCLE_TEXTURE)
+    panel.activeCue:SetSize(30, 30)
+    panel.activeCue:Hide()
     panel.sweepLines = {}
     for index = 1, 2 do
         local line = panel.field:CreateLine(nil, "BORDER")
@@ -5370,6 +5443,13 @@ local function EnsurePanel()
             button.art:SetTexture("Interface\\AddOns\\VignetteRadar\\Media\\radar-corner-controls.tga")
             button.art:SetSize(22, 22)
             button.art:SetPoint("CENTER")
+        elseif symbol == "arrow" then
+            button.glow:Hide()
+            button._directArt = true
+            button.art = button:CreateTexture(nil, "OVERLAY")
+            button.art:SetTexture("Interface\\AddOns\\VignetteRadar\\Media\\route-crystal-pointer.tga")
+            button.art:SetSize(16, 16)
+            button.art:SetPoint("CENTER")
         elseif symbol == "trail" then
             button.trailMarks, button.trailExtras = {}, {}
             for index = 1, 3 do
@@ -5410,8 +5490,10 @@ local function EnsurePanel()
             local opacity = not enabled and .32 or (hovered or selected) and 1 or .78
             if self.art then
                 local state = (selected and 2 or 0) + (hovered and 1 or 0)
-                self.art:SetTexCoord((10 * 64 + 1) / 1024, (10 * 64 + 63) / 1024,
-                    (state * 64 + 1) / 256, (state * 64 + 63) / 256)
+                if not self._directArt then
+                    self.art:SetTexCoord((10 * 64 + 1) / 1024, (10 * 64 + 63) / 1024,
+                        (state * 64 + 1) / 256, (state * 64 + 63) / 256)
+                end
                 self.art:SetVertexColor(r, g, b, enabled and 1 or .38)
             else
                 self.glow:SetVertexColor(ACCENT[1], ACCENT[2], ACCENT[3],
@@ -5469,6 +5551,25 @@ local function EnsurePanel()
     panel.compass:HookScript("OnLeave", function() if GameTooltip then GameTooltip:Hide() end end)
 
     routeMenu.SetupButtons(panel, ToolbarIcon)
+    panel.arrowToggle = ToolbarIcon("arrow", 18)
+    panel.arrowToggle:SetScript("OnClick", function(self)
+        Settings().vignetteRadarRouteArrow = Settings().vignetteRadarRouteArrow ~= true
+        self._selected = Settings().vignetteRadarRouteArrow
+        self:RefreshAppearance()
+        if addon.VignetteRadarRouteArrow then addon.VignetteRadarRouteArrow.Refresh() end
+        if addon.VignetteRadarQuickConfig then addon.VignetteRadarQuickConfig.Refresh() end
+        if panel.RefreshCornerTools then panel.RefreshCornerTools() end
+    end)
+    panel.arrowToggle:HookScript("OnEnter", function(self)
+        if not GameTooltip then return end
+        GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+        GameTooltip:SetText("Mini Route Arrow: " .. (Settings().vignetteRadarRouteArrow and "On" or "Off"), 1, 1, 1)
+        GameTooltip:AddLine("Show or hide the movable arrow while an Auto Route has a destination.", .7, .8, .8, true)
+        GameTooltip:Show()
+    end)
+    panel.arrowToggle:HookScript("OnLeave", function() if GameTooltip then GameTooltip:Hide() end end)
+    panel.arrowToggle._selected = Settings().vignetteRadarRouteArrow == true
+    panel.arrowToggle:RefreshAppearance()
 
     panel.combatToggle = CreateFrame("Button", nil, panel)
     panel.combatToggle:SetSize(18, 18)
@@ -5531,6 +5632,7 @@ local function EnsurePanel()
                 or id == "trail" and settings.vignetteRadarBreadcrumbs == true
                 or id == "route" and addon.VignetteRadarWorldFocus
                     and addon.VignetteRadarWorldFocus.IsRouteActive()
+                or id == "arrow" and settings.vignetteRadarRouteArrow == true
                 or id == "eye" and settings.vignetteRadarKeepVisibleCombat == true
                 or id == "target" and focused ~= nil
                 or id == "config" and quick and quick.IsShown and quick.IsShown()
@@ -5538,12 +5640,17 @@ local function EnsurePanel()
                     ((legend.IsShown and legend.IsShown()) or (legend.IsQuestShown and legend.IsQuestShown()))
             local state = (active and 2 or 0) + (tool._hovered and 1 or 0)
             if state ~= tool._artState then
-                local column = tool.artColumn
-                tool.art:SetTexCoord((column * 64 + 1) / 1024, (column * 64 + 63) / 1024,
-                    (state * 64 + 1) / 256, (state * 64 + 63) / 256)
+                if id ~= "arrow" then
+                    local column = tool.artColumn
+                    tool.art:SetTexCoord((column * 64 + 1) / 1024, (column * 64 + 63) / 1024,
+                        (state * 64 + 1) / 256, (state * 64 + 63) / 256)
+                end
                 tool._artState = state
             end
-            if tool._artRed ~= ACCENT[1] or tool._artGreen ~= ACCENT[2]
+            if id == "arrow" then
+                tool.art:SetVertexColor(ACCENT[1], ACCENT[2], ACCENT[3],
+                    active and 1 or tool._hovered and .9 or .42)
+            elseif tool._artRed ~= ACCENT[1] or tool._artGreen ~= ACCENT[2]
                 or tool._artBlue ~= ACCENT[3] then
                 tool.art:SetVertexColor(ACCENT[1], ACCENT[2], ACCENT[3], 1)
                 tool._artRed, tool._artGreen, tool._artBlue = ACCENT[1], ACCENT[2], ACCENT[3]
@@ -5553,7 +5660,7 @@ local function EnsurePanel()
     end
     local function HoverTool(id, title, reference, point, x, y)
         local tool = CreateFrame("Button", nil, panel.field)
-        tool:SetSize(16, 16)
+        tool:SetSize(id == "arrow" and 12 or 16, id == "arrow" and 12 or 16)
         tool:SetFrameLevel(panel.field:GetFrameLevel() + 8)
         tool:SetPoint(point, panel.field, point, x, y)
         tool:RegisterForClicks("LeftButtonUp", "RightButtonUp")
@@ -5562,8 +5669,10 @@ local function EnsurePanel()
             or id == "help" and 8 or id == "minimize" and 3
             or id == "close" and 9 or #panel.hoverTools
         tool.art = tool:CreateTexture(nil, "ARTWORK")
-        tool.art:SetTexture("Interface\\AddOns\\VignetteRadar\\Media\\radar-corner-controls.tga")
-        tool.art:SetSize(18, 18)
+        tool.art:SetTexture(id == "arrow"
+            and "Interface\\AddOns\\VignetteRadar\\Media\\route-crystal-pointer.tga"
+            or "Interface\\AddOns\\VignetteRadar\\Media\\radar-corner-controls.tga")
+        tool.art:SetSize(id == "arrow" and 12 or 18, id == "arrow" and 12 or 18)
         tool.art:SetPoint("CENTER")
         tool:SetScript("OnEnter", function(self)
             panel._hoverToolsShown = true
@@ -5623,6 +5732,8 @@ local function EnsurePanel()
     HoverTool("trail", "Trail: left toggle, right style", panel.trailToggle, "BOTTOMLEFT", 10, 10)
     HoverTool("route", "Auto Route: start, pause, or resume; right-click to choose",
         panel.routeToggle, "BOTTOMRIGHT", -10, 30)
+    HoverTool("arrow", "Mini Route Arrow: show or hide", panel.arrowToggle,
+        "BOTTOMRIGHT", -48, 10)
     for _, tool in ipairs(panel.hoverTools) do
         if tool.toolID == "route" then
             tool:HookScript("OnEnter", function(self) routeMenu.ShowGuideStrip(self) end)
@@ -5695,8 +5806,13 @@ local function EnsurePanel()
         if self._renderElapsed >= addon.VignetteRadarRenderSeconds() then
             local renderElapsed = self._renderElapsed
             self._renderElapsed = 0
-            UpdateFullSweep(renderElapsed)
-            Render()
+            local layerBudget = addon.VignetteRadarLayerBudget
+            local renderToken = layerBudget and layerBudget.Begin("render")
+            if not layerBudget or renderToken then
+                UpdateFullSweep(renderElapsed)
+                Render()
+                if renderToken then layerBudget.Finish(renderToken) end
+            end
         end
         CheckUpdateBudget(self, started, "radar")
     end)

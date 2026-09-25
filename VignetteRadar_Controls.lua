@@ -8,6 +8,16 @@ local controls = {}
 local POPUP_FACE = "Interface\\AddOns\\VignetteRadar\\Media\\radar-rounded-square.tga"
 local POPUP_EDGE = "Interface\\AddOns\\VignetteRadar\\Media\\radar-rounded-border.tga"
 
+function Controls.TitleCase(value)
+    if type(value) ~= "string" then return value end
+    local special = { cpu = "CPU", ui = "UI", poi = "POI", pois = "POIs",
+        wow = "WoW", zygor = "Zygor", yd = "yd", sec = "sec", px = "px" }
+    return (value:gsub("[%a][%a']*", function(word)
+        local lower = word:lower()
+        return special[lower] or (lower:sub(1, 1):upper() .. lower:sub(2))
+    end))
+end
+
 function Controls.RefreshPopupSurface(frame)
     if not (frame and frame.popupFace) then return end
     local style = addon.VignetteRadarStyle

@@ -115,6 +115,39 @@ function API.DotStyle(category)
     return API.IsCategoryEnabled(category), red, green, blue, API.OpacityFor(category), category
 end
 
+-- Keep the meaning of a mark separate from its color and category. A world-map
+-- vignette is game data, but it is not proof that the object is active nearby.
+function API.VignetteSource(target)
+    if type(target) ~= "table" then return nil end
+    if target.sample then return "preview" end
+    if target.stale then return "lastSeen" end
+    return target.source == "worldMap" and "worldMap" or "minimap"
+end
+
+function API.QuestPointSource(quest)
+    if type(quest) ~= "table" then return nil end
+    local step = quest.nextStep
+    return type(step) == "table" and step.onCurrentMap == true
+        and type(step.x) == "number" and type(step.y) == "number"
+        and "objective" or "questMap"
+end
+
+local SOURCE_DESCRIPTION = {
+    minimap = "Live Blizzard minimap detection.",
+    worldMap = "Blizzard world-map location; nearby availability is not confirmed.",
+    lastSeen = "Remembered detection; no longer live.",
+    preview = "Layout preview; not a live detection.",
+    saved = "Saved map-pack location; not a live detection.",
+    objective = "Blizzard's next quest waypoint on this map.",
+    questMap = "Blizzard quest map point; it may represent a wider area.",
+    estimated = "Soft circle: estimated location around a quest point; not a Blizzard quest area.",
+    nativeArea = "Quest area drawn from Blizzard's map data.",
+}
+
+function API.SourceDescription(source)
+    return SOURCE_DESCRIPTION[source]
+end
+
 local function FontPath()
     return EllesmereUI and (EllesmereUI.EXPRESSWAY or EllesmereUI._font)
         or STANDARD_TEXT_FONT or FONT_FALLBACK
@@ -331,6 +364,11 @@ local function CreateMapNote(parent, definition, index)
     row.core:SetPoint("CENTER", row.rim, "CENTER")
     row.core:SetTexture(CIRCLE_TEXTURE)
     row.core:SetVertexColor(.02, .03, .035, .95)
+    row:EnableMouse(true)
+    row:SetScript("OnEnter", function(self)
+        Tooltip(self, definition.label .. " Map Note", API.SourceDescription("saved"))
+    end)
+    row:SetScript("OnLeave", function() if GameTooltip then GameTooltip:Hide() end end)
     return row
 end
 
@@ -512,7 +550,7 @@ local function EnsurePanel()
     for index, definition in ipairs(MAP_NOTES) do
         panel.mapNotes[definition.kind] = CreateMapNote(panel, definition, index)
     end
-    panel.mapCaption = GuideLabel(panel, "Saved in one pack; not live detections", 10, 255, PANEL_W - 20, 8)
+    panel.mapCaption = GuideLabel(panel, "Hollow notes = saved, not live", 10, 255, PANEL_W - 20, 8)
     panel.mapCaption:SetHeight(10)
     panel.mapCaption:SetTextColor(.5, .57, .59, 1)
 
@@ -521,14 +559,24 @@ local function EnsurePanel()
     panel.otherHeading:SetHeight(12)
     panel.otherHeading:SetTextColor(.68, .75, .77, 1)
     panel.guides = {
-        quest = CreateOtherGuide(panel, "Quest diamond", 10, 295, "quest"),
-        area = CreateOtherGuide(panel, "Quest area", 120, 295, "area"),
+        quest = CreateOtherGuide(panel, "Quest point", 10, 295, "quest"),
+        area = CreateOtherGuide(panel, "Blizzard area", 120, 295, "area"),
         pin = CreateOtherGuide(panel, "Saved pin", 10, 317, "pin"),
         route = CreateOtherGuide(panel, "Route stop", 120, 317, "route"),
         trail = CreateOtherGuide(panel, "Travel trail", 10, 339, "trail"),
         stale = CreateOtherGuide(panel, "Last seen", 120, 339, "stale"),
         edge = CreateOtherGuide(panel, "Off-range cue", 10, 361, "edge"),
     }
+    panel.guides.quest:EnableMouse(true)
+    panel.guides.quest:SetScript("OnEnter", function(self)
+        Tooltip(self, "Quest Point", "A diamond marks a Blizzard quest point or next waypoint. A soft circle around it is only an estimated search radius.")
+    end)
+    panel.guides.quest:SetScript("OnLeave", function() if GameTooltip then GameTooltip:Hide() end end)
+    panel.guides.area:EnableMouse(true)
+    panel.guides.area:SetScript("OnEnter", function(self)
+        Tooltip(self, "Blizzard Quest Area", API.SourceDescription("nativeArea"))
+    end)
+    panel.guides.area:SetScript("OnLeave", function() if GameTooltip then GameTooltip:Hide() end end)
     panel.footerRule = SectionRule(panel, 385)
 
     panel.status = Text(panel, 8, "SPOTLIGHT OFF · SHOWN TYPES EQUAL")
@@ -869,8 +917,8 @@ function API.Refresh()
     end
     panel.mapCaption:SetText(not mapEnabled and not settings.vignetteRadarWorldFocusZygor
         and "Map notes off · enable in Map Data"
-        or settings.vignetteRadarPOIIcons and "Pack icons vary · saved, not live"
-        or "Saved pack notes; not live detections")
+        or settings.vignetteRadarPOIIcons and "Pack icons = saved, not live"
+        or "Hollow notes = saved, not live")
     local questRed, questGreen, questBlue = Color("quest", { 1, .74, .27 })
     if settings.vignetteRadarQuestColors and addon.VignetteRadarQuestColors then
         local first = addon.VignetteRadarQuestColors[1]
@@ -890,9 +938,9 @@ function API.Refresh()
     panel.guides.area.fill:SetVertexColor(areaRed, areaGreen, areaBlue, .3)
     panel.guides.quest:SetAlpha(settings.vignetteRadarQuestDots and 1 or .6)
     panel.guides.quest.label:SetText(not settings.vignetteRadarQuestDots and "Quest off"
-        or showQuestHalo and "Quest + halo" or "Quest diamond")
+        or showQuestHalo and "Quest + estimate" or "Quest point")
     panel.guides.area:SetAlpha(settings.vignetteRadarQuestAreas and 1 or .6)
-    panel.guides.area.label:SetText(settings.vignetteRadarQuestAreas and "Native area" or "Area off")
+    panel.guides.area.label:SetText(settings.vignetteRadarQuestAreas and "Blizzard area" or "Area off")
     panel.guides.pin.fill:SetVertexColor(.92, .71, .34, .9)
     panel.guides.route.fill:SetVertexColor(.16, .7, .54, .9)
     panel.guides.edge.fill:SetVertexColor(questRed, questGreen, questBlue, .9)

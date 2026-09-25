@@ -544,6 +544,20 @@ do
     focus.Sync(123, player, { tiedRare }, {}, { tiedCache })
     assert(focus.StartNearest("closest") and select(2, focus.GetRoutePoint()) == "rare",
         "equal-distance choices should prefer rare before treasure")
+    local horizon = focus.GetHorizon()
+    assert(horizon[1] and horizon[1].name == "Tied rare"
+        and horizon[2] and horizon[2].name == "Tied cache"
+        and focus.ExplainActive():find("arrival distance", 1, true),
+        "the route horizon must show likely next stops and explain the active stop")
+    assert(focus.ToggleRouteLock() and focus.IsRouteLocked())
+    player.worldX = 339
+    focus.Sync(123, player, { tiedRare }, {}, { tiedCache })
+    assert(select(2, focus.GetRoutePoint()) == "rare",
+        "locking the current stop must prevent proximity advancement")
+    assert(focus.ToggleRouteLock() and not focus.IsRouteLocked())
+    focus.Sync(123, player, { tiedRare }, {}, { tiedCache })
+    assert(select(2, focus.GetRoutePoint()) == "treasure",
+        "unlocking must resume the normal mixed-route arrival rule")
     assert(focus.Clear())
 end
 io.write("vignette radar World Focus tests passed\n")

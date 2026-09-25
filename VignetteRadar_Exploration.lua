@@ -14,6 +14,8 @@ local MAX_CUSTOM_PRESETS = 8
 local MAX_ROUTE_HISTORY = 20
 local routeBack, routeHistory = {}, {}
 local routeArrivalKey, routeArrivalOutside
+local walkRecording, walkMessage
+local MAX_WALK_POINTS, MAX_WALK_PATHS = 512, 8
 
 local function Settings() return addon.GetSettings() end
 local function Number(value)
@@ -128,8 +130,35 @@ end
 
 function API.UpdateTrail(player, mapID, now)
     if trailMap ~= mapID then trail, trailMap, lastTrailAt = {}, mapID, 0 end
-    if Settings().vignetteRadarBreadcrumbs ~= true or not player then return trail end
     now = Number(now) or Now()
+    if walkRecording and player then
+        local x, y = Number(player.worldX), Number(player.worldY)
+        if walkRecording.mapID ~= mapID
+            or (walkRecording.instanceID and Number(player.instanceID)
+                and walkRecording.instanceID ~= Number(player.instanceID)) then
+            walkMessage = "Map changed. Save or discard the recorded path."
+            walkRecording.active = false
+        elseif walkRecording.active and x and y and now - walkRecording.lastAt >= 2 then
+            local points = walkRecording.points
+            local last = points[#points]
+            local distance = math.sqrt((x - last.worldX)^2 + (y - last.worldY)^2)
+            if distance > 120 then
+                walkMessage = "Travel jump detected. Save or discard the recorded path."
+                walkRecording.active = false
+            elseif distance >= 4 then
+                if #points >= MAX_WALK_POINTS then
+                    walkMessage = "Recording limit reached. Save or discard the path."
+                    walkRecording.active = false
+                else
+                    points[#points + 1] = { worldX=x, worldY=y,
+                        mapX=Number(player.mapX), mapY=Number(player.mapY) }
+                    walkRecording.lastAt = now
+                    walkRecording.distance = walkRecording.distance + distance
+                end
+            end
+        end
+    end
+    if Settings().vignetteRadarBreadcrumbs ~= true or not player then return trail end
     local lifetime = Settings().vignetteRadarTrailLifetime or 180
     local interval = lifetime <= 5 and .25 or 1
     local minDistance = lifetime <= 5 and .5 or 2.5
@@ -328,6 +357,215 @@ function API.ClearRoute()
     return true
 end
 
+-- Walk recordings are sampled only while explicitly recording. The saved
+-- form is an eight-stop route, so neither long sessions nor replays add a
+-- per-frame cost to the radar.
+local walkTicker
+local function WalkPaths()
+    local db = Settings()
+    if type(db.vignetteRadarWalkPaths) ~= "table" then db.vignetteRadarWalkPaths = {} end
+    return db.vignetteRadarWalkPaths
+end
+local function StopWalkTicker()
+    if walkTicker then walkTicker:SetScript("OnUpdate", nil) end
+end
+local function StartWalkTicker()
+    if not CreateFrame then return end
+    if not walkTicker then walkTicker = CreateFrame("Frame") end
+    local elapsed = 0
+    walkTicker:SetScript("OnUpdate", function(_, delta)
+        elapsed = elapsed + delta
+        if elapsed < 2 then return end
+        elapsed = 0
+        if not walkRecording or not walkRecording.active then StopWalkTicker(); return end
+        local radar = addon.VignetteRadarAPI
+        local player = radar and radar.GetPlayerSnapshot and radar.GetPlayerSnapshot()
+        if player and Number(player.mapID) then
+            API.UpdateTrail(player, player.mapID, Now())
+            if API.RefreshWalkRecordingStatus then API.RefreshWalkRecordingStatus() end
+        end
+    end)
+end
+local function WalkPoint(player)
+    local x, y = player and Number(player.worldX), player and Number(player.worldY)
+    if not x or not y then return nil end
+    return { worldX=x, worldY=y, mapX=Number(player.mapX), mapY=Number(player.mapY) }
+end
+function API.StartWalkRecording(player)
+    if walkRecording then return false, "Save or discard the current walk first" end
+    local point = WalkPoint(player)
+    local mapID = player and Number(player.mapID)
+    if not point or not mapID then return false, "Current position unavailable" end
+    walkRecording = { active=true, mapID=mapID,
+        instanceID=Number(player.instanceID), points={point},
+        lastAt=Now(), distance=0 }
+    walkMessage = "Recording your walk"
+    StartWalkTicker()
+    if API.RefreshPanel then API.RefreshPanel() end
+    return true
+end
+function API.CancelWalkRecording()
+    if not walkRecording then return false end
+    walkRecording, walkMessage = nil, nil
+    StopWalkTicker()
+    if API.RefreshPanel then API.RefreshPanel() end
+    return true
+end
+function API.GetWalkRecording()
+    return walkRecording and { active=walkRecording.active,
+        points=#walkRecording.points, distance=walkRecording.distance,
+        mapID=walkRecording.mapID, message=walkMessage } or nil
+end
+local function SegmentError(point, first, last)
+    local dx, dy = last.worldX-first.worldX, last.worldY-first.worldY
+    local lengthSquared = dx*dx + dy*dy
+    if lengthSquared < .001 then
+        return (point.worldX-first.worldX)^2 + (point.worldY-first.worldY)^2
+    end
+    local t = math.max(0, math.min(1,
+        ((point.worldX-first.worldX)*dx + (point.worldY-first.worldY)*dy)/lengthSquared))
+    local ox, oy = point.worldX-first.worldX-t*dx, point.worldY-first.worldY-t*dy
+    return ox*ox + oy*oy
+end
+local function SimplifyWalk(points)
+    local selected = { 1, #points }
+    while #selected < math.min(MAX_ROUTE, #points) do
+        local bestIndex, bestError
+        for segment=1,#selected-1 do
+            local first, last = selected[segment], selected[segment+1]
+            for index=first+1,last-1 do
+                local errorSquared = SegmentError(points[index], points[first], points[last])
+                if not bestError or errorSquared > bestError then
+                    bestIndex, bestError = index, errorSquared
+                end
+            end
+        end
+        if not bestIndex or bestError < 16 then break end
+        selected[#selected+1] = bestIndex
+        table.sort(selected)
+    end
+    local result = {}
+    for _, index in ipairs(selected) do result[#result+1] = points[index] end
+    return result
+end
+function API.SaveWalkRecording(name, player)
+    if not walkRecording then return false, "Start a recording first" end
+    local recording = walkRecording
+    local final = WalkPoint(player)
+    if recording.active and final and Number(player.mapID) == recording.mapID
+        and (not recording.instanceID or not Number(player.instanceID)
+            or recording.instanceID == Number(player.instanceID)) then
+        local last = recording.points[#recording.points]
+        local distance = math.sqrt((final.worldX-last.worldX)^2 + (final.worldY-last.worldY)^2)
+        if distance > 1 and distance <= 120 and #recording.points < MAX_WALK_POINTS then
+            recording.points[#recording.points+1] = final
+            recording.distance = recording.distance + distance
+        end
+    end
+    if #recording.points < 2 or recording.distance < 10 then
+        return false, "Walk at least 10 yd before saving"
+    end
+    local paths = WalkPaths()
+    local label = Text(name)
+    if not label or label:match("^%s*$") then
+        label = "Walk " .. (#paths + 1)
+    else
+        label = label:match("^%s*(.-)%s*$")
+    end
+    local path = { id=tostring(Time()) .. "-" .. tostring(math.random(100000)),
+        name=label, mapID=recording.mapID, instanceID=recording.instanceID,
+        distance=math.floor(recording.distance+.5), points=SimplifyWalk(recording.points), at=Time() }
+    paths[#paths+1] = path
+    if #paths > MAX_WALK_PATHS then table.remove(paths, 1) end
+    walkRecording, walkMessage = nil, nil
+    StopWalkTicker()
+    if API.RefreshPanel then API.RefreshPanel() end
+    return true, path
+end
+function API.GetWalkPaths() return WalkPaths() end
+function API.PauseWalkRecording()
+    if not walkRecording or not walkRecording.active then return false end
+    walkRecording.active = false
+    walkMessage = "Recording paused. Save, resume, or discard."
+    StopWalkTicker()
+    if API.RefreshPanel then API.RefreshPanel() end
+    return true
+end
+function API.ResumeWalkRecording(player)
+    if not walkRecording or walkRecording.active then return false, "No paused walk" end
+    if not player or Number(player.mapID) ~= walkRecording.mapID
+        or (walkRecording.instanceID and Number(player.instanceID)
+            and Number(player.instanceID) ~= walkRecording.instanceID) then
+        return false, "Return to the recorded map first"
+    end
+    local point = WalkPoint(player)
+    if not point then return false, "Current position unavailable" end
+    local last = walkRecording.points[#walkRecording.points]
+    local distance = math.sqrt((point.worldX-last.worldX)^2 + (point.worldY-last.worldY)^2)
+    if distance > 120 then return false, "Too far from the last recorded point" end
+    walkRecording.active = true
+    walkRecording.lastAt = Now()
+    walkMessage = "Recording your walk"
+    StartWalkTicker()
+    if API.RefreshPanel then API.RefreshPanel() end
+    return true
+end
+function API.DeleteWalkPath(id)
+    local paths = WalkPaths()
+    for index=#paths,1,-1 do
+        if paths[index].id == id then
+            table.remove(paths, index)
+            if API.RefreshPanel then API.RefreshPanel() end
+            return true
+        end
+    end
+    return false
+end
+function API.ReplayWalkPath(id, player)
+    local found
+    for _, path in ipairs(WalkPaths()) do if path.id == id then found = path; break end end
+    if not found or type(found.points) ~= "table" or #found.points < 2
+        or #found.points > MAX_ROUTE or not Number(found.mapID) then
+        return false, "Saved walk unavailable"
+    end
+    for _, point in ipairs(found.points) do
+        if type(point) ~= "table" or not Number(point.worldX) or not Number(point.worldY) then
+            return false, "Saved walk has an invalid point"
+        end
+    end
+    local instanceID = Number(found.instanceID)
+    if not player or Number(player.mapID) ~= found.mapID
+        or (instanceID and Number(player.instanceID)
+            and instanceID ~= Number(player.instanceID)) then
+        return false, "Go to the recorded map to replay this walk"
+    end
+    local px, py = Number(player.worldX), Number(player.worldY)
+    if not px or not py then return false, "Current position unavailable" end
+    local first, last = found.points[1], found.points[#found.points]
+    local firstDistance = (px-first.worldX)^2 + (py-first.worldY)^2
+    local lastDistance = (px-last.worldX)^2 + (py-last.worldY)^2
+    local backwards = lastDistance < firstDistance
+    local route = {}
+    for step=1,#found.points do
+        local point = found.points[backwards and (#found.points-step+1) or step]
+        local distance = math.sqrt((px-point.worldX)^2 + (py-point.worldY)^2)
+        -- Starting on the first point would leave an arrival-gated route
+        -- waiting for the player to walk away and come back.
+        if step > 1 or distance > (Number(Settings().vignetteRadarRouteArrivalRadius) or 10) + 3 then
+            local entry = RouteEntry({ name=(Text(found.name) or "Walk") .. " " .. step .. "/" .. #found.points,
+                mapID=found.mapID, worldX=point.worldX, worldY=point.worldY,
+                mapX=point.mapX, mapY=point.mapY, instanceID=instanceID })
+            if entry then route[#route+1] = entry end
+        end
+    end
+    if #route == 0 then return false, "No walk stops to replay" end
+    RememberRouteEdit()
+    Settings().vignetteRadarRoute = route
+    routeBack = {}
+    Refresh()
+    return true, #route
+end
+
 function API.Watch(target)
     if not target or target.sample or target.stale then return false end
     local identity = Number(target.vignetteID) or Text(target.key)
@@ -461,6 +699,7 @@ local function Label(parent, value, x, y, width, size)
 end
 local function Button(parent, title, x, y, width, callback)
     local controls = addon.VignetteRadarControls
+    title = controls.TitleCase(title)
     local button = (title == "+" or title == "-" or title == "−")
         and controls.IconButton(parent, title, width, 23) or controls.Button(parent, title, width, 23)
     button:SetPoint("TOPLEFT", x, y)
@@ -473,7 +712,7 @@ local function Checkbox(parent, key, title, y)
     local hit = CreateFrame("Button", nil, parent)
     hit:SetPoint("TOPLEFT", 44, y)
     hit:SetSize(270, 26)
-    Label(hit, title, 0, -6, 250)
+    Label(hit, addon.VignetteRadarControls.TitleCase(title), 0, -6, 250)
     local function Toggle()
         Settings()[key] = not Settings()[key]
         box:SetChecked(Settings()[key] == true)
@@ -660,10 +899,87 @@ local function BuildPanel()
     for index = 1, 5 do
         panel.draftRows[index] = Label(routePage, "", 5, -144 - (index - 1) * 30, 296, 10)
     end
-    Label(routePage, "Straight-line yards; this does not find walkable paths.", 5, -310, 296, 9)
+    Label(routePage, "Straight-line yards; walk paths record your actual travel.", 5, -294, 296, 9)
+    Button(routePage, "Walk Paths", 5, -313, 296, function()
+        selectedPage = "Walk"
+        API.RefreshPanel()
+    end)
+
+    local walkPage = CreateFrame("Frame", nil, panel)
+    walkPage:SetSize(310, 346)
+    walkPage:SetPoint("TOPLEFT", 10, -73)
+    panel.pages.Walk = walkPage
+    Button(walkPage, "Back To Route", 5, -3, 94, function()
+        selectedPage = "Route"
+        API.RefreshPanel()
+    end)
+    panel.walkRecordButton = Button(walkPage, "Start Recording", 107, -3, 194, function()
+        local radar = addon.VignetteRadarAPI
+        local player = radar and radar.GetPlayerSnapshot and radar.GetPlayerSnapshot()
+        local ok, reason
+        if not walkRecording then ok, reason = API.StartWalkRecording(player)
+        elseif walkRecording.active then ok, reason = API.PauseWalkRecording()
+        else ok, reason = API.ResumeWalkRecording(player) end
+        if not ok then Tell(reason) end
+        API.RefreshPanel()
+    end)
+    panel.walkStatus = Label(walkPage, "", 5, -40, 296, 9)
+    panel.walkName = Input(walkPage, 5, -62, 195)
+    panel.walkName:SetText("My Walk")
+    panel.walkSaveButton = Button(walkPage, "Save Walk", 207, -63, 94, function()
+        local radar = addon.VignetteRadarAPI
+        local player = radar and radar.GetPlayerSnapshot and radar.GetPlayerSnapshot()
+        local ok, result = API.SaveWalkRecording(panel.walkName:GetText(), player)
+        Tell(ok and ("Saved walk " .. result.name) or result)
+        API.RefreshPanel()
+    end)
+    panel.walkDiscardButton = Button(walkPage, "Discard Recording", 5, -97, 296, function()
+        if API.CancelWalkRecording() then Tell("Walk recording discarded") end
+    end)
+    Label(walkPage, "SAVED WALK PATHS", 5, -133, 296, 9):SetTextColor(.05, .82, .62, 1)
+    panel.walkRows = {}
+    for index=1,4 do
+        local y = -153 - (index-1)*36
+        local row = Button(walkPage, "", 5, y, 244, function(self)
+            if not self.path then return end
+            local radar = addon.VignetteRadarAPI
+            local player = radar and radar.GetPlayerSnapshot and radar.GetPlayerSnapshot()
+            local ok, result = API.ReplayWalkPath(self.path.id, player)
+            Tell(ok and ("Loaded " .. self.path.name .. " · " .. result .. " stops") or result)
+        end)
+        local remove = Button(walkPage, "Delete", 256, y, 45, function()
+            if row.path then API.DeleteWalkPath(row.path.id) end
+        end)
+        panel.walkRows[index] = { load=row, remove=remove }
+    end
+    panel.walkPrev = Button(walkPage, "‹", 5, -310, 42, function()
+        page.Walk = math.max(1, (page.Walk or 1)-1)
+        API.RefreshPanel()
+    end)
+    panel.walkPageLabel = Label(walkPage, "", 118, -315, 70, 10)
+    panel.walkNext = Button(walkPage, "›", 259, -310, 42, function()
+        page.Walk = (page.Walk or 1)+1
+        API.RefreshPanel()
+    end)
     panel:Hide()
     API.RefreshPanel()
     return panel
+end
+
+function API.RefreshWalkRecordingStatus()
+    if not panel or not panel:IsShown() or selectedPage ~= "Walk" then return end
+    panel.walkSaveButton:SetEnabled(walkRecording ~= nil)
+    panel.walkSaveButton:SetAlpha(walkRecording and 1 or .35)
+    panel.walkDiscardButton:SetEnabled(walkRecording ~= nil)
+    panel.walkDiscardButton:SetAlpha(walkRecording and 1 or .35)
+    if walkRecording then
+        panel.walkRecordButton:SetText(walkRecording.active and "Pause Recording" or "Resume Recording")
+        panel.walkStatus:SetText(string.format("%s · %d yd · %d points", walkMessage or "Walk",
+            math.floor(walkRecording.distance + .5), #walkRecording.points))
+    else
+        panel.walkRecordButton:SetText("Start Recording")
+        panel.walkStatus:SetText("Record a walk, then save it as a reusable route.")
+    end
 end
 
 function API.RefreshPanel()
@@ -699,6 +1015,19 @@ function API.RefreshPanel()
     panel.approachValue:SetText(db.vignetteRadarApproachDistance .. " yd")
     panel.routeStatus:SetText(#db.vignetteRadarRoute .. "/" .. MAX_ROUTE
         .. " stops  •  " .. #routeBack .. " behind  •  Ctrl-click to add")
+    API.RefreshWalkRecordingStatus()
+    local paths = WalkPaths()
+    page.Walk = math.max(1, math.min(page.Walk or 1, math.max(1, math.ceil(#paths/4))))
+    panel.walkPageLabel:SetText(page.Walk .. " / " .. math.max(1, math.ceil(#paths/4)))
+    for index, row in ipairs(panel.walkRows) do
+        local path = paths[(page.Walk-1)*4+index]
+        row.load.path = path
+        if path then
+            row.load:SetText((Text(path.name) or "Walk"):sub(1, 19)
+                .. " · " .. (Number(path.distance) or 0) .. " yd")
+            row.load:Show(); row.remove:Show()
+        else row.load:Hide(); row.remove:Hide() end
+    end
     for index, button in ipairs(panel.draftStopButtons) do
         if db.vignetteRadarRouteDraftStops == ({ 3, 4, 5 })[index] then
             button:LockHighlight()
@@ -773,5 +1102,5 @@ end
 
 function API.TogglePanel()
     local frame = BuildPanel()
-    if frame:IsShown() then frame:Hide() else API.RefreshPanel(); frame:Show() end
+    if frame:IsShown() then frame:Hide() else frame:Show(); API.RefreshPanel() end
 end

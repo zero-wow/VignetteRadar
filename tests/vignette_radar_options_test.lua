@@ -209,22 +209,22 @@ for _, key in ipairs({
 }) do
     assert(byKey[key], "missing setting: " .. key)
 end
-assert(byKey["vignetteRadarAlertCategories.rare"].label.text == "Rares and bosses"
-    and byKey["vignetteRadarShapes"].label.text == "Recognizable icons"
-    and byKey["vignetteRadarWorldMap"].label.text == "Include world-map detections",
+assert(byKey["vignetteRadarAlertCategories.rare"].label.text == "Rares And Bosses"
+    and byKey["vignetteRadarShapes"].label.text == "Recognizable Icons"
+    and byKey["vignetteRadarWorldMap"].label.text == "Include World-Map Detections",
     "rare alerts and icon settings must use recognizable player-facing names")
-assert(byKey.vignetteRadarQuestDots.label.text == "Show quest diamonds"
-    and byKey.vignetteRadarQuestAreas.label.text == "Shade Blizzard quest areas"
-    and byKey.vignetteRadarQuestHalos.label.text == "Approximate quest circles"
-    and byKey.vignetteRadarQuestColors.label.text == "Color quest diamonds"
-    and byKey.vignetteRadarQuestAreaColors.label.text == "Color estimated quest circles",
+assert(byKey.vignetteRadarQuestDots.label.text == "Show Quest Diamonds"
+    and byKey.vignetteRadarQuestAreas.label.text == "Shade Blizzard Quest Areas"
+    and byKey.vignetteRadarQuestHalos.label.text == "Approximate Quest Circles"
+    and byKey.vignetteRadarQuestColors.label.text == "Color Quest Diamonds"
+    and byKey.vignetteRadarQuestAreaColors.label.text == "Color Estimated Quest Circles",
     "quest dots and areas need separate plain-language switches")
 local trailPickerButton
 for _, object in ipairs(objects) do
     if object.parent == panel.pages.Explore and object.kind == "Button"
-        and object.text == "Styles & flow" then trailPickerButton = object end
+        and object.text == "Styles & Flow" then trailPickerButton = object end
 end
-assert(trailPickerButton and trailPickerButton.text == "Styles & flow",
+assert(trailPickerButton and trailPickerButton.text == "Styles & Flow",
     "the full Explore page must open the complete trail picker")
 trailPickerButton.scripts.OnClick(trailPickerButton)
 assert(trailPickerAnchor == trailPickerButton, "the picker must anchor to its settings button")
@@ -335,7 +335,7 @@ end
 
 local northUp = assert(byKey["vignetteRadarNorthUp"])
 assert(northUp.points[1][4] == 18 and northUp.points[1][5] == -229
-    and northUp.label.text == "Keep north at the top",
+    and northUp.label.text == "Keep North At The Top",
     "north-up must remain between the layout descriptions and preview action")
 local northBefore, scanBefore = layoutRefreshes, refreshes
 northUp:SetChecked(true)
@@ -396,7 +396,7 @@ action["Preview"].scripts.OnClick(action["Preview"])
 action["Reset"].scripts.OnClick(action["Reset"])
 assert(previews == 1 and resets == 1, "existing layout actions must remain available")
 local before = refreshes
-action["Clear ignored vignettes"].scripts.OnClick(action["Clear ignored vignettes"])
+action["Clear Ignored Vignettes"].scripts.OnClick(action["Clear Ignored Vignettes"])
 assert(clears == 1 and next(db.vignetteRadarIgnored) == nil and refreshes == before + 1,
     "clear ignores must use the feature API and refresh")
 

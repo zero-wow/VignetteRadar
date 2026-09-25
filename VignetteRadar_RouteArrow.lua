@@ -56,6 +56,7 @@ local function SetColor(kind)
     local slot = (kind == "guide" or kind == "zygor") and "accent" or kind
     if style and style.Color then r, g, b = style.Color(slot or "accent") end
     frame.pointer:SetVertexColor(r, g, b, 1)
+    frame.pointerGlow:SetVertexColor(r, g, b, .16)
     frame.node.mark:SetVertexColor(r, g, b, 1)
     frame.node.meta:SetTextColor(r, g, b, .96)
     local controls = addon.VignetteRadarControls
@@ -84,11 +85,15 @@ local function Ensure()
     frame:SetMovable(true)
     frame:EnableMouse(true)
     frame:RegisterForDrag("LeftButton")
-    frame:RegisterForClicks("RightButtonUp")
+    frame:RegisterForClicks("LeftButtonUp", "RightButtonUp")
     frame.pointer = frame:CreateTexture(nil, "OVERLAY")
     frame.pointer:SetTexture(POINTER)
     frame.pointer:SetSize(16, 16)
     frame.pointer:SetPoint("TOP", frame, "TOP", 0, -2)
+    frame.pointerGlow = frame:CreateTexture(nil, "ARTWORK")
+    frame.pointerGlow:SetTexture(CIRCLE)
+    frame.pointerGlow:SetSize(25, 25)
+    frame.pointerGlow:SetPoint("CENTER", frame.pointer, "CENTER")
     frame.node = CreateFrame("Frame", nil, frame)
     frame.node:SetSize(160, 30)
     frame.node:SetPoint("TOP", frame, "TOP", 0, -22)
@@ -112,13 +117,73 @@ local function Ensure()
     frame.node.meta:SetSize(132, 11)
     frame.node.meta:SetPoint("BOTTOMLEFT", frame.node, "BOTTOMLEFT", 21, 3)
     frame.node.meta:SetJustifyH("LEFT")
+    frame.horizon = CreateFrame("Frame", nil, frame)
+    frame.horizon:SetSize(160, 102)
+    frame.horizon:SetPoint("TOP", frame, "TOP", 0, -56)
+    if controls and controls.RoundedStatusSurface then
+        controls.RoundedStatusSurface(frame.horizon)
+    end
+    frame.horizon.title = frame.horizon:CreateFontString(nil, "OVERLAY")
+    frame.horizon.title:SetFont(STANDARD_TEXT_FONT or "Fonts\\FRIZQT__.TTF", 9, "OUTLINE")
+    frame.horizon.title:SetPoint("TOPLEFT", frame.horizon, "TOPLEFT", 9, -7)
+    frame.horizon.title:SetText("UP NEXT")
+    frame.horizon.why = controls.Button(frame.horizon, "Why?", 38, 16)
+    frame.horizon.why:SetPoint("TOPRIGHT", frame.horizon, "TOPRIGHT", -7, -4)
+    frame.horizon.why:SetScript("OnClick", function()
+        local focus = addon.VignetteRadarWorldFocus
+        local reason = focus and focus.ExplainActive and focus.ExplainActive()
+            or "No active destination"
+        if addon.ShowVignetteRadarRouteNote then
+            addon.ShowVignetteRadarRouteNote("WHY THIS STOP", reason)
+        end
+    end)
+    frame.horizon.why:SetScript("OnEnter", function(self)
+        if not GameTooltip then return end
+        GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+        GameTooltip:SetText("Why This Stop", 1, 1, 1)
+        local focus = addon.VignetteRadarWorldFocus
+        GameTooltip:AddLine(focus and focus.ExplainActive and focus.ExplainActive()
+            or "No active destination", .7, .82, .84, true)
+        GameTooltip:Show()
+    end)
+    frame.horizon.why:SetScript("OnLeave", function()
+        if GameTooltip then GameTooltip:Hide() end
+    end)
+    frame.horizon.rows = {}
+    for index = 1, 3 do
+        local row = frame.horizon:CreateFontString(nil, "OVERLAY")
+        row:SetFont(STANDARD_TEXT_FONT or "Fonts\\FRIZQT__.TTF", 9, "OUTLINE")
+        row:SetPoint("TOPLEFT", frame.horizon, "TOPLEFT", 9, -22 - (index - 1) * 17)
+        row:SetSize(142, 13)
+        row:SetJustifyH("LEFT")
+        row:SetWordWrap(false)
+        frame.horizon.rows[index] = row
+    end
+    frame.horizon.lock = controls.Button(frame.horizon, "Lock Stop", 68, 17)
+    frame.horizon.lock:SetPoint("BOTTOMLEFT", frame.horizon, "BOTTOMLEFT", 8, 5)
+    frame.horizon.lock:SetScript("OnClick", function()
+        local focus = addon.VignetteRadarWorldFocus
+        if focus and focus.ToggleRouteLock then focus.ToggleRouteLock() end
+        API.Refresh()
+    end)
+    frame.horizon.skip = controls.Button(frame.horizon, "Skip Stop", 68, 17)
+    frame.horizon.skip:SetPoint("BOTTOMRIGHT", frame.horizon, "BOTTOMRIGHT", -8, 5)
+    frame.horizon.skip:SetScript("OnClick", function()
+        local focus = addon.VignetteRadarWorldFocus
+        if focus and focus.SkipRouteStop then focus.SkipRouteStop() end
+        API.Refresh()
+    end)
+    frame.horizon:Hide()
     frame:SetScript("OnEnter", function(self)
         if not GameTooltip then return end
         GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
         GameTooltip:SetText("Auto Route", 1, 1, 1)
         local focus = addon.VignetteRadarWorldFocus
         if focus and focus.Status then GameTooltip:AddLine(focus.Status(), .72, .82, .84, true) end
-        GameTooltip:AddLine("Drag to move. Right-click for Auto Route settings.", .6, .7, .72, true)
+        if focus and focus.ExplainActive then
+            GameTooltip:AddLine(focus.ExplainActive(), .67, .83, .79, true)
+        end
+        GameTooltip:AddLine("Click for upcoming stops. Drag to move; right-click for Auto Route settings.", .6, .7, .72, true)
         GameTooltip:Show()
     end)
     frame:SetScript("OnLeave", function() if GameTooltip then GameTooltip:Hide() end end)
@@ -131,6 +196,10 @@ local function Ensure()
         if button == "RightButton" and addon.VignetteRadarQuickConfig
             and addon.VignetteRadarQuickConfig.OpenPage then
             addon.VignetteRadarQuickConfig.OpenPage("Auto Route", self)
+        elseif button == "LeftButton" then
+            Settings().vignetteRadarRouteHorizonExpanded =
+                Settings().vignetteRadarRouteHorizonExpanded ~= true
+            API.Refresh()
         end
     end)
     frame:SetScript("OnUpdate", function(self, elapsed)
@@ -186,6 +255,11 @@ function API.Refresh()
     Ensure()
     SetColor(kind)
     DrawBearing(dx, dy, player.facing)
+    if settings.vignetteRadarActiveCue == true then
+        local now = type(GetTime) == "function" and GetTime() or 0
+        frame.pointerGlow:SetAlpha(.45 + .25 * math.sin(now * 4))
+        frame.pointerGlow:Show()
+    else frame.pointerGlow:Hide() end
     local rounded = math.floor(distance + .5)
     local name = type(step.name) == "string" and step.name ~= "" and step.name
         or type(routeName) == "string" and routeName ~= "" and routeName
@@ -195,6 +269,10 @@ function API.Refresh()
         frame.node.name:SetText(name)
     end
     local kindTitle = KIND_TITLE[kind] or "Route"
+    if kind == "treasure" and Number(routeCount) and routeCount > 1 then
+        kindTitle = routeIndex == 1 and "Entrance"
+            or routeIndex < routeCount and "Approach" or "Treasure"
+    end
     local progress = Number(routeIndex) and Number(routeCount) and routeCount > 1
         and (" " .. routeIndex .. "/" .. routeCount) or ""
     local yards = rounded < 10000 and (rounded .. " yd")
@@ -203,6 +281,35 @@ function API.Refresh()
     if frame.nodeMeta ~= meta then
         frame.nodeMeta = meta
         frame.node.meta:SetText(meta)
+    end
+    local expanded = settings.vignetteRadarRouteHorizonExpanded == true
+    local wantedHeight = expanded and 160 or 52
+    if frame:GetHeight() ~= wantedHeight then
+        frame:SetHeight(wantedHeight)
+        local scale = frame:GetScale()
+        local left, top = Number(frame:GetLeft()), Number(frame:GetTop())
+        if left and top and Number(scale) then
+            Place(left * scale, top * scale - UIParent:GetHeight())
+        end
+    end
+    frame.horizon:SetShown(expanded)
+    if expanded then
+        local controls = addon.VignetteRadarControls
+        if controls and controls.RefreshRoundedStatusSurface then
+            controls.RefreshRoundedStatusSurface(frame.horizon)
+        end
+        local focus = addon.VignetteRadarWorldFocus
+        local upcoming = focus and focus.GetHorizon and focus.GetHorizon() or {}
+        frame.horizon.title:SetTextColor(.88, .94, .95, 1)
+        for index, row in ipairs(frame.horizon.rows) do
+            local stop = upcoming[index]
+            row:SetText(stop and ((index == 1 and "NOW  " or index == 2 and "NEXT  " or "THEN  ")
+                .. (stop.name or stop.kind or "Point")) or "")
+            row:SetTextColor(index == 1 and .96 or .7, index == 1 and .98 or .8,
+                index == 1 and 1 or .83, 1)
+        end
+        frame.horizon.lock:SetText(focus and focus.IsRouteLocked and focus.IsRouteLocked()
+            and "Unlock" or "Lock Stop")
     end
     if not frame:IsShown() then frame:Show() end
 end

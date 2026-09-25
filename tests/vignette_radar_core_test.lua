@@ -271,8 +271,8 @@ assert(type(defaults.vignetteRadarFavorites) == "table" and type(defaults.vignet
     "feature preferences need complete defaults")
 defaults.vignetteRadarCircleOnly = false
 fresh.GetSettings()
-assert(defaults.vignetteRadarCircleOnly == false,
-    "a saved full-frame layout must remain the user's choice")
+assert(defaults.vignetteRadarCircleOnly == false and defaults.vignetteRadarMainViewMigrated == true,
+    "the one-time main-view migration must preserve later internal compatibility choices")
 defaults.vignetteRadarAlertCooldown = -100
 defaults.vignetteRadarLastSeenSeconds = 10000
 defaults.vignetteRadarMarkerSize = 100
@@ -282,10 +282,17 @@ assert(defaults.vignetteRadarAlertCooldown == 5 and defaults.vignetteRadarLastSe
     and defaults.vignetteRadarMarkerSize == 9 and defaults.vignetteRadarScale == 1.8,
     "numeric preferences must stay inside supported bounds")
 
-VignetteRadarDB = { vignetteRadarQuietCombat = false }
+VignetteRadarDB = { vignetteRadarQuietCombat = false,
+    vignetteRadarCircleOnly = false, vignetteRadarLayout = "squat",
+    vignetteRadarPosition = { x = 17, y = -34 } }
 local migrated = {}
 assert(loadfile(sourcePath))("VignetteRadar", migrated)
 assert(migrated.GetSettings().vignetteRadarKeepVisibleCombat == true,
     "existing users who disabled combat quiet mode should retain a visible radar")
+assert(VignetteRadarDB.vignetteRadarCircleOnly == true
+    and VignetteRadarDB.vignetteRadarLayout == "classic"
+    and VignetteRadarDB.vignetteRadarCirclePosition.x == 17
+    and VignetteRadarDB.vignetteRadarCirclePosition.y == -34,
+    "existing full-frame users must migrate once to the rounded main view at their saved position")
 
 io.write("vignette radar settings migration tests passed\n")

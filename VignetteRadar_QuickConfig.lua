@@ -110,6 +110,7 @@ local function Changed(key, value, subkey)
 end
 
 local function Check(page, key, title, x, y, subkey, labelWidth)
+    title = addon.VignetteRadarControls.TitleCase(title)
     local box = addon.VignetteRadarControls.Checkbox(page)
     box:SetPoint("TOPLEFT", page, "TOPLEFT", x, y)
     local hit = CreateFrame("Button", nil, page)
@@ -146,6 +147,7 @@ local function StepValue(values, current, direction)
     end
 end
 local function Stepper(page, key, title, y, values, format)
+    title = addon.VignetteRadarControls.TitleCase(title)
     local row = { key = key, values = values }
     Label(page, title, 14, y, 10, 145)
     row.minus = Button(page, "−", 162, y + 3, 27, function()
@@ -209,14 +211,16 @@ local function ColorSwatch(page, slot, x, y)
         self:SetBackdropBorderColor(.85, .9, .9, .48)
         if GameTooltip then GameTooltip:Hide() end
     end)
-    Label(page, style.labels[slot], x + 24, y - 3, 9, x < 100 and 99 or 101)
+    Label(page, addon.VignetteRadarControls.TitleCase(style.labels[slot]),
+        x + 24, y - 3, 9, x < 100 and 99 or 101)
     swatches[slot] = button
 end
 
 Button = function(page, title, x, y, width, action, searchKey)
     local controls = addon.VignetteRadarControls
     local button = (title == "+" or title == "-" or title == "−")
-        and controls.IconButton(page, title, width, 21) or controls.Button(page, title, width, 21)
+        and controls.IconButton(page, title, width, 21)
+        or controls.Button(page, controls.TitleCase(title), width, 21)
     button:SetPoint("TOPLEFT", page, "TOPLEFT", x, y)
     button:SetScript("OnClick", action)
     if title ~= "+" and title ~= "-" and title ~= "−" then
@@ -327,6 +331,10 @@ function API.Refresh()
             or budget and budget.softThrottle
                 and string.format("Recent update work: %.1f ms/sec · temporarily slowed", total)
                 or string.format("Recent update work: %.1f ms/sec", total))
+        local layerBudget = addon.VignetteRadarLayerBudget
+        if quick.pages.Performance.layers and layerBudget then
+            quick.pages.Performance.layers:SetText(layerBudget.StatusLine())
+        end
     end
     for _, box in ipairs(checks) do
         local value = db[box.optionKey]
@@ -522,20 +530,17 @@ local function Build()
     end)
 
     local layout = quick.pages.Layout
-    Section(layout, "PANEL STYLE", -5)
-    Choice(layout, "vignetteRadarLayout", "classic", "Classic", 14, -23, 80)
-    Choice(layout, "vignetteRadarLayout", "squat", "Squat", 104, -23, 80)
-    Choice(layout, "vignetteRadarLayout", "compact", "Compact", 194, -23, 80)
-    Check(layout, "vignetteRadarNorthUp", "Keep north at the top", 14, -64)
-    Check(layout, "vignetteRadarCircleOnly", "Show only the radar", 14, -94)
-    Check(layout, "vignetteRadarHoverTools", "Hover tools in radar-only view", 14, -121)
-    Label(layout, "Drag the radar edges to change its size.", 14, -151, 10)
-    Check(layout, "vignetteRadarControlsVisible", "Show buttons in full views", 14, -171)
-    Section(layout, "PANEL SIZE", -202)
-    Stepper(layout, "vignetteRadarScale", "Frame scale", -225,
+    Section(layout, "RADAR LAYOUT", -5)
+    Check(layout, "vignetteRadarNorthUp", "Keep North At The Top", 14, -30)
+    Check(layout, "vignetteRadarHoverTools", "Show Controls On Hover", 14, -65)
+    Label(layout, "Drag the radar edges to change its size.", 14, -97, 10)
+    Section(layout, "RADAR SIZE", -126)
+    Stepper(layout, "vignetteRadarScale", "Radar Scale", -151,
         { .8, .9, 1, 1.1, 1.2, 1.3, 1.4, 1.5, 1.6, 1.7, 1.8 },
         function(value) return math.floor(value * 100 + .5) .. "%" end)
-    Check(layout, "vignetteRadarIndependentViews", "Save zoom + size for each view", 14, -257)
+    Check(layout, "vignetteRadarActiveCue", "Pulse Active Destination", 14, -191)
+    Check(layout, "vignetteRadarRouteHorizonExpanded", "Show Upcoming Route Stops", 14, -221)
+    Check(layout, "vignetteRadarSourceBadges", "Show Marker Source Badges", 14, -251)
 
     local alerts = quick.pages.Alerts
     Check(alerts, "vignetteRadarAlerts", "Pulse for new detections", 14, -3)
@@ -738,7 +743,7 @@ local function Build()
         { 2, 3, 4, 5, 6, 7, 8, 9 }, function(value) return value .. " px" end)
     Stepper(guides, "vignetteRadarHeadingLength", "Facing line length", -205,
         { .12, .16, .2, .25, .3, .35, .4, .5, .6, .7, .8 }, percent)
-    Check(guides, "vignetteRadarFullSweep", "Animated sweep on full radar", 14, -247)
+    Check(guides, "vignetteRadarFullSweep", "Animated Sweep On Radar", 14, -247)
 
     local themes = quick.pages.Themes
     Section(themes, "COLOR THEMES", -3)
@@ -833,6 +838,8 @@ local function Build()
         local row, column = math.floor((index - 1) / 2), (index - 1) % 2
         ColorSwatch(themes, slot, 14 + column * 135, -133 - row * 25)
     end
+    Stepper(themes, "vignetteRadarBorderOpacity", "Radar Border Visibility", -259,
+        { 0, .25, .5, .75, 1, 1.25, 1.5, 2, 2.5, 3, 4 }, percent)
 
     local behavior = quick.pages.Behavior
     Check(behavior, "vignetteRadarLastSeen", "Keep last-seen markers", 14, -3)
@@ -844,7 +851,6 @@ local function Build()
     Check(behavior, "vignetteRadarKeepVisibleCombat", "Stay fully visible", 14, -124)
     Check(behavior, "vignetteRadarQuietInstances", "Fade + mute in instances", 14, -157)
     Check(behavior, "vignetteRadarHideCleared", "Hide cleared rares + treasures", 14, -185)
-    Check(behavior, "vignetteRadarPeekEnabled", "Hold-key full radar peek", 14, -210)
     Button(behavior, "Clear ignored vignettes", 14, -239, 260, function()
         if addon.VignetteRadarFeatures and addon.VignetteRadarFeatures.ClearIgnored then
             addon.VignetteRadarFeatures.ClearIgnored()
@@ -1022,10 +1028,13 @@ local function Build()
     Section(performance, "AUTOMATIC PROTECTION", -132)
     Label(performance, "Sustained high load slows updates automatically.", 14, -152, 9)
     Label(performance, "Extreme spikes pause briefly, then retry at Low CPU.", 14, -170, 9)
-    performance.workload = Label(performance, "Measuring update work...", 14, -195, 9, 260)
-    performance.workload:SetHeight(29)
+    performance.workload = Label(performance, "Measuring update work...", 14, -191, 9, 260)
+    performance.workload:SetHeight(23)
     performance.workload:SetWordWrap(true)
-    Button(performance, "Back to Status", 14, -231, 260, function()
+    performance.layers = Label(performance, "Measuring drawing layers...", 14, -219, 9, 260)
+    performance.layers:SetHeight(28)
+    performance.layers:SetWordWrap(true)
+    Button(performance, "Back to Status", 14, -255, 260, function()
         SelectPage("Status")
     end)
 

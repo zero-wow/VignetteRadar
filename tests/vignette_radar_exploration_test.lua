@@ -153,6 +153,47 @@ assert(#db.vignetteRadarJournal == 1 and db.vignetteRadarJournal[1].at == 123456
 E.ClearJournal()
 assert(#db.vignetteRadarJournal == 0)
 
+-- Recording is independent of the on-screen trail and stores a bounded,
+-- simplified route through the actual corners of the walk.
+db.vignetteRadarBreadcrumbs = false
+current = 300
+player.worldX, player.worldY, player.mapID = 200, 300, 10
+assert(E.StartWalkRecording(player))
+assert(E.GetWalkRecording().active and E.GetWalkRecording().points == 1)
+for _, sample in ipairs({
+    {303, 210, 300}, {306, 220, 300}, {309, 220, 320}, {312, 240, 320},
+}) do
+    current, player.worldX, player.worldY = sample[1], sample[2], sample[3]
+    E.UpdateTrail(player, 10, current)
+end
+assert(E.GetWalkRecording().points == 5 and E.GetWalkRecording().distance == 60,
+    "a walk should sample movement even when the visible trail is disabled")
+assert(E.PauseWalkRecording() and not E.GetWalkRecording().active)
+assert(E.ResumeWalkRecording(player) and E.GetWalkRecording().active)
+local saved, path = E.SaveWalkRecording("Corner Walk", player)
+assert(saved and path.name == "Corner Walk" and path.distance == 60
+    and #path.points >= 4 and #path.points <= 8,
+    "saved walks must preserve meaningful turns in a bounded route")
+assert(E.GetWalkRecording() == nil and E.GetWalkPaths()[1] == path)
+assert(E.ReplayWalkPath(path.id, player) and #E.GetRoute(10) >= 2
+    and E.GetRoute(10)[1].worldX == 220 and E.GetRoute(10)[1].worldY == 320,
+    "a replay started at the far end should reverse and skip the occupied start")
+assert(E.UndoRouteEdit() and #E.GetRoute(10) == 0,
+    "replaying a walk should undo as one route edit")
+player.mapID = 11
+assert(not E.ReplayWalkPath(path.id, player), "replays must stay on their recorded map")
+assert(E.DeleteWalkPath(path.id) and #E.GetWalkPaths() == 0)
+player.mapID = 10
+assert(E.StartWalkRecording(player))
+current, player.worldX = 315, 250
+E.UpdateTrail(player, 10, current)
+current, player.mapID = 318, 11
+E.UpdateTrail(player, 11, current)
+assert(not E.GetWalkRecording().active and not E.ResumeWalkRecording(player),
+    "changing map must stop an active walk rather than connect unrelated positions")
+assert(E.CancelWalkRecording())
+player.mapID = 10
+
 db.vignetteRadarCategories = { rare=true, treasure=true, event=true, other=true }
 db.vignetteRadarColors.accent = { .1, .2, .3 }
 assert(E.SavePreset("My Hunt"))

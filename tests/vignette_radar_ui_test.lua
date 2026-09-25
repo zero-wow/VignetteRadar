@@ -258,6 +258,9 @@ for _, object in ipairs(objects) do
 end
 assert(optionsEvent and optionsEvent.scripts.OnEvent, "standalone addon must register its own settings")
 optionsEvent.scripts.OnEvent(optionsEvent)
+-- Exercise legacy layout geometry through the compatibility API as well as
+-- the finalized default radar tested separately below.
+settings.vignetteRadarCircleOnly = false
 local optionsPanel = assert(_G.VignetteRadarOptionsPanel, "standalone addon needs a populated settings panel")
 assert(optionsPanel.width == 520 and optionsPanel.height == 365 and registeredCategory,
     "standalone options must fit the Settings canvas without EllesmereUI")
@@ -605,6 +608,14 @@ assert(not panel.blipByKey.far, "distant data must stay outside the current disp
 for _ = 1, 5 do panel.zoomOut.scripts.OnClick(panel.zoomOut) end
 assert(settings.vignetteRadarRange == 4800 and panel.zoomLabel.text == "4800 yd" and panel.blipByKey.far,
     "zoom-out controls must reveal a supplied detection 3000 yards away")
+assert(panel.blipByKey.far.sourceBadge:IsShown(),
+    "world-map locations need a source badge distinct from live minimap detections")
+settings.vignetteRadarSourceBadges = false
+addon.VignetteRadarAPI.Refresh(false)
+assert(not panel.blipByKey.far.sourceBadge:IsShown(),
+    "the marker-source badge must honor its settings switch")
+settings.vignetteRadarSourceBadges = true
+addon.VignetteRadarAPI.Refresh(false)
 assert(panel.blipByKey.far.target.distance == 3000 and launcher.detected == 0,
     "full-radar zoom must preserve yard distances and the launcher's fixed 150-yard radius")
 panel.field.scripts.OnMouseWheel(panel.field, 1)
@@ -647,7 +658,7 @@ assert(panel.routeToggle.backdrop == nil and panel.routeToggle.art.texture
 local routeHover = panel.hoverTools[8]
 assert(routeHover.toolID == "route" and routeHover.artColumn == 10
     and routeHover.art.texture == panel.routeToggle.art.texture
-    and panel.hoverTools[9].artColumn == 7 and panel.hoverTools[10].artColumn == 8,
+    and panel.hoverTools[10].artColumn == 7 and panel.hoverTools[11].artColumn == 8,
     "Route, eye, and help must use their intended cells in the shared icon atlas")
 do
     local normalState = panel.routeToggle.art.texCoord[3]
@@ -697,6 +708,9 @@ do
     panel.routeToggle.scripts.OnClick(panel.routeToggle, "RightButton")
     assert(chooser.choices.treasure._routeSelected
         and not chooser.choices.rare._routeSelected
+        and chooser.choices.treasure.chosenPip:IsShown()
+        and not chooser.choices.rare.chosenPip:IsShown()
+        and chooser.choices.treasure.statusSurface.face[1].vertexColor[4] > .5
         and chooser.choices.treasure.statusSurface.edge[1].vertexColor[4] > .8,
         "the active route category needs a strong themed selection")
     addon.VignetteRadarWorldFocus.GetRouteChoice = function() return "quest", "paused" end
@@ -1584,9 +1598,10 @@ for _, layoutName in ipairs({ "classic", "compact", "squat" }) do
     addon.SetVignetteRadarCircleOnly(true)
     panel.field.hovered = true
     panel.field.scripts.OnEnter(panel.field)
-    assert(#panel.hoverTools == 12 and panel.hoverTools[8].toolID == "route"
-        and panel.hoverTools[11].toolID == "minimize"
-        and panel.hoverTools[11].artColumn == 3 and panel.hoverTools[12].toolID == "close"
+    assert(#panel.hoverTools == 13 and panel.hoverTools[8].toolID == "route"
+        and panel.hoverTools[9].toolID == "arrow"
+        and panel.hoverTools[12].toolID == "minimize"
+        and panel.hoverTools[12].artColumn == 3 and panel.hoverTools[13].toolID == "close"
         and panel.hoverTools[1]:IsShown()
         and not panel.settingsDot:IsShown(),
         "square radar-only view must reveal its corner controls on hover")
@@ -1609,14 +1624,16 @@ for _, layoutName in ipairs({ "classic", "compact", "squat" }) do
     local side, center = panel.field:GetWidth(), panel.field:GetWidth() / 2
     for _, tool in ipairs(panel.hoverTools) do
         local point, x, y = tool.point[1], tool.point[4], tool.point[5]
-        local left = point:find("RIGHT") and side + x - 16 or x
-        local top = point:find("BOTTOM") and side - y - 16 or -y
-        local nearestX = math.max(left, math.min(center, left + 16))
-        local nearestY = math.max(top, math.min(center, top + 16))
+        local width, height = tool:GetWidth(), tool:GetHeight()
+        local left = point:find("RIGHT") and side + x - width or x
+        local top = point:find("BOTTOM") and side - y - height or -y
+        local nearestX = math.max(left, math.min(center, left + width))
+        local nearestY = math.max(top, math.min(center, top + height))
         local distance = math.sqrt((nearestX-center)^2 + (nearestY-center)^2)
-        assert(left >= 9 and top >= 9 and left + 16 <= side - 9
-            and top + 16 <= side - 9 and distance > panel.plotRadius + 2,
-            "hover controls must stay inside the square border and outside the plotting ring")
+        assert(left >= 9 and top >= 9 and left + width <= side - 9
+            and top + height <= side - 9 and distance > panel.plotRadius + 2,
+            "hover control " .. tostring(tool.toolID) .. " must stay inside the square border and outside the plotting ring"
+                .. " (" .. tostring(left) .. ", " .. tostring(top) .. "; distance " .. tostring(distance) .. ")")
     end
     panel.field.hovered = false
     panel.field.scripts.OnLeave(panel.field)
@@ -1735,9 +1752,9 @@ panel.field.left, panel.field.top = nil, nil
 panel.questBlob.left, panel.questBlob.top = nil, nil
 panel.frameToggle.scripts.OnClick(panel.frameToggle)
 assert(settings.vignetteRadarCircleOnly and panel.questBlob:IsShown() and questDot:IsShown()
-    and panel.squarePlot and panel.squareBorder:IsShown() and panel.frameToggle:IsShown()
+    and panel.squarePlot and panel.squareBorder:IsShown() and not panel.frameToggle:IsShown()
     and panel.backdropColor[4] == 0,
-    "radar-only view must keep square shading and its restore control while hiding the outer frame")
+    "main radar view must keep square shading while hiding the retired frame control")
 panel.frameToggle.scripts.OnClick(panel.frameToggle)
 assert(not settings.vignetteRadarCircleOnly and panel.questBlob:IsShown(),
     "restoring the frame must restore available quest-area shading")
@@ -1853,7 +1870,7 @@ assert(settings.vignetteRadarCircleOnly == true and panel.backdropColor[4] == 0
     and panel.backdropBorderColor[4] == 0 and not panel.title:IsShown()
     and not panel.combatToggle:IsShown() and not panel.trailToggle:IsShown()
     and not panel.resizeGrips.bottomRight:IsShown()
-    and panel.frameToggle:IsShown() and panel.field.point == savedFieldPoint
+    and not panel.frameToggle:IsShown() and panel.field.point == savedFieldPoint
     and panel.frameToggle.chevron[1].endPoint[3] > panel.frameToggle.chevron[1].startPoint[3],
     "circle-only view must hide the rectangular frame without moving the radar or its restore chevron")
 panel.field.scripts.OnEnter(panel.field)
@@ -1947,7 +1964,7 @@ for _, object in ipairs(objects) do
         openBeacons = object
     elseif object.parent == quick.pages.Beacons and object.text == "Preview" then
         previewBeacons = object
-    elseif object.parent == quick.pages.Beacons and object.text == "Back to Markers" then
+    elseif object.parent == quick.pages.Beacons and object.text == "Back To Markers" then
         backFromBeacons = object
     end
 end
@@ -2038,13 +2055,15 @@ for _, object in ipairs(objects) do
         local x, y = p[4], p[5]
         assert(x >= 10 and x + object.width <= quick.width - 10
             and -y >= 0 and -y + object.height <= page.height - 10,
-            "compact control must not clip against a page border")
+            "compact control " .. tostring(object.optionKey or object.text)
+                .. " must not clip against a page border at " .. tostring(x) .. ", " .. tostring(y))
     end
 end
 for _, key in ipairs({ "vignetteRadarEnabled", "vignetteRadarHideWhenEmpty", "vignetteRadarLauncherVisible",
-    "vignetteRadarWorldMap", "vignetteRadarRange", "vignetteRadarLayout", "vignetteRadarScale",
-    "vignetteRadarNorthUp", "vignetteRadarCircleOnly", "vignetteRadarHoverTools",
-    "vignetteRadarPeekEnabled", "vignetteRadarEmptyHelp", "vignetteRadarEdgeCues",
+    "vignetteRadarWorldMap", "vignetteRadarRange", "vignetteRadarScale",
+    "vignetteRadarNorthUp", "vignetteRadarHoverTools", "vignetteRadarActiveCue",
+    "vignetteRadarRouteHorizonExpanded", "vignetteRadarSourceBadges",
+    "vignetteRadarEmptyHelp", "vignetteRadarEdgeCues",
     "vignetteRadarFollowTrackedQuest",
     "vignetteRadarAlerts", "vignetteRadarAlertSound", "vignetteRadarAlertCategories",
     "vignetteRadarAlertCooldown", "vignetteRadarCategories", "vignetteRadarHighlight",
@@ -2057,7 +2076,7 @@ for _, key in ipairs({ "vignetteRadarEnabled", "vignetteRadarHideWhenEmpty", "vi
     "vignetteRadarNextQuestStep", "vignetteRadarQuestStartBadges",
     "vignetteRadarQuestNumbers", "vignetteRadarDataStatus",
     "vignetteRadarLensEnabled", "vignetteRadarLensCategory",
-    "vignetteRadarRingOpacity", "vignetteRadarRangeLabelOpacity",
+    "vignetteRadarRingOpacity", "vignetteRadarBorderOpacity", "vignetteRadarRangeLabelOpacity",
     "vignetteRadarChevronOpacity", "vignetteRadarHeadingOpacity",
     "vignetteRadarChevronDistance", "vignetteRadarHeadingLength", "vignetteRadarFullSweep",
     "vignetteRadarTheme", "vignetteRadarSmartZoom", "vignetteRadarUntangle",
@@ -2114,7 +2133,7 @@ do
 end
 quick.tabs.Explore.scripts.OnClick(quick.tabs.Explore)
 assert(quick.pages.Explore:IsShown() and quickControl("Explore", "vignetteRadarBreadcrumbs")
-    and quickControl("Explore", "vignetteRadarTrailStyle").text == "Styles & flow",
+    and quickControl("Explore", "vignetteRadarTrailStyle").text == "Styles & Flow",
     "the compact Explore tab must expose the trail and its complete picker")
 assert(quick.rangeMinus.backdrop == nil and #quick.rangeMinus.strokes == 1
     and quick.rangePlus.backdrop == nil and #quick.rangePlus.strokes == 2
@@ -2256,15 +2275,28 @@ local function plusFor(key)
 end
 plusFor("vignetteRadarRingOpacity").scripts.OnClick()
 assert(settings.vignetteRadarRingOpacity == .75
-    and math.abs(panel.rangeRing[1].color[4] - .045 * .75) < .001
+    and math.abs(panel.rangeRing[1].color[4] - .045 * 2 * .75 * .75) < .001
     and math.abs(panel.innerLabel.textColor[4] - .03 * .5) < .001,
     "ring visibility must change rings without changing yard-label opacity")
 plusFor("vignetteRadarRangeLabelOpacity").scripts.OnClick()
 assert(settings.vignetteRadarRangeLabelOpacity == .75
     and math.abs(panel.innerLabel.textColor[4] - .03 * .75) < .001
     and math.abs(panel.outerLabel.textColor[4] - .04 * .75) < .001
-    and math.abs(panel.innerRing[1].color[4] - .03 * .75) < .001,
+    and math.abs(panel.innerRing[1].color[4] - .03 * 2 * .75 * .75) < .001,
     "yard-label visibility must redraw both labels independently of ring settings")
+do
+    local independentBorder = panel.squareBorder.vertexColor[4]
+    addon.SetVignetteRadarCircleOnly(true)
+    local earlierRing = panel.rangeRing[1].color[4]
+    plusFor("vignetteRadarRingOpacity").scripts.OnClick()
+    assert(panel.backdropColor[4] == 0 and panel.backdropBorderColor[4] == 0
+        and panel.rangeRing[1].color[4] > earlierRing
+        and math.abs(panel.squareBorder.vertexColor[4] - independentBorder) < .001,
+        "changing ring strength in the rounded view must not reveal the hidden rectangle or change its border")
+    settings.vignetteRadarRingOpacity = .75
+    addon.VignetteRadarAPI.Refresh(false)
+    addon.SetVignetteRadarCircleOnly(false)
+end
 plusFor("vignetteRadarChevronOpacity").scripts.OnClick()
 plusFor("vignetteRadarHeadingOpacity").scripts.OnClick()
 assert(math.abs(panel.headingChevron[1].color[4] - .8) < .001
@@ -2293,6 +2325,28 @@ sweepToggle:SetChecked(false)
 sweepToggle.scripts.OnClick(sweepToggle)
 assert(not settings.vignetteRadarFullSweep and not sweep[1]:IsShown(),
     "turning the sweep off must hide its lines immediately")
+do
+    local ringAlpha = panel.rangeRing[1].color[4]
+    local borderAlpha = panel.squareBorder.vertexColor[4]
+    local roundBorderAlpha = panel.field.halo.vertexColor[4]
+    quick.tabs.Themes.scripts.OnClick(quick.tabs.Themes)
+    local borderPlus
+    for _, object in ipairs(objects) do
+        if object.parent == quick.pages.Themes
+            and object.optionKey == "vignetteRadarBorderOpacity" and object.text == "+" then
+            borderPlus = object
+            break
+        end
+    end
+    assert(borderPlus, "Themes must expose an independent radar border control")
+    borderPlus.scripts.OnClick(borderPlus)
+    assert(panel.squareBorder.vertexColor[4] > borderAlpha
+        and panel.field.halo.vertexColor[4] > roundBorderAlpha
+        and math.abs(panel.rangeRing[1].color[4] - ringAlpha) < .001,
+        "border visibility must leave the range rings unchanged")
+    settings.vignetteRadarBorderOpacity = .5
+    addon.VignetteRadarAPI.Refresh(false)
+end
 quick.tabs.Behavior.scripts.OnClick(quick.tabs.Behavior)
 local combatCheck = quickControl("Behavior", "vignetteRadarKeepVisibleCombat")
 combatCheck:SetChecked(true)
@@ -2306,15 +2360,16 @@ panel.settingsDot.scripts.OnClick(panel.settingsDot)
 assert(not quick:IsShown(), "clicking the dot again must close compact settings")
 panel.settingsDot.scripts.OnClick(panel.settingsDot)
 quick.tabs.Layout.scripts.OnClick(quick.tabs.Layout)
-local circleCheck = quickControl("Layout", "vignetteRadarCircleOnly")
-circleCheck:SetChecked(true)
-circleCheck.scripts.OnClick(circleCheck)
-assert(settings.vignetteRadarCircleOnly and quick:IsShown() and not panel.title:IsShown(),
-    "radar-only view must keep the settings panel open until the user closes it")
-panel.frameToggle.scripts.OnClick(panel.frameToggle)
-assert(not settings.vignetteRadarCircleOnly and circleCheck:GetChecked() == false,
-    "the on-circle restore control must synchronize the compact layout setting")
-assert(quick:IsShown(), "restoring the frame must not close settings")
+local hoverCheck = quickControl("Layout", "vignetteRadarHoverTools")
+assert(hoverCheck and not quickControl("Layout", "vignetteRadarCircleOnly")
+    and not panel.frameToggle:IsShown(),
+    "the finalized layout must expose hover controls without a full-frame switch")
+hoverCheck:SetChecked(false)
+hoverCheck.scripts.OnClick(hoverCheck)
+assert(settings.vignetteRadarHoverTools == false and quick:IsShown(),
+    "changing the main radar controls must keep settings open")
+hoverCheck:SetChecked(true)
+hoverCheck.scripts.OnClick(hoverCheck)
 quick.close.scripts.OnClick(quick.close)
 UIParent:SetSize(800, 600)
 addon.SetVignetteRadarLayout("squat")
@@ -2428,8 +2483,27 @@ do
         and widget.pointer.width == 16 and widget.pointer.height == 16
         and math.abs(initialRotation + snapshot.facing) < .01
         and widget.node.name.text == "Crystal Cache"
-        and widget.node.meta.text == "Treasure 2/3  ·  300 yd",
+        and widget.node.meta.text == "Approach 2/3  ·  300 yd",
         "the movable crystal pointer and node readout must show the active route stop")
+    local arrowTool = panel.hoverTools[9]
+    assert(arrowTool.toolID == "arrow" and arrowTool.reference == panel.arrowToggle)
+    arrowTool.scripts.OnClick(arrowTool, "LeftButton")
+    assert(settings.vignetteRadarRouteArrow == false and not widget:IsShown(),
+        "the radar's crystal button must turn the separate route arrow off")
+    arrowTool.scripts.OnClick(arrowTool, "LeftButton")
+    assert(settings.vignetteRadarRouteArrow == true and widget:IsShown(),
+        "the same radar button must restore the route arrow")
+    UIParent:SetSize(800, 600)
+    widget.left, widget.top = 500, 80
+    settings.vignetteRadarRouteHorizonExpanded = true
+    addon.VignetteRadarRouteArrow.Refresh()
+    assert(widget.height == 160 and widget.horizon:IsShown()
+        and widget.point[5] >= -600 + 160 + 8,
+        "the expanded route horizon must rise into view when the arrow is near the bottom edge")
+    settings.vignetteRadarRouteHorizonExpanded = false
+    widget.left, widget.top = nil, nil
+    addon.VignetteRadarRouteArrow.Refresh()
+    UIParent:SetSize(1600, 900)
     routeStep.worldX, routeStep.worldY = snapshot.worldX, snapshot.worldY + 300
     widget.scripts.OnUpdate(widget, .21)
     assert(math.abs(widget.pointer.rotation - initialRotation - math.pi / 2) < .01,
