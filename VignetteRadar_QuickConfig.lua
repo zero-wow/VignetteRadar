@@ -6,8 +6,9 @@ local THEME_COLUMNS, THEME_ROW, THEME_VIEW_HEIGHT = 4, 24, 46
 local THEME_VIEW_WIDTH = 244
 local ACCENT = { 0.05, 0.82, 0.62 }
 local FONT = STANDARD_TEXT_FONT or "Fonts\\FRIZQT__.TTF"
-local quick, anchor
+local quick, anchor, guide
 local checks, groups, steppers, swatches, sections = {}, {}, {}, {}, {}
+local searchEntries = {}
 local API = {}
 addon.VignetteRadarQuickConfig = API
 
@@ -35,6 +36,14 @@ local function Section(page, value, y)
     line:SetHeight(1)
     line:SetColorTexture(1, 1, 1, .09)
     return label
+end
+
+local function RegisterSearch(page, key, title)
+    local name = page and page.searchPage
+    if name and title and title ~= "" then
+        searchEntries[#searchEntries + 1] = { page = name, key = key, title = title,
+            match = (name .. " " .. title .. " " .. (key or "")):lower() }
+    end
 end
 
 local function Changed(key, value, subkey)
@@ -79,6 +88,11 @@ local function Changed(key, value, subkey)
         end
         addon.VignetteRadarAPI.Refresh(true)
     end
+    if key == "vignetteRadarIndependentViews" and value == true then
+        addon.VignetteRadarViewProfiles.Record(db)
+    elseif key == "vignetteRadarHoverTools" or key == "vignetteRadarControlsVisible" then
+        addon.VignetteRadarViewProfiles.Record(db)
+    end
     if addon.RefreshVignetteRadarOptions then addon.RefreshVignetteRadarOptions() end
     API.Refresh()
 end
@@ -103,6 +117,7 @@ local function Check(page, key, title, x, y, subkey, labelWidth)
     hit:SetScript("OnEnter", function() box._hovered = true; box:RefreshAppearance() end)
     hit:SetScript("OnLeave", function() box._hovered = false; box:RefreshAppearance() end)
     checks[#checks + 1] = box
+    RegisterSearch(page, key, title)
     return box
 end
 
@@ -134,6 +149,7 @@ local function Stepper(page, key, title, y, values, format)
     row.format = format
     row.minus.optionKey, row.plus.optionKey = key, key
     steppers[#steppers + 1] = row
+    RegisterSearch(page, key, title)
     return row
 end
 
@@ -191,6 +207,9 @@ Button = function(page, title, x, y, width, action)
         and controls.IconButton(page, title, width, 21) or controls.Button(page, title, width, 21)
     button:SetPoint("TOPLEFT", page, "TOPLEFT", x, y)
     button:SetScript("OnClick", action)
+    if title ~= "+" and title ~= "-" and title ~= "−" then
+        RegisterSearch(page, nil, title)
+    end
     return button
 end
 
@@ -199,6 +218,7 @@ local function Choice(page, key, value, title, x, y, width)
     button.optionKey, button.optionValue = key, value
     if not groups[key] then groups[key] = {} end
     groups[key][value] = button
+    RegisterSearch(page, key, title)
     return button
 end
 
@@ -225,6 +245,7 @@ local function RefreshPOISources()
     local maxOffset = math.max(0, #entries - #quick.poiRows)
     quick.poiOffset = math.min(maxOffset, quick.poiOffset or 0)
     local selected = Settings().vignetteRadarPOISource
+    local zoneChoice = poi and poi.ZoneChoice and poi.ZoneChoice(mapID)
     local selectedEntry
     for _, entry in ipairs(entries) do
         if entry.id == selected then selectedEntry = entry; break end
@@ -237,7 +258,9 @@ local function RefreshPOISources()
             row:SetText(entry.id == "none" and "Off" or entry.id == "auto" and "Auto · current zone"
                 or entry.id:gsub("(%l)(%u)", "%1 %2"):gsub("_", " "))
             row:SetEnabled(entry.enabled)
-            if entry.id == selected then row:LockHighlight() else row:UnlockHighlight() end
+            if entry.id == (selected == "auto" and zoneChoice or selected) then
+                row:LockHighlight()
+            else row:UnlockHighlight() end
         end
     end
     local track = 85
@@ -250,7 +273,10 @@ local function RefreshPOISources()
         quick.poiStatus:SetText("Map notes are off. Choose Auto or a pack above.")
     elseif selected == "auto" then
         local chosen = poi and poi.ResolveSource(mapID, selected)
-        quick.poiStatus:SetText(chosen and ("Auto is using " .. chosen .. " here.")
+        quick.poiStatus:SetText(zoneChoice == "none" and "Map notes are off in this zone."
+            or zoneChoice and chosen == zoneChoice and ("Pinned here: " .. zoneChoice)
+            or zoneChoice and ("Pinned pack unavailable; using " .. tostring(chosen or "none"))
+            or chosen and ("Auto: " .. chosen .. " · right-click to pin")
             or "No enabled HandyNotes pack has notes here.")
     elseif not selectedEntry then
         quick.poiStatus:SetText("This pack has no notes here. Choose Auto.")
@@ -300,6 +326,7 @@ function API.Refresh()
         local br, bg, bb = style.Color("background")
         quick:SetBackdropColor(math.min(.14, br * 2.7), math.min(.14, bg * 2.7),
             math.min(.14, bb * 2.7), .99)
+        addon.VignetteRadarControls.RefreshPopupSurface(quick)
         for slot, button in pairs(swatches) do
             button:SetBackdropColor(style.Color(slot))
         end
@@ -328,7 +355,37 @@ local function SelectPage(name)
             end
         end
     end
+    if name == "Status" and API.RefreshStatus then API.RefreshStatus() end
     API.Refresh()
+end
+
+function API.RefreshStatus()
+    if not (quick and quick.pages.Status and quick.pages.Status.diagnosticLines) then return end
+    local lines = addon.GetVignetteRadarDiagnostics and addon.GetVignetteRadarDiagnostics() or {}
+    for index, label in ipairs(quick.pages.Status.diagnosticLines) do
+        label:SetText(lines[index] or "")
+    end
+end
+
+local function RefreshSearch()
+    if not (quick and quick.searchRows and quick.searchInput) then return end
+    local query = (quick.searchInput:GetText() or ""):lower():match("^%s*(.-)%s*$")
+    local shown = 0
+    for _, result in ipairs(searchEntries) do
+        if query ~= "" and result.match:find(query, 1, true) then
+            shown = shown + 1
+            local row = quick.searchRows[shown]
+            if not row then break end
+            row.result = result
+            row:SetText(result.page .. "  ·  " .. result.title)
+            row:Show()
+        end
+    end
+    for index = math.min(shown, #quick.searchRows) + 1, #quick.searchRows do
+        quick.searchRows[index]:Hide()
+    end
+    quick.searchHint:SetText(query == "" and "Type an option or button name."
+        or shown == 0 and "No matching setting." or "Choose a result to open its page.")
 end
 
 local function Build()
@@ -345,6 +402,7 @@ local function Build()
         edgeFile = "Interface\\Buttons\\WHITE8X8", edgeSize = 1 })
     quick:SetBackdropColor(0.035, 0.043, 0.049, 0.98)
     quick:SetBackdropBorderColor(1, 1, 1, 0.22)
+    addon.VignetteRadarControls.PopupSurface(quick)
     quick.pages, quick.tabs = {}, {}
     quick.rail = quick:CreateTexture(nil, "ARTWORK")
     quick.rail:SetPoint("TOPLEFT", 1, -1)
@@ -364,8 +422,15 @@ local function Build()
     close:SetPoint("TOPRIGHT", quick, "TOPRIGHT", -8, -7)
     close:SetScript("OnClick", function() quick:Hide() end)
     quick.close = close
+    local find = addon.VignetteRadarControls.Button(quick, "Find", 34, 20)
+    find:SetPoint("TOPRIGHT", quick, "TOPRIGHT", -34, -7)
+    find:SetScript("OnClick", function()
+        SelectPage("Search")
+        if quick.searchInput and quick.searchInput.SetFocus then quick.searchInput:SetFocus() end
+    end)
+    quick.find = find
 
-    local order = { "Radar", "Layout", "Explore", "Alerts", "Markers", "Guides", "Themes", "Behavior", "Quests", "Wayfinding", "Map Data" }
+    local order = { "Radar", "Layout", "Explore", "Alerts", "Markers", "Guides", "Themes", "Behavior", "Quests", "Wayfinding", "Map Data", "Status" }
     for index, name in ipairs(order) do
         local row, column = math.floor((index - 1) / 3), (index - 1) % 3
         local tab = addon.VignetteRadarControls.Button(quick, name, 84, 20)
@@ -375,6 +440,7 @@ local function Build()
         local page = CreateFrame("Frame", nil, quick)
         page:SetSize(WIDTH, HEIGHT - 137)
         page:SetPoint("TOPLEFT", quick, "TOPLEFT", 0, -137)
+        page.searchPage = name
         page:Hide()
         quick.pages[name] = page
     end
@@ -403,6 +469,9 @@ local function Build()
     Button(radar, "Explore tools", 14, -224, 260, function()
         if addon.VignetteRadarExploration then addon.VignetteRadarExploration.TogglePanel() end
     end)
+    Button(radar, "How to read the radar", 14, -253, 260, function()
+        if API.ShowGuide then API.ShowGuide(anchor) end
+    end)
 
     local layout = quick.pages.Layout
     Section(layout, "PANEL STYLE", -5)
@@ -412,12 +481,13 @@ local function Build()
     Check(layout, "vignetteRadarNorthUp", "Keep north at the top", 14, -64)
     Check(layout, "vignetteRadarCircleOnly", "Show only the radar", 14, -94)
     Check(layout, "vignetteRadarHoverTools", "Hover tools in radar-only view", 14, -121)
-    Label(layout, "Drag the radar edges to change its size.", 14, -157, 10)
-    Label(layout, "Your view, position and size are saved.", 14, -176, 10)
+    Label(layout, "Drag the radar edges to change its size.", 14, -151, 10)
+    Check(layout, "vignetteRadarControlsVisible", "Show buttons in full views", 14, -171)
     Section(layout, "PANEL SIZE", -202)
     Stepper(layout, "vignetteRadarScale", "Frame scale", -225,
         { .8, .9, 1, 1.1, 1.2, 1.3, 1.4, 1.5, 1.6, 1.7, 1.8 },
         function(value) return math.floor(value * 100 + .5) .. "%" end)
+    Check(layout, "vignetteRadarIndependentViews", "Save zoom + size for each view", 14, -257)
 
     local alerts = quick.pages.Alerts
     Check(alerts, "vignetteRadarAlerts", "Pulse for new detections", 14, -3)
@@ -478,6 +548,7 @@ local function Build()
     themeScroll:EnableMouseWheel(true)
     local themeContent = CreateFrame("Frame", nil, themeScroll)
     themeContent:SetSize(THEME_VIEW_WIDTH, themeRows * THEME_ROW)
+    themeContent.searchPage = "Themes"
     themeScroll:SetScrollChild(themeContent)
     quick.themeScroll, quick.themeContent = themeScroll, themeContent
 
@@ -589,11 +660,12 @@ local function Build()
     Check(quests, "vignetteRadarQuestAreaColors", "Match areas to diamond colors", 14, -199)
     Stepper(quests, "vignetteRadarQuestHaloRadius", "Circle radius", -230,
         { 10, 20, 40, 80 }, function(value) return value .. " yd" end)
-    Button(quests, "Toggle quest key", 14, -258, 260, function()
+    Button(quests, "Quest key", 14, -258, 124, function()
         if addon.VignetteRadarAPI and addon.VignetteRadarAPI.ToggleQuestKey then
             addon.VignetteRadarAPI.ToggleQuestKey()
         end
     end)
+    Check(quests, "vignetteRadarQuestKeyProgress", "Progress", 147, -257, nil, 95)
 
     local wayfinding = quick.pages.Wayfinding
     Check(wayfinding, "vignetteRadarNextQuestStep", "Use Blizzard's next quest step", 14, -3)
@@ -605,16 +677,19 @@ local function Build()
     Choice(wayfinding, "vignetteRadarLensCategory", "quest", "Quests", 14, -169, 80)
     Choice(wayfinding, "vignetteRadarLensCategory", "rare", "Rares", 104, -169, 80)
     Choice(wayfinding, "vignetteRadarLensCategory", "treasure", "Treasure", 194, -169, 80)
-    Label(wayfinding, "Assign the key in WoW's AddOns key bindings.", 14, -197, 9)
-    Button(wayfinding, "Data status", 14, -220, 124, function(self)
+    Label(wayfinding, "Assign the key in WoW's AddOns key bindings.", 14, -194, 9)
+    Button(wayfinding, "Data status", 14, -211, 124, function(self)
         if addon.ToggleVignetteRadarStatus then addon.ToggleVignetteRadarStatus(self) end
     end)
-    Button(wayfinding, "Draft route", 150, -220, 124, function()
+    Button(wayfinding, "Draft route", 150, -211, 124, function()
         if addon.VignetteRadarExploration and addon.VignetteRadarExploration.OpenRouteDraft then
             addon.VignetteRadarExploration.OpenRouteDraft()
         end
     end)
-    Label(wayfinding, "Route distances are straight-line estimates.", 14, -251, 9)
+    Check(wayfinding, "vignetteRadarRouteAutoAdvance", "Advance route on arrival", 14, -236)
+    Choice(wayfinding, "vignetteRadarRouteArrivalRadius", 10, "10 yd", 14, -263, 80)
+    Choice(wayfinding, "vignetteRadarRouteArrivalRadius", 20, "20 yd", 104, -263, 80)
+    Choice(wayfinding, "vignetteRadarRouteArrivalRadius", 40, "40 yd", 194, -263, 80)
 
     local mapData = quick.pages["Map Data"]
     Section(mapData, "CHOOSE ONE MAP-DATA PACK", -3)
@@ -627,9 +702,17 @@ local function Build()
     mapData:SetScript("OnMouseWheel", ScrollPOI)
     quick.poiRows = {}
     for index = 1, 4 do
-        local row = Button(mapData, "", 14, -23 - (index - 1) * 27, 244, function(self)
-            if self.sourceID then Changed("vignetteRadarPOISource", self.sourceID) end
+        local row = Button(mapData, "", 14, -23 - (index - 1) * 27, 244, function(self, mouseButton)
+            if not self.sourceID then return end
+            if mouseButton == "RightButton" then
+                local poi = addon.VignetteRadarPOIs
+                local mapID = addon.VignetteRadarAPI.GetCurrentMapID()
+                if poi and poi.SetZoneChoice and poi.SetZoneChoice(mapID, self.sourceID) then
+                    Changed("vignetteRadarPOISource", "auto")
+                end
+            else Changed("vignetteRadarPOISource", self.sourceID) end
         end)
+        row:RegisterForClicks("LeftButtonUp", "RightButtonUp")
         row.optionKey = "vignetteRadarPOISource"
         row:EnableMouseWheel(true)
         row:SetScript("OnMouseWheel", ScrollPOI)
@@ -639,8 +722,8 @@ local function Build()
             GameTooltip:SetText(self.sourceID == "none" and "Hide map notes"
                 or self.sourceID == "auto" and "Auto: current zone" or self.sourceID, 1, 1, 1)
             GameTooltip:AddLine(self.sourceID == "auto"
-                and "Picks one enabled pack with notes for this map as you travel."
-                or "Only this one map-data pack is shown at a time.", .65, .78, .75, true)
+                and "Automatically pick a pack for each map."
+                or "Left-click: use everywhere. Right-click: use only in this zone.", .65, .78, .75, true)
             GameTooltip:Show()
         end)
         row:HookScript("OnLeave", function() if GameTooltip then GameTooltip:Hide() end end)
@@ -660,7 +743,57 @@ local function Build()
     Check(mapData, "vignetteRadarPOITypes", "Other notes", 147, -185, "note", 91)
     Check(mapData, "vignetteRadarPOIIcons", "Pack icons", 14, -218, nil, 95)
     Check(mapData, "vignetteRadarHideCleared", "Hide cleared", 147, -218, nil, 95)
-    quick.poiStatus = Label(mapData, "", 14, -253, 9, 260)
+    quick.poiStatus = Label(mapData, "", 14, -248, 9, 260)
+    Button(mapData, "Clear this zone's choice", 14, -262, 260, function()
+        local poi = addon.VignetteRadarPOIs
+        local mapID = addon.VignetteRadarAPI.GetCurrentMapID()
+        if poi and poi.SetZoneChoice and poi.SetZoneChoice(mapID, nil) then
+            addon.VignetteRadarAPI.Refresh(true)
+            RefreshPOISources()
+        end
+    end)
+
+    local status = quick.pages.Status
+    Section(status, "LIVE DIAGNOSTICS", -3)
+    status.diagnosticLines = {}
+    for index = 1, 9 do
+        status.diagnosticLines[index] = Label(status, "", 14, -22 - (index - 1) * 25, 9, 260)
+    end
+
+    local search = CreateFrame("Frame", nil, quick)
+    search:SetSize(WIDTH, HEIGHT - 137)
+    search:SetPoint("TOPLEFT", quick, "TOPLEFT", 0, -137)
+    search:Hide()
+    quick.pages.Search = search
+    Section(search, "FIND A SETTING", -3)
+    quick.searchInput = CreateFrame("EditBox", nil, search, "BackdropTemplate")
+    quick.searchInput:SetSize(260, 25)
+    quick.searchInput:SetPoint("TOPLEFT", 14, -24)
+    quick.searchInput:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8X8",
+        edgeFile = "Interface\\Buttons\\WHITE8X8", edgeSize = 1 })
+    quick.searchInput:SetBackdropColor(.03, .045, .05, 1)
+    quick.searchInput:SetBackdropBorderColor(.45, .60, .60, .45)
+    quick.searchInput:SetFont(FONT, 11, "")
+    quick.searchInput:SetTextInsets(7, 7, 0, 0)
+    quick.searchInput:SetAutoFocus(false)
+    quick.searchInput:SetMaxLetters(50)
+    quick.searchInput:SetScript("OnTextChanged", RefreshSearch)
+    quick.searchInput:SetScript("OnEscapePressed", function(self) self:ClearFocus(); SelectPage("Radar") end)
+    quick.searchInput:SetScript("OnEnterPressed", function(self) self:ClearFocus() end)
+    quick.searchRows = {}
+    for index = 1, 8 do
+        local row = addon.VignetteRadarControls.Button(search, "", 260, 23)
+        row:SetPoint("TOPLEFT", search, "TOPLEFT", 14, -57 - (index - 1) * 27)
+        row:SetScript("OnClick", function(self)
+            if self.result then SelectPage(self.result.page) end
+        end)
+        row:Hide()
+        quick.searchRows[index] = row
+    end
+    quick.searchHint = Label(search, "Type an option or button name.", 14, -275, 9, 260)
+    Button(status, "Refresh status", 14, -255, 260, function()
+        if API.RefreshStatus then API.RefreshStatus() end
+    end)
 
     local explore = quick.pages.Explore
     Check(explore, "vignetteRadarSmartZoom", "Smart zoom while moving", 14, -3)
@@ -691,6 +824,61 @@ local function Build()
     quick:SetScript("OnHide", API.Refresh)
     quick:Hide()
     return quick
+end
+
+function API.ShowGuide(anchorFrame)
+    if not guide then
+        guide = CreateFrame("Frame", "VignetteRadarGuidePanel", UIParent, "BackdropTemplate")
+        guide:SetSize(238, 211)
+        guide:SetFrameStrata("DIALOG")
+        guide:SetClampedToScreen(true)
+        guide:EnableMouse(true)
+        guide:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8X8",
+            edgeFile = "Interface\\Buttons\\WHITE8X8", edgeSize = 1 })
+        addon.VignetteRadarControls.PopupSurface(guide)
+        if type(UISpecialFrames) == "table" then
+            UISpecialFrames[#UISpecialFrames + 1] = "VignetteRadarGuidePanel"
+        end
+        local title = Label(guide, "READING YOUR RADAR", 14, -12, 11, 194)
+        guide.title = title
+        title:SetTextColor(addon.VignetteRadarStyle.Color("accent"))
+        local items = {
+            { "●", "World boss", "boss" },
+            { "●", "Rare", "rare" },
+            { "■", "Treasure or chest", "treasure" },
+            { "◇", "Quest (solid when complete)", "quest" },
+            { "○", "Saved map note", "other" },
+            { "~", "Shaded area: quest search zone", "quest" },
+        }
+        guide.symbols = {}
+        for index, item in ipairs(items) do
+            local symbol = Label(guide, item[1], 17, -38 - (index - 1) * 23, 13, 21)
+            symbol:SetTextColor(addon.VignetteRadarStyle.Color(item[3]))
+            guide.symbols[index] = { label = symbol, slot = item[3] }
+            Label(guide, item[2], 43, -39 - (index - 1) * 23, 10, 184)
+        end
+        Label(guide, "Click a marker to focus. Show All clears it.", 15, -184, 9, 211)
+        local close = addon.VignetteRadarControls.Button(guide, "×", 20, 20)
+        close:SetPoint("TOPRIGHT", -8, -7)
+        close:SetScript("OnClick", function() guide:Hide() end)
+        guide:Hide()
+    end
+    addon.VignetteRadarControls.RefreshPopupSurface(guide)
+    guide.title:SetTextColor(addon.VignetteRadarStyle.Color("accent"))
+    for _, symbol in ipairs(guide.symbols) do
+        symbol.label:SetTextColor(addon.VignetteRadarStyle.Color(symbol.slot))
+    end
+    guide:ClearAllPoints()
+    if anchorFrame then guide:SetPoint("TOPLEFT", anchorFrame, "TOPRIGHT", 8, 0)
+    else guide:SetPoint("CENTER", UIParent, "CENTER") end
+    guide:Show()
+end
+
+function API.ShowFirstRunGuide(anchorFrame)
+    local db = Settings()
+    if db.vignetteRadarGuideSeen then return end
+    db.vignetteRadarGuideSeen = true
+    API.ShowGuide(anchorFrame)
 end
 
 local function PositionAt(anchorFrame)

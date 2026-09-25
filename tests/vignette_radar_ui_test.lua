@@ -388,6 +388,11 @@ assert(panel.focusMeta.text:find("350 yd", 1, true) and panel.focusMeta.text:fin
     "focused live rare must show distance and available health")
 assert(panel.focusName.width == 172 and panel.focusMeta.width == 172,
     "long target text must stay bounded within the focus footer")
+addon.SetVignetteRadarCircleOnly(true)
+assert(panel.focusCard:IsShown() and panel.focusCard.name.text == liveInfo.rare.name
+    and panel.focusCard.showAll and not panel.focusReadout:IsShown(),
+    "radar-only focus needs a readable external card and a Show All control")
+addon.SetVignetteRadarCircleOnly(false)
 -- Field bottom is 81; divider y72 leaves 9px. Focus ends y66, above the zoom row.
 assert(panel.focusReadout.point[3] + panel.focusReadout.height <= 66
     and panel.focusDivider.point[3] == 72 and panel.field.point[3] >= 81,
@@ -1153,6 +1158,31 @@ assert(panel.questClip.clipsChildren and panel.questBlob:IsShown() and panel.que
 local oneQuest = C_QuestLog.GetQuestsOnMap
 C_QuestLog.GetQuestsOnMap = function() return {
     { questID = 12345, x = .52, y = .5, name = "Nearby quest" },
+    { questID = 12345, x = .48, y = .5, name = "Nearby quest" },
+    { questID = 12345, x = .52, y = .5, name = "Nearby quest" },
+} end
+addon.VignetteRadarAPI.Refresh(true)
+assert(panel.questDots[2] and panel.questDots[2]:IsShown()
+    and panel.questDots[2].quest.questID == 12345
+    and panel.questDots[2].quest.colorSlot == questDot.quest.colorSlot
+    and (not panel.questDots[3] or not panel.questDots[3]:IsShown())
+    and panel.summary.text == "1 QUEST IN RANGE"
+    and #panel.questBlob.drawnQuests == 1,
+    "separate objectives of one quest need separate dots but one quest count and blob")
+C_QuestLog.GetQuestsOnMap = function() return nil end
+C_QuestLog.GetNumQuestWatches = function() return 1 end
+C_QuestLog.GetQuestIDForQuestWatchIndex = function() return 12345 end
+C_QuestLog.GetNextWaypointForMap = function() return .53, .5 end
+addon.VignetteRadarAPI.Refresh(true)
+assert(panel.questDots[1]:IsShown() and panel.questDots[1].quest.mapX == .53
+    and (not panel.questDots[2] or not panel.questDots[2]:IsShown())
+    and panel.questBlob:IsShown(),
+    "a watched quest with only an objective waypoint must remain visible")
+C_QuestLog.GetNumQuestWatches = nil
+C_QuestLog.GetQuestIDForQuestWatchIndex = nil
+C_QuestLog.GetNextWaypointForMap = nil
+C_QuestLog.GetQuestsOnMap = function() return {
+    { questID = 12345, x = .52, y = .5, name = "Nearby quest" },
     { questID = 12346, x = .49, y = .5, name = "Second quest" },
 } end
 addon.VignetteRadarAPI.Refresh(true)
@@ -1647,9 +1677,19 @@ panel.settingsDot.scripts.OnClick(panel.settingsDot)
 local quick = assert(addon.VignetteRadarQuickConfig.GetPanel())
 assert(quick:IsShown() and quick.width == 288 and quick.height == 432,
     "the settings dot must open the narrow, self-contained panel")
+assert(quick.pages.Status and quick.pages.Search and quick.find,
+    "diagnostics and search must be reachable from the compact settings panel")
+quick.find.scripts.OnClick(quick.find)
+quick.searchInput:SetText("arrival")
+quick.searchInput.scripts.OnTextChanged()
+assert(quick.searchRows[1]:IsShown() and quick.searchRows[1].result.page == "Wayfinding",
+    "search must find a newly added route option without a slash command")
+quick.searchRows[1].scripts.OnClick(quick.searchRows[1])
+assert(quick.pages.Wayfinding:IsShown())
+quick.tabs.Radar.scripts.OnClick(quick.tabs.Radar)
 local tabCount, exposed, colorSlots = 0, {}, {}
 for _ in pairs(quick.tabs) do tabCount = tabCount + 1 end
-assert(tabCount == 11 and quick.pages.Themes and quick.pages.Guides and quick.pages.Explore
+assert(tabCount == 12 and quick.pages.Themes and quick.pages.Guides and quick.pages.Explore
     and quick.pages.Wayfinding and quick.pages["Map Data"],
     "compact settings must visibly include exploration controls")
 local escapePanels = {}
@@ -2100,6 +2140,8 @@ end
 local previewDots = trailPopup.rows[3]
 local oldGap = previewDots.marks[2].point[4] - previewDots.marks[1].point[4]
 local oldFade = previewDots.marks[1].vertexColor[4]
+assert(oldFade > .24,
+    "default trail previews must stay legible while still showing the fade")
 local oldTailAlpha = previewDots.marks[1].vertexColor[4]
 trailPopup.controls[5].plus.scripts.OnClick(trailPopup.controls[5].plus)
 assert(settings.vignetteRadarTrailTailFade == .51
@@ -2520,6 +2562,35 @@ VignetteRadar_RaiseLauncher("up")
 assert(not launcher:IsShown(), "the launcher must return to its visibility preference on release")
 settings.vignetteRadarLauncherVisible = true
 launcher:Show()
+
+local outsideClickEvents
+for _, object in ipairs(objects) do
+    if object.events and object.events.GLOBAL_MOUSE_DOWN then outsideClickEvents = object end
+end
+assert(outsideClickEvents and outsideClickEvents.scripts.OnEvent,
+    "radar popups need a click-outside event without a polling frame")
+local registrations = outsideClickEvents.eventRegistrationCalls
+quick:Show()
+addon.VignetteRadarQuickConfig.ShowGuide(panel.field)
+local guidePanel = assert(_G.VignetteRadarGuidePanel)
+assert(guidePanel:IsShown(), "the visual first-run guide must be reopenable")
+panel.settingsDot.hovered = true
+outsideClickEvents.scripts.OnEvent(outsideClickEvents, "GLOBAL_MOUSE_DOWN")
+assert(quick:IsShown(), "clicking a popup launch button must leave its toggle action in control")
+panel.settingsDot.hovered = false
+panel.frameToggle.hovered = true
+outsideClickEvents.scripts.OnEvent(outsideClickEvents, "GLOBAL_MOUSE_DOWN")
+assert(quick:IsShown(), "switching the outer frame must keep settings open")
+panel.frameToggle.hovered = false
+quick.hovered = true
+outsideClickEvents.scripts.OnEvent(outsideClickEvents, "GLOBAL_MOUSE_DOWN")
+assert(quick:IsShown() and guidePanel:IsShown(),
+    "clicks inside one related popup must keep the popup group open")
+quick.hovered = false
+outsideClickEvents.scripts.OnEvent(outsideClickEvents, "GLOBAL_MOUSE_DOWN")
+assert(not quick:IsShown() and not guidePanel:IsShown()
+    and outsideClickEvents.eventRegistrationCalls == registrations,
+    "a click elsewhere must dismiss popups without registering or unregistering events")
 
 local profileClock, performanceWarning = 0, nil
 debugprofilestop = function() profileClock = profileClock + 300; return profileClock end

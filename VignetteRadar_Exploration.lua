@@ -13,6 +13,7 @@ local MAX_PINS, MAX_ROUTE, MAX_JOURNAL, MAX_TRAIL = 60, 8, 100, 150
 local MAX_CUSTOM_PRESETS = 8
 local MAX_ROUTE_HISTORY = 20
 local routeBack, routeHistory = {}, {}
+local routeArrivalKey, routeArrivalOutside
 
 local function Settings() return addon.GetSettings() end
 local function Number(value)
@@ -253,6 +254,33 @@ function API.PopRouteStop()
     Refresh()
     return true
 end
+function API.CheckRouteArrival(player, mapID)
+    local db = Settings()
+    if db.vignetteRadarRouteAutoAdvance ~= true or not player then
+        routeArrivalKey, routeArrivalOutside = nil, nil
+        return false
+    end
+    local stop = db.vignetteRadarRoute[1]
+    local px, py = Number(player.worldX), Number(player.worldY)
+    local sx, sy = stop and Number(stop.worldX), stop and Number(stop.worldY)
+    if not (px and py and sx and sy and stop.mapID == mapID)
+        or (stop.instanceID and player.instanceID and stop.instanceID ~= player.instanceID) then
+        routeArrivalKey, routeArrivalOutside = nil, nil
+        return false
+    end
+    if routeArrivalKey ~= stop then routeArrivalKey, routeArrivalOutside = stop, false end
+    local distance = math.sqrt((px - sx)^2 + (py - sy)^2)
+    local radius = db.vignetteRadarRouteArrivalRadius
+    if distance > radius + 5 then routeArrivalOutside = true end
+    if not routeArrivalOutside or distance > radius then return false end
+    RememberRouteEdit()
+    routeBack[#routeBack + 1] = table.remove(db.vignetteRadarRoute, 1)
+    if #routeBack > MAX_ROUTE_HISTORY then table.remove(routeBack, 1) end
+    routeArrivalKey, routeArrivalOutside = nil, nil
+    Tell("Reached " .. (stop.name or "route stop") .. ". Next stop is ready; Back restores it.")
+    if API.RefreshPanel then API.RefreshPanel() end
+    return true
+end
 function API.BackRouteStop()
     local route = Settings().vignetteRadarRoute
     if #routeBack == 0 or #route >= MAX_ROUTE then return false end
@@ -470,6 +498,7 @@ local function BuildPanel()
     panel:SetBackdrop({ bgFile="Interface\\Buttons\\WHITE8X8", edgeFile="Interface\\Buttons\\WHITE8X8", edgeSize=1 })
     panel:SetBackdropColor(.035, .043, .049, .98)
     panel:SetBackdropBorderColor(.36, .59, .54, .45)
+    addon.VignetteRadarControls.PopupSurface(panel)
     panel:SetPoint("CENTER", UIParent, "CENTER", 0, 0)
     panel.rail = panel:CreateTexture(nil, "ARTWORK")
     panel.rail:SetPoint("TOPLEFT", 1, -1)
@@ -629,6 +658,7 @@ function API.RefreshPanel()
         local br, bg, bb = style.Color("background")
         panel:SetBackdropColor(math.min(.14, br * 2.7), math.min(.14, bg * 2.7),
             math.min(.14, bb * 2.7), .99)
+        addon.VignetteRadarControls.RefreshPopupSurface(panel)
         panel.title:SetTextColor(ar, ag, ab, 1)
         panel.rail:SetColorTexture(ar, ag, ab, .8)
         panel.headerLine:SetColorTexture(ar, ag, ab, .2)

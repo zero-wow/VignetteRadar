@@ -154,6 +154,31 @@ for _, layout in ipairs({ "classic", "squat", "compact" }) do
 end
 fresh.GetSettings()
 assert(defaults.vignetteRadarWorldMap == false, "world-map choice must persist when disabled")
+assert(defaults.vignetteRadarIndependentViews == false
+    and defaults.vignetteRadarControlsVisible == true
+    and defaults.vignetteRadarQuestKeyProgress == true
+    and defaults.vignetteRadarRouteAutoAdvance == false
+    and defaults.vignetteRadarRouteArrivalRadius == 20
+    and type(defaults.vignetteRadarPOIZoneSources) == "table",
+    "new navigation choices need safe defaults")
+local profiles = fresh.VignetteRadarViewProfiles
+defaults.vignetteRadarCircleOnly = false
+defaults.vignetteRadarLayout = "classic"
+defaults.vignetteRadarRange, defaults.vignetteRadarScale = 150, 1.2
+defaults.vignetteRadarControlsVisible = false
+defaults.vignetteRadarIndependentViews = true
+profiles.Switch(defaults, "squat")
+defaults.vignetteRadarLayout = "squat"
+defaults.vignetteRadarRange, defaults.vignetteRadarScale = 300, .9
+defaults.vignetteRadarControlsVisible = true
+profiles.Switch(defaults, "classic")
+defaults.vignetteRadarLayout = "classic"
+assert(defaults.vignetteRadarRange == 150 and defaults.vignetteRadarScale == 1.2
+    and defaults.vignetteRadarControlsVisible == false,
+    "switching layouts must restore zoom, scale, and button visibility")
+defaults.vignetteRadarIndependentViews = false
+defaults.vignetteRadarCircleOnly = true
+defaults.vignetteRadarControlsVisible = true
 assert(defaults.vignetteRadarEdgeCues and defaults.vignetteRadarEmptyHelp
     and defaults.vignetteRadarPeekEnabled and defaults.vignetteRadarHoverTools
     and defaults.vignetteRadarFollowTrackedQuest == false,

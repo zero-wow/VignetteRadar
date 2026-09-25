@@ -133,7 +133,16 @@ function addon.GetSettings()
     if type(db.vignetteRadarEmptyHelp) ~= "boolean" then db.vignetteRadarEmptyHelp = true end
     if type(db.vignetteRadarPeekEnabled) ~= "boolean" then db.vignetteRadarPeekEnabled = true end
     if type(db.vignetteRadarHoverTools) ~= "boolean" then db.vignetteRadarHoverTools = true end
+    if type(db.vignetteRadarControlsVisible) ~= "boolean" then db.vignetteRadarControlsVisible = true end
+    if type(db.vignetteRadarIndependentViews) ~= "boolean" then db.vignetteRadarIndependentViews = false end
+    if type(db.vignetteRadarViewProfiles) ~= "table" then db.vignetteRadarViewProfiles = {} end
+    if type(db.vignetteRadarQuestKeyProgress) ~= "boolean" then db.vignetteRadarQuestKeyProgress = true end
+    if type(db.vignetteRadarGuideSeen) ~= "boolean" then db.vignetteRadarGuideSeen = false end
+    if type(db.vignetteRadarRouteAutoAdvance) ~= "boolean" then db.vignetteRadarRouteAutoAdvance = false end
+    if db.vignetteRadarRouteArrivalRadius ~= 10 and db.vignetteRadarRouteArrivalRadius ~= 20
+        and db.vignetteRadarRouteArrivalRadius ~= 40 then db.vignetteRadarRouteArrivalRadius = 20 end
     if type(db.vignetteRadarPOISource) ~= "string" then db.vignetteRadarPOISource = "auto" end
+    if type(db.vignetteRadarPOIZoneSources) ~= "table" then db.vignetteRadarPOIZoneSources = {} end
     if type(db.vignetteRadarPOIIcons) ~= "boolean" then db.vignetteRadarPOIIcons = false end
     if type(db.vignetteRadarHideCleared) ~= "boolean" then db.vignetteRadarHideCleared = false end
     if type(db.vignetteRadarRecentKills) ~= "table" then db.vignetteRadarRecentKills = {} end
@@ -233,6 +242,45 @@ function addon.GetSettings()
         end
     end
     return db
+end
+
+-- View profiles are opt-in so existing saved layouts continue to share their
+-- range and scale until the player explicitly separates them.
+addon.VignetteRadarViewProfiles = {}
+function addon.VignetteRadarViewProfiles.Key(db)
+    return db.vignetteRadarCircleOnly and "radarOnly" or db.vignetteRadarLayout
+end
+function addon.VignetteRadarViewProfiles.Record(db)
+    if db.vignetteRadarIndependentViews ~= true then return end
+    local key = addon.VignetteRadarViewProfiles.Key(db)
+    db.vignetteRadarViewProfiles[key] = {
+        range = db.vignetteRadarRange, scale = db.vignetteRadarScale,
+        hoverTools = db.vignetteRadarHoverTools,
+        controlsVisible = db.vignetteRadarControlsVisible,
+    }
+end
+function addon.VignetteRadarViewProfiles.Switch(db, nextKey)
+    if db.vignetteRadarIndependentViews ~= true then return end
+    local profiles = db.vignetteRadarViewProfiles
+    addon.VignetteRadarViewProfiles.Record(db)
+    local saved = profiles[nextKey]
+    if type(saved) ~= "table" then
+        profiles[nextKey] = { range = db.vignetteRadarRange, scale = db.vignetteRadarScale,
+            hoverTools = db.vignetteRadarHoverTools,
+            controlsVisible = db.vignetteRadarControlsVisible }
+        return
+    end
+    for _, supported in ipairs(addon.VignetteRadarRanges) do
+        if saved.range == supported then db.vignetteRadarRange = supported; break end
+    end
+    if type(saved.scale) == "number" and saved.scale == saved.scale
+        and saved.scale ~= math.huge and saved.scale ~= -math.huge then
+        db.vignetteRadarScale = math.max(.8, math.min(1.8, saved.scale))
+    end
+    if type(saved.hoverTools) == "boolean" then db.vignetteRadarHoverTools = saved.hoverTools end
+    if type(saved.controlsVisible) == "boolean" then
+        db.vignetteRadarControlsVisible = saved.controlsVisible
+    end
 end
 
 addon.GetSettings()

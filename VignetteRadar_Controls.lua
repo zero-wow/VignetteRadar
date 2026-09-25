@@ -5,6 +5,36 @@ local Controls = {}
 addon.VignetteRadarControls = Controls
 local ACCENT = { 0.05, 0.82, 0.62 }
 local controls = {}
+local POPUP_FACE = "Interface\\AddOns\\VignetteRadar\\Media\\radar-rounded-square.tga"
+local POPUP_EDGE = "Interface\\AddOns\\VignetteRadar\\Media\\radar-rounded-border.tga"
+local BUTTON_FACE = "Interface\\AddOns\\VignetteRadar\\Media\\control-rounded-square.tga"
+
+function Controls.RefreshPopupSurface(frame)
+    if not (frame and frame.popupFace) then return end
+    local style = addon.VignetteRadarStyle
+    local br, bg, bb = .025, .032, .038
+    local ar, ag, ab = ACCENT[1], ACCENT[2], ACCENT[3]
+    if style then
+        br, bg, bb = style.Color("background")
+        ar, ag, ab = style.Color("accent")
+    end
+    frame.popupFace:SetVertexColor(math.min(.14, br * 2.7), math.min(.14, bg * 2.7),
+        math.min(.14, bb * 2.7), .99)
+    frame.popupEdge:SetVertexColor(ar, ag, ab, .40)
+    if frame.SetBackdropColor then frame:SetBackdropColor(0, 0, 0, 0) end
+    if frame.SetBackdropBorderColor then frame:SetBackdropBorderColor(0, 0, 0, 0) end
+end
+
+function Controls.PopupSurface(frame)
+    if frame.popupFace then return end
+    frame.popupFace = frame:CreateTexture(nil, "BACKGROUND")
+    frame.popupFace:SetAllPoints(frame)
+    frame.popupFace:SetTexture(POPUP_FACE)
+    frame.popupEdge = frame:CreateTexture(nil, "BORDER")
+    frame.popupEdge:SetAllPoints(frame)
+    frame.popupEdge:SetTexture(POPUP_EDGE)
+    Controls.RefreshPopupSurface(frame)
+end
 
 function Controls.RefreshTheme()
     if addon.VignetteRadarStyle then
@@ -24,6 +54,12 @@ function Controls.Button(parent, title, width, height)
         edgeFile = "Interface\\Buttons\\WHITE8X8",
         edgeSize = 1,
     })
+    button.face = button:CreateTexture(nil, "BACKGROUND")
+    button.face:SetAllPoints(button)
+    button.face:SetTexture(BUTTON_FACE)
+    button.edge = button:CreateTexture(nil, "BORDER")
+    button.edge:SetAllPoints(button)
+    button.edge:SetTexture(POPUP_EDGE)
     button.label = button:CreateFontString(nil, "OVERLAY")
     local font = EllesmereUI and (EllesmereUI.EXPRESSWAY or EllesmereUI._font)
         or STANDARD_TEXT_FONT or "Fonts\\FRIZQT__.TTF"
@@ -51,19 +87,21 @@ function Controls.Button(parent, title, width, height)
         button.selection:SetColorTexture(ACCENT[1], ACCENT[2], ACCENT[3], .8)
         button.selection:SetShown(enabled and selected == true)
         if pressed then
-            button:SetBackdropColor(0.018, 0.055, 0.05, 1)
-            button:SetBackdropBorderColor(ACCENT[1], ACCENT[2], ACCENT[3], 0.85)
+            button.face:SetVertexColor(ACCENT[1], ACCENT[2], ACCENT[3], .42)
+            button.edge:SetVertexColor(ACCENT[1], ACCENT[2], ACCENT[3], .85)
             button.label:SetTextColor(0.95, 1, 0.98, 1)
         elseif hovered or selected then
-            button:SetBackdropColor(0.035, 0.075, 0.065, 0.98)
-            button:SetBackdropBorderColor(ACCENT[1], ACCENT[2], ACCENT[3], hovered and 0.65 or 0.42)
+            button.face:SetVertexColor(ACCENT[1], ACCENT[2], ACCENT[3], hovered and .30 or .22)
+            button.edge:SetVertexColor(ACCENT[1], ACCENT[2], ACCENT[3], hovered and .65 or .42)
             button.label:SetTextColor(hovered and 0.86 or ACCENT[1], hovered and 1 or ACCENT[2],
                 hovered and 0.95 or ACCENT[3], 1)
         else
-            button:SetBackdropColor(0.025, 0.03, 0.035, 0.96)
-            button:SetBackdropBorderColor(1, 1, 1, 0.14)
+            button.face:SetVertexColor(.12, .16, .17, .75)
+            button.edge:SetVertexColor(.60, .70, .70, .13)
             button.label:SetTextColor(0.72, 0.8, 0.79, 1)
         end
+        button:SetBackdropColor(0, 0, 0, 0)
+        button:SetBackdropBorderColor(0, 0, 0, 0)
     end
     button.RefreshAppearance = Refresh
 

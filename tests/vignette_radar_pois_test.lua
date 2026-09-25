@@ -1,4 +1,6 @@
 local addon = {}
+local settings = { vignetteRadarPOIZoneSources = {} }
+addon.GetSettings = function() return settings end
 assert(loadfile("VignetteRadar_POIs.lua"))("VignetteRadar", addon)
 local pois = addon.VignetteRadarPOIs
 assert(#pois.Sources() == 0 and #pois.Collect(123, "Missing", function() end, function() end) == 0)
@@ -85,6 +87,11 @@ assert(#zoneSources == 1 and zoneSources[1].id == "Midnight"
     "current-zone sources must exclude unrelated and disabled packs")
 local chosen, dataMap = pois.ResolveSource(123, "auto")
 assert(chosen == "Midnight" and dataMap == 123)
+assert(pois.SetZoneChoice(123, "Midnight") and pois.ZoneChoice(123) == "Midnight"
+    and pois.ResolveSource(123, "auto") == "Midnight")
+assert(pois.SetZoneChoice(123, "none") and pois.ResolveSource(123, "auto") == nil)
+assert(pois.SetZoneChoice(123, nil) and pois.ZoneChoice(123) == nil
+    and pois.ResolveSource(123, "auto") == "Midnight")
 chosen, dataMap = pois.ResolveSource(125, "auto")
 assert(chosen == "OtherZone" and dataMap == 124,
     "a zone pack on the parent map must be found from a nested map")

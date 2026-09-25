@@ -116,6 +116,21 @@ assert(E.UndoRouteEdit() and #E.GetRoute(10) == 1
     "the entire applied draft must undo as one action")
 assert(E.ClearRoute())
 
+-- Arrival is opt-in and crossing-based: entering the radius advances one stop,
+-- while loading beside a stop does not silently consume the route.
+assert(E.AddRouteStop({ name="Arrival stop", mapID=10, worldX=300, worldY=300, instanceID=7 }))
+db.vignetteRadarRouteAutoAdvance = true
+db.vignetteRadarRouteArrivalRadius = 20
+player.worldX, player.worldY = 300, 300
+assert(not E.CheckRouteArrival(player, 10) and #E.GetRoute(10) == 1)
+player.worldX = 330
+assert(not E.CheckRouteArrival(player, 10))
+player.worldX = 319
+assert(E.CheckRouteArrival(player, 10) and #E.GetRoute(10) == 0)
+assert(E.BackRouteStop() and E.GetRoute(10)[1].name == "Arrival stop")
+E.ClearRoute()
+db.vignetteRadarRouteAutoAdvance = false
+
 db.vignetteRadarApproachAlerts = true
 db.vignetteRadarApproachDistance = 50
 assert(E.Watch(target))

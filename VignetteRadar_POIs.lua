@@ -183,9 +183,12 @@ function POIs.ResolveSource(mapID, chosen)
     if chosen == "none" or type(mapID) ~= "number" then return nil end
     local best, sticky, bestAffinity = nil, nil, -1
     local entries = POIs.ZoneSources(mapID)
+    local zoneChoice = chosen == "auto" and addon.GetSettings().vignetteRadarPOIZoneSources[mapID]
+    if zoneChoice == "none" then return nil end
     local names = chosen == "auto" and MapNameHints(mapID) or {}
     for _, entry in ipairs(entries) do
         if chosen == entry.id then return entry.id, entry.mapID end
+        if zoneChoice == entry.id and entry.enabled then return entry.id, entry.mapID end
         if chosen == "auto" and autoChoice and autoChoice.mapID == mapID
             and autoChoice.id == entry.id then sticky = entry end
         if chosen == "auto" then
@@ -203,6 +206,24 @@ function POIs.ResolveSource(mapID, chosen)
         and sticky.depth == best.depth then best = sticky end
     if chosen == "auto" then autoChoice = best and { mapID = mapID, id = best.id } or nil end
     return best and best.id or nil, best and best.mapID or nil
+end
+
+function POIs.ZoneChoice(mapID)
+    return type(mapID) == "number" and addon.GetSettings().vignetteRadarPOIZoneSources[mapID] or nil
+end
+function POIs.SetZoneChoice(mapID, choice)
+    if type(mapID) ~= "number" then return false end
+    if choice == "auto" then choice = nil end
+    if choice and choice ~= "none" then
+        local available = false
+        for _, entry in ipairs(POIs.ZoneSources(mapID)) do
+            if entry.id == choice and entry.enabled then available = true; break end
+        end
+        if not available then return false end
+    end
+    addon.GetSettings().vignetteRadarPOIZoneSources[mapID] = choice
+    autoChoice = nil
+    return true
 end
 
 local function GroupName(node)

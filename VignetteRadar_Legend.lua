@@ -454,6 +454,7 @@ local function EnsurePanel()
     if panel.SetClampedToScreen then panel:SetClampedToScreen(true) end
     if panel.EnableMouse then panel:EnableMouse(true) end
     Surface(panel)
+    if addon.VignetteRadarControls then addon.VignetteRadarControls.PopupSurface(panel) end
 
     panel.accent = panel:CreateTexture(nil, "OVERLAY")
     panel.accent:SetPoint("TOPLEFT", 1, -1)
@@ -590,6 +591,7 @@ end
 
 local function RefreshQuestRows()
     if not questPanel then return end
+    if addon.VignetteRadarControls then addon.VignetteRadarControls.RefreshPopupSurface(questPanel) end
     local count = #questEntries
     local visible = math.min(QUEST_VISIBLE_ROWS, count)
     local height = 54 + math.max(1, visible) * QUEST_ROW_STEP
@@ -628,6 +630,13 @@ local function RefreshQuestRows()
                 and tostring(entry.colorSlot or 1) or "")
             row.halo:SetVertexColor(r, g, b, .14)
             row.name:SetText(entry.name)
+            local exploration = addon.VignetteRadarExploration
+            local progress = addon.GetSettings().vignetteRadarQuestKeyProgress
+                and exploration and exploration.ObjectiveProgress
+                and exploration.ObjectiveProgress(entry.questID)
+            row.progress:SetText(progress and progress:match("^%d+/%d+") or "")
+            row.name:SetWidth(progress and 127 or 164)
+            row.progress:SetTextColor(r, g, b, .88)
             local selected = focused == entry.questID
             row.focus:SetColorTexture(r, g, b, .85)
             row.focus:SetShown(selected)
@@ -663,6 +672,7 @@ local function EnsureQuestPanel()
     if questPanel.SetClampedToScreen then questPanel:SetClampedToScreen(true) end
     if questPanel.EnableMouse then questPanel:EnableMouse(true) end
     Surface(questPanel)
+    if addon.VignetteRadarControls then addon.VignetteRadarControls.PopupSurface(questPanel) end
     questPanel.accent = questPanel:CreateTexture(nil, "OVERLAY")
     questPanel.accent:SetPoint("TOPRIGHT", -1, -1)
     questPanel.accent:SetPoint("BOTTOMRIGHT", -1, 1)
@@ -712,7 +722,11 @@ local function EnsureQuestPanel()
         row.number:SetTextColor(.03, .04, .05, 1)
         row.name = Text(row, 10, "")
         row.name:SetPoint("LEFT", 30, 0)
-        row.name:SetWidth(164)
+        row.name:SetWidth(127)
+        row.progress = Text(row, 9, "")
+        row.progress:SetPoint("RIGHT", -8, 0)
+        row.progress:SetWidth(35)
+        row.progress:SetJustifyH("RIGHT")
         row:SetScript("OnEnter", function(self)
             self.hover:Show()
             if not (self.entry and GameTooltip) then return end
@@ -722,6 +736,12 @@ local function EnsureQuestPanel()
                 or "In progress · hollow diamond", .68, .82, .8)
             if self.entry.distance then
                 GameTooltip:AddLine(math.floor(self.entry.distance + .5) .. " yd from you", .72, .76, .78)
+            end
+            local exploration = addon.VignetteRadarExploration
+            if exploration and exploration.ObjectiveLines then
+                for _, objective in ipairs(exploration.ObjectiveLines(self.entry.questID)) do
+                    GameTooltip:AddLine(objective, .75, .82, .83, true)
+                end
             end
             GameTooltip:AddLine("Click to spotlight; click again to clear.", .6, .8, .72, true)
             GameTooltip:Show()
@@ -772,6 +792,7 @@ end
 function API.Refresh()
     local settings = API.ApplyDefaults()
     if not panel then return end
+    if addon.VignetteRadarControls then addon.VignetteRadarControls.RefreshPopupSurface(panel) end
     local highlight = API.GetHighlight()
     local style = addon.VignetteRadarStyle
     local accentRed, accentGreen, accentBlue = ACCENT[1], ACCENT[2], ACCENT[3]

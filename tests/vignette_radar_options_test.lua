@@ -158,7 +158,7 @@ for _, pageName in ipairs({ "Radar", "Layout", "Alerts", "Behavior", "Quests", "
         if object.parent == page and (object.kind == "Button" or object.kind == "CheckButton") then
             local x1, y1, x2, y2 = rect(object)
             assert(x1 >= 18 and x2 <= 496 and y1 >= 111
-                and y2 <= (pageName == "Quests" and 338 or 310),
+                and y2 <= ((pageName == "Quests" or pageName == "Layout") and 338 or 310),
                 pageName .. " control escapes the content gutter or footer space: " .. tostring(object.text))
             for _, other in ipairs(pageControls) do
                 assert(not overlaps(object, other), pageName .. " has overlapping hit targets")

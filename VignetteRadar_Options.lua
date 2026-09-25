@@ -35,6 +35,7 @@ local function Refresh()
         local br, bg, bb = style.Color("background")
         panel:SetBackdropColor(math.min(.14, br * 2.7), math.min(.14, bg * 2.7),
             math.min(.14, bb * 2.7), .99)
+        addon.VignetteRadarControls.RefreshPopupSurface(panel)
         panel.rail:SetColorTexture(ar, ag, ab, .8)
         panel.headerLine:SetColorTexture(ar, ag, ab, .24)
         panel.tabLine:SetColorTexture(ar, ag, ab, .16)
@@ -96,6 +97,10 @@ local function AddCheckbox(parent, key, title, x, y, subkey, labelWidth, present
         else
             addon.GetSettings()[key] = enabled
         end
+        if addon.VignetteRadarViewProfiles and ((key == "vignetteRadarIndependentViews" and enabled)
+            or key == "vignetteRadarHoverTools" or key == "vignetteRadarControlsVisible") then
+            addon.VignetteRadarViewProfiles.Record(addon.GetSettings())
+        end
         if presentationOnly and type(addon.RefreshVignetteRadar) == "function" then
             addon.RefreshVignetteRadar(false)
             Refresh()
@@ -153,6 +158,7 @@ local function StepRange(direction)
             local nextRangeValue = ranges[index + direction]
             if nextRangeValue then
                 db.vignetteRadarRange = nextRangeValue
+                if addon.VignetteRadarViewProfiles then addon.VignetteRadarViewProfiles.Record(db) end
                 Changed()
             end
             return
@@ -176,6 +182,7 @@ local function BuildPanel()
     panel:SetSize(520, 365)
     panel:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8X8",
         edgeFile = "Interface\\Buttons\\WHITE8X8", edgeSize = 1 })
+    addon.VignetteRadarControls.PopupSurface(panel)
     panel:SetBackdropColor(.035, .043, .049, .99)
     panel:SetBackdropBorderColor(1, 1, 1, .22)
     panel:Hide()
@@ -278,7 +285,11 @@ local function BuildPanel()
     AddCheckbox(layout, "vignetteRadarHoverTools", "Hover tools in square view", 258, -229, nil, 205)
     AddCheckbox(layout, "vignetteRadarCircleOnly", "Radar-only view", 18, -264, nil, 185, true)
     AddCheckbox(layout, "vignetteRadarPeekEnabled", "Hold-key full radar peek", 258, -264, nil, 205)
-    AddFooter(layout, "Drag the radar's edges or corners to resize it. Your size is saved.")
+    AddCheckbox(layout, "vignetteRadarIndependentViews", "Save zoom and size per view", 18, -296, nil, 250)
+    AddCheckbox(layout, "vignetteRadarControlsVisible", "Show full-view buttons", 258, -296, nil, 205)
+    local layoutFooter = AddFooter(layout, "Drag the radar's edges or corners to resize it.")
+    layoutFooter:ClearAllPoints()
+    layoutFooter:SetPoint("TOPLEFT", layout, "TOPLEFT", 24, -339)
 
     local alerts = AddPage("Alerts", 3)
     AddCheckbox(alerts, "vignetteRadarAlerts", "Pulse for newly seen vignettes", 18, -118)
@@ -335,6 +346,7 @@ local function BuildPanel()
     AddChoice(quests, "vignetteRadarQuestHaloRadius", 40, "40", 404, -250, 39)
     AddChoice(quests, "vignetteRadarQuestHaloRadius", 80, "80", 452, -250, 39)
     AddCheckbox(quests, "vignetteRadarQuestAreaColors", "Match areas to diamond colors", 258, -282, nil, 205)
+    AddCheckbox(quests, "vignetteRadarQuestKeyProgress", "Progress in quest key", 18, -282, nil, 203)
     AddButton(quests, "Toggle quest key", 18, -313, 203, function()
         if addon.VignetteRadarAPI and addon.VignetteRadarAPI.ToggleQuestKey then
             addon.VignetteRadarAPI.ToggleQuestKey()
