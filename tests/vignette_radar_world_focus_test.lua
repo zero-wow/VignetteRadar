@@ -6,7 +6,7 @@ local settings = {
     vignetteRadarWorldFocusSavedNotes = true,
     vignetteRadarWorldFocusZygor = true,
     vignetteRadarWorldFocusArrivalRadius = 20,
-    vignetteRadarAutoRouteArrivalRadius = 3,
+    vignetteRadarAutoRouteArrivalRadius = 10,
     vignetteRadarAutoRouteMapNotes = true,
 }
 addon.GetSettings = function() return settings end
@@ -115,13 +115,13 @@ assert(focus.ToggleRoute() and focus.IsRouteActive() and not focus.IsRoutePaused
     "resuming should continue the paused route")
 focus.Sync(123, { worldX = nil, worldY = nil, instanceID = 42 }, { rareA, rareB }, {}, {})
 focus.Sync(123, player, { rareA, rareB }, {}, { rareNote })
-player.worldX = 596.9
+player.worldX = 589.9
 focus.Sync(123, player, { rareA, rareB }, {}, { rareNote })
 assert(waypoint.position.x == .6,
-    "the current map pin must remain until Auto Route is within 3 yards")
-player.worldX = 597.1
+    "the current map pin must remain until Auto Route is within 10 yards")
+player.worldX = 590.1
 focus.Sync(123, player, { rareA, rareB }, {}, { rareNote })
-assert(waypoint.position.x == .8, "Auto Route should advance after entering 3 yards")
+assert(waypoint.position.x == .8, "Auto Route should advance after entering 10 yards")
 player.worldX = 800
 focus.Sync(123, player, { rareA, rareB }, {}, { rareNote })
 assert(waypoint.position.x == .9, "rare route should continue into the selected map pack")
@@ -427,7 +427,7 @@ do
         "treasure", "loot:first", "First cache", 777
     nextChest.kind, nextChest.key, nextChest.name =
         "treasure", "loot:second", "Second cache"
-    player.worldX = 490
+    player.worldX = 489
     focus.Sync(123, player, {}, {}, { looted, nextChest })
     assert(focus.SelectNote(looted) and focus.ToggleRoute()
         and waypoint.position.x == .5)
@@ -444,6 +444,6 @@ do
     GetLootSourceInfo = function() return "GameObject-0-1-1-1-777-000" end
     focus.OnLootEvent("LOOT_OPENED")
     assert(focus.OnLootEvent("LOOT_SLOT_CLEARED") and waypoint.position.x == .6,
-        "looting the matched nearby treasure should advance even outside 3 yards")
+        "looting the matched nearby treasure should advance even outside 10 yards")
 end
 io.write("vignette radar World Focus tests passed\n")

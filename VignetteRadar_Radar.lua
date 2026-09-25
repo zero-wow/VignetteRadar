@@ -3072,9 +3072,9 @@ function routeMenu.CategoryButton(parent, kind, label, width)
     else
         button.icon:SetTexture("Interface\\AddOns\\VignetteRadar\\Media\\radar-corner-controls.tga")
     end
-    button.rim = button:CreateTexture(nil, "ARTWORK")
-    button.rim:SetAllPoints(button)
-    button.rim:SetTexture("Interface\\AddOns\\VignetteRadar\\Media\\radar-rounded-border.tga")
+    addon.VignetteRadarControls.RoundedStatusSurface(button)
+    button.face:Hide()
+    button.edge:Hide()
     function button:RefreshRouteTile()
         local style = addon.VignetteRadarStyle
         local r, g, b = ACCENT[1], ACCENT[2], ACCENT[3]
@@ -3087,11 +3087,14 @@ function routeMenu.CategoryButton(parent, kind, label, width)
         self.label:SetTextColor(selected and (r + 1) / 2 or .77,
             selected and (g + 1) / 2 or .84, selected and (b + 1) / 2 or .85, 1)
         self.selection:Hide()
-        self.face:SetVertexColor(r, g, b, selected and (paused and .10 or .22)
-            or hovered and .09 or .035)
-        self.edge:SetVertexColor(r, g, b, selected and .8 or hovered and .38 or .08)
-        self.rim:SetVertexColor(r, g, b, selected and (paused and .52 or .92)
-            or hovered and .32 or .07)
+        for _, texture in ipairs(self.statusSurface.face) do
+            texture:SetVertexColor(r, g, b, selected and (paused and .10 or .22)
+                or hovered and .09 or .035)
+        end
+        for _, texture in ipairs(self.statusSurface.edge) do
+            texture:SetVertexColor(r, g, b, selected and (paused and .52 or .92)
+                or hovered and .32 or .07)
+        end
         if kind == "zygor" then
             local state = (selected and 2 or 0) + (hovered and 1 or 0)
             self.icon:SetTexCoord((10 * 64 + 1) / 1024, (10 * 64 + 63) / 1024,
@@ -3239,7 +3242,12 @@ function routeMenu.Ensure()
             end, true)
     end
     Choice("zygor", "Zygor", 184, -77, 52, function()
+        local ok, reason = addon.VignetteRadarAPI.StartZygorRoute()
         routeMenu.ShowZygorPage()
+        if not ok then
+            routeMenu.popup.zygor.status:SetText(reason or "No mapped Zygor objective yet")
+            routeMenu.popup.zygor.status:SetTextColor(1, .63, .38, 1)
+        end
         return "page"
     end, true)
     Choice("previous", "Previous Point", 13, -137, 107, function()
@@ -3302,18 +3310,24 @@ function routeMenu.Ensure()
         return button
     end
     zygor.objective = ZygorButton("Selected Objective", 13, -45, 107, function()
+        local ready, reason = addon.VignetteRadarAPI.BindZygorGuide()
+        if not ready then return false, reason end
         local bridge = addon.VignetteRadarZygor
         if bridge.IsFollowing() then return bridge.SetMode("objective") end
         bridge.SetMode("objective")
         return bridge.Pin("objective")
     end)
     zygor.travel = ZygorButton("Next Travel Stop", 128, -45, 107, function()
+        local ready, reason = addon.VignetteRadarAPI.BindZygorGuide()
+        if not ready then return false, reason end
         local bridge = addon.VignetteRadarZygor
         if bridge.IsFollowing() then return bridge.SetMode("travel") end
         bridge.SetMode("travel")
         return bridge.Pin("travel")
     end)
     zygor.follow = ZygorButton("Follow Guide", 13, -73, 222, function()
+        local ready, reason = addon.VignetteRadarAPI.BindZygorGuide()
+        if not ready then return false, reason end
         local ok, reason = addon.VignetteRadarZygor.ToggleFollow()
         return ok, reason
     end)
@@ -3322,6 +3336,8 @@ function routeMenu.Ensure()
     zygor.rows = {}
     for index = 1, 4 do
         local row = ZygorButton("", 13, -124 - (index - 1) * 24, 210, function(self)
+            local ready, reason = addon.VignetteRadarAPI.BindZygorGuide()
+            if not ready then return false, reason end
             return addon.VignetteRadarZygor.Pin("objective", self.goalIndex)
         end)
         row:HookScript("OnEnter", function(self)
@@ -5979,6 +5995,21 @@ end
 addon.VignetteRadarAPI = {
     GetTargets = function() return activeTargets end,
     GetCurrentMapID = CurrentMapID,
+    BindZygorGuide = function()
+        local zygor = addon.VignetteRadarZygor
+        if not (zygor and _G.ZygorGuidesViewer) then
+            return false, "Zygor is not loaded"
+        end
+        if not zygor.Bind(MapToWorld, MapVector, CurrentMapID, RefreshZygorVisual) then
+            return false, "Zygor guide updates are unavailable"
+        end
+        return true
+    end,
+    StartZygorRoute = function()
+        local ready, reason = addon.VignetteRadarAPI.BindZygorGuide()
+        if not ready then return false, reason end
+        return addon.VignetteRadarZygor.StartObjectiveRoute()
+    end,
     RefreshMapData = function()
         if addon.VignetteRadarPOIs and addon.VignetteRadarPOIs.Invalidate then
             addon.VignetteRadarPOIs.Invalidate()
@@ -5988,10 +6019,9 @@ addon.VignetteRadarAPI = {
         return #activeMapNotes
     end,
     PinZygorStep = function()
-        local zygor = addon.VignetteRadarZygor
-        if not zygor then return false, "Zygor integration is unavailable" end
-        zygor.Bind(MapToWorld, MapVector, CurrentMapID, RefreshZygorVisual)
-        return zygor.Pin("objective")
+        local ready, reason = addon.VignetteRadarAPI.BindZygorGuide()
+        if not ready then return false, reason end
+        return addon.VignetteRadarZygor.Pin("objective")
     end,
     GetPlayerSnapshot = function() return PlayerSnapshot(CurrentMapID()) end,
     GetSelectableTargets = SelectableTargets,

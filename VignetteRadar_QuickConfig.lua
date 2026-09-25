@@ -73,7 +73,15 @@ local function Changed(key, value, subkey)
         db[key] = value == true
         addon.VignetteRadarAPI.Refresh(false)
     elseif key == "vignetteRadarFollowZygor" and addon.VignetteRadarZygor then
-        addon.VignetteRadarZygor.SetFollow(value)
+        local ready, reason = true, nil
+        if value then ready, reason = addon.VignetteRadarAPI.BindZygorGuide() end
+        if ready then
+            if quick then quick.zygorError = nil end
+            addon.VignetteRadarZygor.SetFollow(value)
+        else
+            db[key] = false
+            if quick then quick.zygorError = reason or "Zygor is unavailable" end
+        end
     elseif key == "vignetteRadarZygorMode" and addon.VignetteRadarZygor then
         addon.VignetteRadarZygor.SetMode(value)
     elseif key == "vignetteRadarCategories" and legend then
@@ -300,8 +308,9 @@ function API.Refresh()
         end
     end
     if quick.pages.Zygor and quick.pages.Zygor.status and addon.VignetteRadarZygor then
-        quick.pages.Zygor.status:SetText(addon.VignetteRadarZygor.GuideLabel()
-            .. "\n" .. addon.VignetteRadarZygor.Status())
+        quick.pages.Zygor.status:SetText(quick.zygorError
+            or addon.VignetteRadarZygor.GuideLabel()
+                .. "\n" .. addon.VignetteRadarZygor.Status())
         if quick.pages.Zygor.followButton then
             quick.pages.Zygor.followButton:SetText(addon.VignetteRadarZygor.IsPaused()
                 and "Resume Follow" or addon.VignetteRadarZygor.IsFollowing()
@@ -613,15 +622,15 @@ local function Build()
     Choice(zygor, "vignetteRadarZygorMode", "travel", "Travel Stop", 150, -99, 124)
     zygor.pinObjective = Button(zygor, "Pin Objective", 14, -133, 124, function()
         local bridge = addon.VignetteRadarZygor
-        local ok, reason
-        if bridge then ok, reason = bridge.Pin("objective") end
+        local ok, reason = addon.VignetteRadarAPI.BindZygorGuide()
+        if ok and bridge then ok, reason = bridge.Pin("objective") end
         API.Refresh()
         if not ok and reason then zygor.status:SetText(reason) end
     end)
     zygor.pinTravel = Button(zygor, "Pin Travel Stop", 150, -133, 124, function()
         local bridge = addon.VignetteRadarZygor
-        local ok, reason
-        if bridge then ok, reason = bridge.Pin("travel") end
+        local ok, reason = addon.VignetteRadarAPI.BindZygorGuide()
+        if ok and bridge then ok, reason = bridge.Pin("travel") end
         API.Refresh()
         if not ok and reason then zygor.status:SetText(reason) end
     end)
@@ -629,8 +638,10 @@ local function Build()
     zygor.status:SetHeight(43)
     zygor.status:SetWordWrap(true)
     zygor.followButton = Button(zygor, "Start Follow", 14, -221, 124, function()
-        addon.VignetteRadarZygor.ToggleFollow()
+        local ok, reason = addon.VignetteRadarAPI.BindZygorGuide()
+        if ok then ok, reason = addon.VignetteRadarZygor.ToggleFollow() end
         API.Refresh()
+        if not ok and reason then zygor.status:SetText(reason) end
     end)
     Button(zygor, "Back to World Focus", 150, -221, 124, function()
         SelectPage("World Focus")
@@ -653,10 +664,9 @@ local function Build()
     Choice(autoRoute, "vignetteRadarAutoRouteTravel", "ground", "Ground", 104, -129, 80)
     Choice(autoRoute, "vignetteRadarAutoRouteTravel", "flying", "Flying", 194, -129, 80)
     Section(autoRoute, "ARRIVAL DISTANCE", -161)
-    Choice(autoRoute, "vignetteRadarAutoRouteArrivalRadius", 3, "3 yd", 14, -179, 59)
-    Choice(autoRoute, "vignetteRadarAutoRouteArrivalRadius", 10, "10 yd", 81, -179, 59)
-    Choice(autoRoute, "vignetteRadarAutoRouteArrivalRadius", 20, "20 yd", 148, -179, 59)
-    Choice(autoRoute, "vignetteRadarAutoRouteArrivalRadius", 40, "40 yd", 215, -179, 59)
+    Choice(autoRoute, "vignetteRadarAutoRouteArrivalRadius", 10, "10 yd", 14, -179, 80)
+    Choice(autoRoute, "vignetteRadarAutoRouteArrivalRadius", 20, "20 yd", 104, -179, 80)
+    Choice(autoRoute, "vignetteRadarAutoRouteArrivalRadius", 40, "40 yd", 194, -179, 80)
     Button(autoRoute, "Start/Pause", 14, -207, 80, function()
         local focusAPI = addon.VignetteRadarWorldFocus
         if focusAPI then focusAPI.ToggleRoute() end

@@ -146,7 +146,12 @@ function API.SetFollow(enabled)
     if not ok and type(addon.ShowVignetteRadarRouteNote) == "function" then
         addon.ShowVignetteRadarRouteNote("ZYGOR FOLLOW", "Waiting · " .. (reason or "guide step"))
     end
-    return true, reason
+    return ok, reason
+end
+
+function API.StartObjectiveRoute()
+    Settings().vignetteRadarZygorMode = "objective"
+    return API.SetFollow(true)
 end
 
 function API.ToggleFollow()

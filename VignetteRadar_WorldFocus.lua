@@ -338,7 +338,7 @@ end
 
 local function ArrivalRadius()
     local settings = addon.GetSettings()
-    return route and (settings.vignetteRadarAutoRouteArrivalRadius or 3)
+    return route and (settings.vignetteRadarAutoRouteArrivalRadius or 10)
         or (settings.vignetteRadarWorldFocusArrivalRadius or 20)
 end
 

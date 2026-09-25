@@ -54,6 +54,11 @@ assert(#pinned == 2 and bridge.GuideLabel():find("Step 4", 1, true),
 bridge.SetMode("travel")
 assert(#pinned == 3 and pinned[3].name == "Travel Stop",
     "the selected follow mode should control the destination")
+bridge.SetFollow(false)
+assert(bridge.StartObjectiveRoute() and bridge.IsFollowing()
+    and settings.vignetteRadarZygorMode == "objective"
+    and pinned[#pinned].name == "Find the chest",
+    "choosing Zygor as a route should follow its selected objective and pin it immediately")
 local goals = bridge.Goals()
 assert(#goals == 2 and goals[1].mapped and not goals[1].complete
     and goals[2].complete, "picker rows should show mapped objectives and completion")

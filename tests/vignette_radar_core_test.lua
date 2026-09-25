@@ -56,8 +56,16 @@ fresh.GetSettings()
 assert(defaults.vignetteRadarQuestAreaColors == true,
     "an explicit later choice to color estimated circles must persist")
 defaults.vignetteRadarQuestAreaColors = false
-assert(defaults.vignetteRadarAutoRouteArrivalRadius == 3,
-    "Auto Route must wait for a three-yard arrival by default")
+assert(defaults.vignetteRadarAutoRouteArrivalRadius == 10,
+    "Auto Route must wait for a ten-yard arrival by default")
+defaults.vignetteRadarAutoRouteArrivalRadius = 3
+fresh.GetSettings()
+assert(defaults.vignetteRadarAutoRouteArrivalRadius == 10,
+    "an old three-yard choice should migrate to the new ten-yard minimum")
+defaults.vignetteRadarAutoRouteArrivalRadius = 20
+fresh.GetSettings()
+assert(defaults.vignetteRadarAutoRouteArrivalRadius == 20,
+    "an existing larger arrival distance should stay selected")
 assert(defaults.vignetteRadarRouteArrow == true,
     "new and migrated settings should show the mini route arrow by default")
 assert(defaults.vignetteRadarBeaconsEnabled == false

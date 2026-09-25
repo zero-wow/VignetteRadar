@@ -685,20 +685,24 @@ do
         and chooser.choices.zygor.point[4] + chooser.choices.zygor.width
             <= chooser.width - 12,
         "all four route choices need distinct artwork within the popup gutter")
+    assert(not chooser.choices.quest.face:IsShown() and not chooser.choices.quest.edge:IsShown()
+        and #chooser.choices.quest.statusSurface.face == 9
+        and #chooser.choices.quest.statusSurface.edge == 9,
+        "route tiles should use one complete rounded surface without the old square fill or underline")
     local originalChoice = addon.VignetteRadarWorldFocus.GetRouteChoice
     addon.VignetteRadarWorldFocus.GetRouteChoice = function() return "treasure", "active" end
     chooser.close.scripts.OnClick()
     panel.routeToggle.scripts.OnClick(panel.routeToggle, "RightButton")
     assert(chooser.choices.treasure._routeSelected
         and not chooser.choices.rare._routeSelected
-        and chooser.choices.treasure.rim.vertexColor[4] > .8,
+        and chooser.choices.treasure.statusSurface.edge[1].vertexColor[4] > .8,
         "the active route category needs a strong themed selection")
     addon.VignetteRadarWorldFocus.GetRouteChoice = function() return "quest", "paused" end
     chooser.close.scripts.OnClick()
     panel.routeToggle.scripts.OnClick(panel.routeToggle, "RightButton")
     assert(chooser.choices.quest._routeSelected
-        and chooser.choices.quest.rim.vertexColor[4] > .4
-        and chooser.choices.quest.rim.vertexColor[4] < .8,
+        and chooser.choices.quest.statusSurface.edge[1].vertexColor[4] > .4
+        and chooser.choices.quest.statusSurface.edge[1].vertexColor[4] < .8,
         "a paused route should keep its category selected with a quieter border")
     addon.VignetteRadarWorldFocus.GetRouteChoice = originalChoice
     local bridge = addon.VignetteRadarZygor
@@ -707,16 +711,21 @@ do
     chooser.close.scripts.OnClick()
     panel.routeToggle.scripts.OnClick(panel.routeToggle, "RightButton")
     assert(chooser.choices.zygor._routeSelected
-        and chooser.choices.zygor.rim.vertexColor[4] > .8,
+        and chooser.choices.zygor.statusSurface.edge[1].vertexColor[4] > .8,
         "following an active Zygor step should light its route choice")
     bridge.IsFollowing = originalFollowing
+    local routeAPI = addon.VignetteRadarAPI
+    local originalStartZygor, originalBindZygor = routeAPI.StartZygorRoute, routeAPI.BindZygorGuide
+    local startedZygor = 0
+    routeAPI.StartZygorRoute = function() startedZygor = startedZygor + 1; return true end
+    routeAPI.BindZygorGuide = function() return true end
     local originalPin = bridge.Pin
     local pinned
     bridge.Pin = function(mode) pinned = mode; return true end
     chooser.choices.zygor.scripts.OnClick()
-    assert(chooser:IsShown() and chooser.height == 300 and chooser.zygor:IsShown()
+    assert(startedZygor == 1 and chooser:IsShown() and chooser.height == 300 and chooser.zygor:IsShown()
         and not chooser.choices.rare:IsShown(),
-        "the route chooser should open a scrollable Zygor objective page")
+        "the Zygor route choice should activate Follow and open its objective picker")
     chooser.zygor.objective.scripts.OnClick()
     assert(pinned == "objective" and not chooser:IsShown(),
         "the selected objective action should pin and dismiss the chooser")
@@ -731,6 +740,7 @@ do
             .. tostring(chooser:IsShown()) .. ", " .. tostring(chooser.zygor.status.text))
     chooser.close.scripts.OnClick()
     bridge.Pin = originalPin
+    routeAPI.StartZygorRoute, routeAPI.BindZygorGuide = originalStartZygor, originalBindZygor
     local focus = addon.VignetteRadarWorldFocus
     local originalNearest, chosen = focus.StartNearest, nil
     focus.StartNearest = function(kind) chosen = kind; return true end
@@ -2057,6 +2067,9 @@ do
         and quickControl("Zygor", "vignetteRadarZygorMode", "travel"),
         "World Focus should open dedicated Zygor follow and destination controls")
     local bridge = addon.VignetteRadarZygor
+    local routeAPI = addon.VignetteRadarAPI
+    local originalBindZygor = routeAPI.BindZygorGuide
+    routeAPI.BindZygorGuide = function() return true end
     local originalPinZygor, pinZygorCalled = bridge.Pin, false
     bridge.Pin = function(mode)
         pinZygorCalled = mode == "objective"
@@ -2071,6 +2084,7 @@ do
     assert(quick.pages.Zygor.status.text == "Zygor has no active guide waypoint",
         "the settings action must show a persistent explanation when pinning fails")
     bridge.Pin = originalPinZygor
+    routeAPI.BindZygorGuide = originalBindZygor
 end
 quick.tabs.Explore.scripts.OnClick(quick.tabs.Explore)
 assert(quick.pages.Explore:IsShown() and quickControl("Explore", "vignetteRadarBreadcrumbs")
@@ -2561,7 +2575,7 @@ for _, control in ipairs(trailPopup.controls) do
             "trail steppers must use bounded, borderless radar glyphs")
     end
 end
-local threeYards = quickControl("Auto Route", "vignetteRadarAutoRouteArrivalRadius", 3)
+local tenYards = quickControl("Auto Route", "vignetteRadarAutoRouteArrivalRadius", 10)
 do
     local routeArrowCheck = quickControl("Auto Route", "vignetteRadarRouteArrow")
     local worldPinCheck = quickControl("Auto Route", "vignetteRadarWorldFocusThemedWaypoint")
@@ -2572,10 +2586,10 @@ do
             <= quick.width - 14,
         "the mini route arrow toggle must fit beside the world-pin toggle")
 end
-assert(threeYards and threeYards.width == 59 and threeYards.point[4] == 14
+assert(tenYards and tenYards.width == 80 and tenYards.point[4] == 14
     and -quick.pages["Auto Route"].status.point[5]
         + quick.pages["Auto Route"].status.height <= quick.pages["Auto Route"].height - 10,
-    "the three-yard route setting and status must fit inside the compact panel")
+    "the ten-yard route setting and status must fit inside the compact panel")
 local tailMinus = trailPopup.controls[5].minus
 local originalSetEnabled = tailMinus.SetEnabled
 local enableCalls = 0
