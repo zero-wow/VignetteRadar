@@ -194,4 +194,11 @@ assert(guide and guide.kind == "guide" and guide.worldX == 600
     and guide.name == "Find the quest giver"
     and not focus.ZygorNote(124, function() error("wrong map") end, function() end),
     "only Zygor's current, same-map waypoint should become an optional guide dot")
+settings.vignetteRadarWorldFocusZygor = false
+assert(not focus.ZygorNote(123, function() error("hidden guide") end, function() end),
+    "the guide dot toggle should still hide Zygor from the radar")
+assert(focus.ZygorNote(123, function(_, vector)
+    return vector.x * 1000, vector.y * 1000, 42
+end, function(x, y) return { x = x, y = y } end, true),
+    "directly pinning Zygor should work even when its guide dot is hidden")
 io.write("vignette radar World Focus tests passed\n")

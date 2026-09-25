@@ -609,8 +609,8 @@ function API.Advance()
     return ok
 end
 
-function API.ZygorNote(mapID, mapToWorld, mapVector)
-    if addon.GetSettings().vignetteRadarWorldFocusZygor ~= true then return nil end
+function API.ZygorNote(mapID, mapToWorld, mapVector, allowHidden)
+    if not allowHidden and addon.GetSettings().vignetteRadarWorldFocusZygor ~= true then return nil end
     local zgv = _G.ZygorGuidesViewer
     local ok, waypoint, step = pcall(function()
         return zgv and zgv.Pointer and zgv.Pointer.current_waypoint, zgv and zgv.CurrentStep

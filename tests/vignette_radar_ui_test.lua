@@ -617,6 +617,11 @@ assert(panel.routeToggle.backdrop == nil and #panel.routeToggle.strokes == 2
     and #panel.routeToggle.routeDots == 3 and panel.routeToggle.glow
     and panel.routeToggle.clickButtons[2] == "RightButtonUp",
     "Auto Route must use the radar toolbar's line artwork and offer settings on right-click")
+local routeHover = panel.hoverTools[8]
+assert(routeHover.toolID == "route" and #routeHover.routeRing == 16
+    and #routeHover.routeDots == 3 and #routeHover.routeStrokes == 2
+    and routeHover.routeUnderline and not routeHover.back,
+    "the radar-only route control should share the other hover icons' circular outline")
 assert(not panel.zoomIn._enabled and panel.zoomIn.strokes[1].color[4] < .4,
     "the zoom-in icon must visibly dim at the closest range")
 panel.zoomOut.scripts.OnEnter(panel.zoomOut)
@@ -1828,6 +1833,19 @@ local function quickControl(page, key, value)
             and (value == nil or object.optionValue == value) then return object end
     end
 end
+do
+    local zygorCheck = assert(quickControl("World Focus", "vignetteRadarWorldFocusZygor"))
+    local pinZygor = assert(quick.pages["World Focus"].pinZygor)
+    assert(zygorCheck.label.parent.width == 145
+        and zygorCheck.label.parent.point[4] + zygorCheck.label.parent.width < pinZygor.point[4]
+        and pinZygor.point[4] + pinZygor.width <= quick.width - 14,
+        "the direct Zygor pin action must fit beside its toggle with a visible gutter")
+    local originalPinZygor, pinZygorCalled = addon.VignetteRadarAPI.PinZygorStep, false
+    addon.VignetteRadarAPI.PinZygorStep = function() pinZygorCalled = true; return true end
+    pinZygor.scripts.OnClick()
+    assert(pinZygorCalled, "the Zygor action must pin the current guide step directly")
+    addon.VignetteRadarAPI.PinZygorStep = originalPinZygor
+end
 quick.tabs.Explore.scripts.OnClick(quick.tabs.Explore)
 assert(quick.pages.Explore:IsShown() and quickControl("Explore", "vignetteRadarBreadcrumbs")
     and quickControl("Explore", "vignetteRadarTrailStyle").text == "Styles & flow",
@@ -1927,6 +1945,16 @@ assert(panel.zoomOut.strokes[1].color[1] == themedRed
     and panel.zoomOut.strokes[1].color[3] == themedBlue
     and panel.compass.glow.vertexColor[1] == themedRed,
     "borderless footer icons must follow the selected color theme")
+panel.routeToggle.scripts.OnEnter(panel.routeToggle)
+routeHover.scripts.OnEnter(routeHover)
+assert(panel.routeToggle.strokes[1].color[1] == themedRed
+    and panel.routeToggle.strokes[1].color[2] == themedGreen
+    and panel.routeToggle.strokes[1].color[3] == themedBlue
+    and routeHover.routeStrokes[1].color[1] == themedRed
+    and routeHover.routeRing[1].color[1] == themedRed,
+    "Auto Route artwork in both layouts must follow the active theme")
+routeHover.scripts.OnLeave(routeHover)
+panel.routeToggle.scripts.OnLeave(panel.routeToggle)
 panel.zoomOut.scripts.OnLeave(panel.zoomOut)
 local iconToggle = quickControl("Themes", "vignetteRadarShapes")
 iconToggle:SetChecked(false)

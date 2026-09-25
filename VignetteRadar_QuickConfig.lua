@@ -540,7 +540,15 @@ local function Build()
     Check(focus, "vignetteRadarWorldFocusAutoAdvance", "Advance When You Arrive", 14, -49)
     Check(focus, "vignetteRadarWorldFocusRoutes", "Follow Pack Entrance + Path Steps", 14, -77)
     Check(focus, "vignetteRadarWorldFocusSavedNotes", "Include Saved Treasure + Rare Notes", 14, -105)
-    Check(focus, "vignetteRadarWorldFocusZygor", "Show Zygor's Current Guide Step", 14, -133)
+    Check(focus, "vignetteRadarWorldFocusZygor", "Show Zygor Step", 14, -133, nil, 145)
+    focus.pinZygor = Button(focus, "Pin Zygor", 202, -135, 72, function()
+        local api = addon.VignetteRadarAPI
+        local ok, reason = api and api.PinZygorStep and api.PinZygorStep()
+        if not ok and reason and UIErrorsFrame and UIErrorsFrame.AddMessage then
+            UIErrorsFrame:AddMessage(reason, 1, .65, .25)
+        end
+        API.Refresh()
+    end)
     Section(focus, "ARRIVAL DISTANCE", -166)
     Choice(focus, "vignetteRadarWorldFocusArrivalRadius", 10, "10 yd", 14, -184, 80)
     Choice(focus, "vignetteRadarWorldFocusArrivalRadius", 20, "20 yd", 104, -184, 80)

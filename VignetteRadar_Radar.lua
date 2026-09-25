@@ -2321,9 +2321,11 @@ ApplyAppearance = function()
         panel.minimize.line:SetColorTexture(ar, ag, ab, .86)
         panel.minimize.glow:SetVertexColor(ar, ag, ab, panel.minimize._hovered and .18 or 0)
         panel.close.glow:SetVertexColor(ar, ag, ab, panel.close._hovered and .18 or 0)
-        for _, button in ipairs({ panel.zoomOut, panel.zoomIn, panel.compass, panel.trailToggle }) do
+        for _, button in ipairs({ panel.zoomOut, panel.zoomIn, panel.compass,
+            panel.trailToggle, panel.routeToggle }) do
             if button and button.RefreshAppearance then button:RefreshAppearance() end
         end
+        if panel.RefreshCornerTools then panel.RefreshCornerTools() end
         if RefreshTrailPopup then RefreshTrailPopup() end
         if panel.legend and panel.legend.dots then
             for index, slot in ipairs({ "rare", "treasure", "event" }) do
@@ -4595,13 +4597,13 @@ local function EnsurePanel()
             for index, position in ipairs({ { -6, -3 }, { 0, 3 }, { 6, -3 } }) do
                 local dot = button:CreateTexture(nil, "OVERLAY")
                 dot:SetTexture(CIRCLE_TEXTURE)
-                dot:SetSize(index == 2 and 4 or 3, index == 2 and 4 or 3)
+                dot:SetSize(index == 2 and 5 or 4, index == 2 and 5 or 4)
                 dot:SetPoint("CENTER", position[1], position[2])
                 button.routeDots[index] = dot
             end
             for index, ends in ipairs({ { -6, -3, 0, 3 }, { 0, 3, 6, -3 } }) do
                 local stroke = button:CreateLine(nil, "ARTWORK")
-                stroke:SetThickness(1.5)
+                stroke:SetThickness(2)
                 stroke:SetStartPoint("CENTER", button, ends[1], ends[2])
                 stroke:SetEndPoint("CENTER", button, ends[3], ends[4])
                 button.strokes[index] = stroke
@@ -4826,8 +4828,14 @@ local function EnsurePanel()
                 local opacity = (active or tool._hovered) and 1 or .78
                 for _, mark in ipairs(tool.routeDots) do mark:SetVertexColor(r, g, b, opacity) end
                 for _, stroke in ipairs(tool.routeStrokes) do stroke:SetColorTexture(r, g, b, opacity) end
-                tool.back:SetVertexColor(ACCENT[1], ACCENT[2], ACCENT[3],
-                    active and .17 or tool._hovered and .12 or 0)
+                local ringOpacity = active and .22 or tool._hovered and .18 or 0
+                for _, stroke in ipairs(tool.routeRing) do
+                    stroke:SetColorTexture(ACCENT[1], ACCENT[2], ACCENT[3], ringOpacity)
+                end
+                tool.routeUnderline:SetShown(active == true)
+                if active then
+                    tool.routeUnderline:SetColorTexture(ACCENT[1], ACCENT[2], ACCENT[3], .7)
+                end
                 tool._artState = state
                 tool._artRed, tool._artGreen, tool._artBlue = ACCENT[1], ACCENT[2], ACCENT[3]
             elseif state ~= tool._artState then
@@ -4852,21 +4860,31 @@ local function EnsurePanel()
         tool:RegisterForClicks("LeftButtonUp", "RightButtonUp")
         tool.toolID, tool.reference, tool.artColumn = id, reference, #panel.hoverTools
         if id == "route" then
-            tool.back = tool:CreateTexture(nil, "BACKGROUND")
-            tool.back:SetTexture(ROUNDED_CONTROL_TEXTURE)
-            tool.back:SetSize(18, 18)
-            tool.back:SetPoint("CENTER")
-            tool.routeDots, tool.routeStrokes = {}, {}
+            tool.routeDots, tool.routeStrokes, tool.routeRing = {}, {}, {}
+            for index = 1, 16 do
+                local start = (index - 1) * TWO_PI / 16
+                local finish = index * TWO_PI / 16
+                local outline = tool:CreateLine(nil, "BACKGROUND")
+                outline:SetThickness(1)
+                outline:SetStartPoint("CENTER", tool, 7.5 * math.cos(start), 7.5 * math.sin(start))
+                outline:SetEndPoint("CENTER", tool, 7.5 * math.cos(finish), 7.5 * math.sin(finish))
+                tool.routeRing[index] = outline
+            end
+            tool.routeUnderline = tool:CreateLine(nil, "ARTWORK")
+            tool.routeUnderline:SetThickness(1.5)
+            tool.routeUnderline:SetStartPoint("CENTER", tool, -1.5, -8)
+            tool.routeUnderline:SetEndPoint("CENTER", tool, 1.5, -8)
+            tool.routeUnderline:Hide()
             for index, position in ipairs({ { -5, -3 }, { 0, 3 }, { 5, -3 } }) do
                 local mark = tool:CreateTexture(nil, "OVERLAY")
                 mark:SetTexture(CIRCLE_TEXTURE)
-                mark:SetSize(3, 3)
+                mark:SetSize(index == 2 and 4 or 3.5, index == 2 and 4 or 3.5)
                 mark:SetPoint("CENTER", position[1], position[2])
                 tool.routeDots[index] = mark
             end
             for index, ends in ipairs({ { -5, -3, 0, 3 }, { 0, 3, 5, -3 } }) do
                 local stroke = tool:CreateLine(nil, "ARTWORK")
-                stroke:SetThickness(1.3)
+                stroke:SetThickness(1.7)
                 stroke:SetStartPoint("CENTER", tool, ends[1], ends[2])
                 stroke:SetEndPoint("CENTER", tool, ends[3], ends[4])
                 tool.routeStrokes[index] = stroke
@@ -5332,6 +5350,13 @@ end
 addon.VignetteRadarAPI = {
     GetTargets = function() return activeTargets end,
     GetCurrentMapID = CurrentMapID,
+    PinZygorStep = function()
+        local worldFocus, mapID = addon.VignetteRadarWorldFocus, CurrentMapID()
+        if not (worldFocus and mapID) then return false, "Current map unavailable" end
+        local guide = worldFocus.ZygorNote(mapID, MapToWorld, MapVector, true)
+        if not guide then return false, "Zygor has no current waypoint on this map" end
+        return worldFocus.SelectNote(guide)
+    end,
     GetPlayerSnapshot = function() return PlayerSnapshot(CurrentMapID()) end,
     GetSelectableTargets = SelectableTargets,
     GetRouteCandidates = function()
