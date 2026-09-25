@@ -1691,6 +1691,8 @@ addon.SetVignetteRadarLayout(originalLayout)
 -- smallest page bounds. Theme edits must affect the actual radar textures.
 addon.SetVignetteRadarNorthUp(false)
 SlashCmdList.VIGNETTERADAR("preview")
+settings.vignetteRadarBeaconsEnabled = true
+addon.VignetteRadarAPI.Refresh(true)
 panel.settingsDot.scripts.OnClick(panel.settingsDot)
 local quick = assert(addon.VignetteRadarQuickConfig.GetPanel())
 assert(quick:IsShown() and quick.width == 288 and quick.height == 432
@@ -1716,7 +1718,7 @@ assert(tabCount == 12 and quick.pages.Themes and quick.pages.Guides and quick.pa
     "compact settings must visibly include exploration controls")
 local openBeacons, previewBeacons, backFromBeacons
 for _, object in ipairs(objects) do
-    if object.parent == quick.pages.Markers and object.text == "World Beacons..." then
+    if object.parent == quick.pages.Markers and object.text == "Bearing Bar..." then
         openBeacons = object
     elseif object.parent == quick.pages.Beacons and object.text == "Preview" then
         previewBeacons = object
@@ -1731,7 +1733,7 @@ assert(quick.pages.Beacons:IsShown(), "the marker settings must open beacon opti
 previewBeacons.scripts.OnClick(previewBeacons)
 local beaconRail = assert(_G.VignetteRadarBeaconRail)
 assert(beaconRail:IsShown() and beaconRail.width == 520 and beaconRail.height == 146
-    and beaconRail.heading.text == "World Beacons",
+    and beaconRail.heading.text == "Bearing Bar",
     "beacon preview must show a bounded movable display")
 local previewCards = 0
 for _, object in ipairs(objects) do
@@ -1753,6 +1755,9 @@ assert(beaconRail:IsShown() and beaconRail.height == 64 and beaconRail.empty:IsS
     and beaconRail.scripts.OnUpdate == nil
     and beaconRail.summary.text:find("0 Points in", 1, true),
     "enabled beacons must show a compact explanation when no points are in range")
+settings.vignetteRadarBeaconsEnabled = false
+addon.VignetteRadarBeacons.Sync(1, { worldX = 0, worldY = 0 }, {}, {}, {})
+assert(not beaconRail:IsShown(), "the bearing bar must hide when its opt-in is disabled")
 local escapePanels = {}
 for _, name in ipairs(UISpecialFrames) do escapePanels[name] = true end
 assert(escapePanels.VignetteRadarExplorePanel

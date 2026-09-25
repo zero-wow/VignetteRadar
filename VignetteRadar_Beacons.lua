@@ -28,7 +28,7 @@ local function Pause(reason)
     if paused then return end
     paused = true
     if frame then frame:SetScript("OnUpdate", nil); frame:Hide() end
-    local message = "Vignette Radar: World Beacons paused for this session (" .. reason
+    local message = "Vignette Radar: Bearing Bar paused for this session (" .. reason
         .. "). /reload retries them."
     if DEFAULT_CHAT_FRAME and DEFAULT_CHAT_FRAME.AddMessage then
         DEFAULT_CHAT_FRAME:AddMessage(message)
@@ -188,7 +188,7 @@ local function EnsureFrame()
     frame.heading = frame:CreateFontString(nil, "OVERLAY")
     frame.heading:SetFont(FONT, 10, "OUTLINE")
     frame.heading:SetPoint("TOPLEFT", frame, "TOPLEFT", 16, -8)
-    frame.heading:SetText("World Beacons")
+    frame.heading:SetText("Bearing Bar")
     frame.summary = frame:CreateFontString(nil, "OVERLAY")
     frame.summary:SetFont(FONT, 9, "OUTLINE")
     frame.summary:SetPoint("TOPRIGHT", frame, "TOPRIGHT", -16, -9)

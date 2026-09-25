@@ -84,13 +84,13 @@ function addon.GetSettings()
     if type(db.vignetteRadarEnabled) ~= "boolean" then db.vignetteRadarEnabled = true end
     if type(db.vignetteRadarHideWhenEmpty) ~= "boolean" then db.vignetteRadarHideWhenEmpty = true end
     if type(db.vignetteRadarLauncherVisible) ~= "boolean" then db.vignetteRadarLauncherVisible = true end
-    -- dev.66 stored false as its initial value. Enable once for existing users,
-    -- then leave their later on/off choice alone.
-    if db.vignetteRadarBeaconDefaulted ~= true then
-        db.vignetteRadarBeaconsEnabled = true
-        db.vignetteRadarBeaconDefaulted = true
+    -- dev.67 enabled the screen-space bar automatically. Return it to an
+    -- explicit opt-in once, then preserve every later on/off choice.
+    if db.vignetteRadarBearingBarDefaulted ~= true then
+        db.vignetteRadarBeaconsEnabled = false
+        db.vignetteRadarBearingBarDefaulted = true
     end
-    if type(db.vignetteRadarBeaconsEnabled) ~= "boolean" then db.vignetteRadarBeaconsEnabled = true end
+    if type(db.vignetteRadarBeaconsEnabled) ~= "boolean" then db.vignetteRadarBeaconsEnabled = false end
     if type(db.vignetteRadarBeaconRares) ~= "boolean" then db.vignetteRadarBeaconRares = true end
     if type(db.vignetteRadarBeaconQuests) ~= "boolean" then db.vignetteRadarBeaconQuests = true end
     if db.vignetteRadarBeaconRange ~= 150 and db.vignetteRadarBeaconRange ~= 450

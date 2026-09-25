@@ -515,7 +515,7 @@ local function Build()
     Choice(markers, "vignetteRadarMarkerSize", 9, "Large", 194, -154, 80)
     Check(markers, "vignetteRadarShapes", "Recognizable icons", 14, -190)
     Check(markers, "vignetteRadarShowHealth", "Focused rare health", 14, -218)
-    Button(markers, "World Beacons...", 14, -251, 260, function()
+    Button(markers, "Bearing Bar...", 14, -251, 260, function()
         SelectPage("Beacons")
     end)
 
@@ -525,7 +525,7 @@ local function Build()
     beacons.searchPage = "Beacons"
     beacons:Hide()
     quick.pages.Beacons = beacons
-    Section(beacons, "World Beacons", -3)
+    Section(beacons, "Bearing Bar", -3)
     Check(beacons, "vignetteRadarBeaconsEnabled", "Show Multi-Point Bearing Display", 14, -22)
     Check(beacons, "vignetteRadarBeaconRares", "Rares + Bosses", 14, -50, nil, 95)
     Check(beacons, "vignetteRadarBeaconQuests", "Quest Points", 147, -50, nil, 95)

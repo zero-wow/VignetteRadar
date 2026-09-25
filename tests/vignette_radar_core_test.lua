@@ -45,21 +45,21 @@ assert(loadfile(sourcePath))("VignetteRadar", fresh)
 local defaults = fresh.GetSettings()
 assert(defaults.vignetteRadarRangeLabelOpacity == defaults.vignetteRadarRingOpacity,
     "yard labels must start at the same visibility as the range rings")
-assert(defaults.vignetteRadarBeaconsEnabled == true
+assert(defaults.vignetteRadarBeaconsEnabled == false
     and defaults.vignetteRadarBeaconRares == true
     and defaults.vignetteRadarBeaconQuests == true
     and defaults.vignetteRadarBeaconRange == 1200
     and defaults.vignetteRadarBeaconMax == 8,
-    "the multi-point display should start enabled with bounded defaults")
-defaults.vignetteRadarBeaconDefaulted = nil
-defaults.vignetteRadarBeaconsEnabled = false
-fresh.GetSettings()
-assert(defaults.vignetteRadarBeaconsEnabled == true,
-    "the previous off-by-default build should be enabled once for existing users")
-defaults.vignetteRadarBeaconsEnabled = false
+    "the optional bearing bar should start disabled with bounded defaults")
+defaults.vignetteRadarBearingBarDefaulted = nil
+defaults.vignetteRadarBeaconsEnabled = true
 fresh.GetSettings()
 assert(defaults.vignetteRadarBeaconsEnabled == false,
-    "turning beacons off after migration must remain the user's choice")
+    "the previous automatic bar should be hidden once for existing users")
+defaults.vignetteRadarBeaconsEnabled = true
+fresh.GetSettings()
+assert(defaults.vignetteRadarBeaconsEnabled == true,
+    "turning the bearing bar on after migration must remain the user's choice")
 defaults.vignetteRadarRingOpacity = 1.25
 defaults.vignetteRadarRangeLabelOpacity = nil
 fresh.GetSettings()
