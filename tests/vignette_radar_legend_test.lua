@@ -125,7 +125,7 @@ local anchor = CreateFrame("Frame", nil, UIParent)
 anchor.right = 500
 assert(legend.Toggle(anchor) == true and legend.IsShown(), "toggle must open the attached legend")
 local panel = assert(_G.VignetteRadarLegendPanel, "legend panel must have a stable global frame name")
-assert(panel.width == 232 and panel.height == 370 and panel.clamped == true
+assert(panel.width == 232 and panel.height == 390 and panel.clamped == true
     and not panel.accent, "legend must fit without a left edge rail")
 assert(panel.mouseEnabled == true and panel.divider.height == 1,
     "legend surface must capture input and preserve a visible header gutter")
@@ -133,6 +133,11 @@ assert(panel.point[1] == "TOPLEFT" and panel.point[3] == "TOPRIGHT" and panel.po
     "legend must sit outside the radar with an explicit gutter")
 assert(panel.title.font[1] == EllesmereUI.EXPRESSWAY and panel.title.text == "RADAR LEGEND",
     "legend must use native EllesmereUI typography")
+assert(panel.liveHint.text == "CLICK LIVE TYPE TO SPOTLIGHT"
+    and panel.showHint.text == "SHOW" and panel.all.label.text == "CLEAR"
+    and panel.mapHeading.text == "MAP NOTES · REFERENCE ONLY"
+    and panel.otherHeading.text == "OTHER MARKS · REFERENCE ONLY",
+    "the legend must identify spotlightable rows, visibility switches, and reference-only symbols")
 assert(panel.rows.rare and panel.rows.treasure and panel.rows.event and panel.rows.other,
     "legend must render one independent row for every supported filter")
 for _, kind in ipairs({ "treasure", "mob", "item", "note" }) do
@@ -157,7 +162,7 @@ for _, guide in pairs(panel.guides) do
         and -guide.point[5] + guide.height < panel.height - 20,
         "guide entries must stay inside the panel with a footer gutter")
 end
-assert(panel.rows.rare.label.text == "RARE / BOSS" and panel.rows.rare.label.width == 98
+assert(panel.rows.rare.label.text == "RARE / BOSS" and panel.rows.rare.label.width == 90
     and panel.rows.rare.label.point[2] == 39 and panel.rows.rare.label.maxLines == 1,
     "the rare and boss label must stay bounded before its toggle")
 assert(panel.rows.rare.swatch.texture == "Interface\\TargetingFrame\\UI-TargetingFrame-Skull"
@@ -170,7 +175,7 @@ assert(panel.rows.treasure.swatch.atlas == "VignetteLoot",
     "treasure must use the familiar chest atlas when SetAtlas is available")
 panel.rows.rare.scripts.OnEnter(panel.rows.rare)
 assert(table.concat(tooltipLines, "\n"):find(
-    "Silver skull: rare enemy. Red skull: world boss. Both use this filter.", 1, true),
+    "Silver skull: rare enemy. Red skull: world boss.", 1, true),
     "rare tooltip must explain both symbols in plain language")
 assert(panel.rows.event.scripts.OnMouseDown and panel.rows.event.scripts.OnMouseUp,
     "category controls must expose native pressed feedback")
@@ -235,11 +240,15 @@ assert(panel.guides.area.fill.vertexColor[1] == .34
 
 panel.rows.event.scripts.OnClick(panel.rows.event)
 assert(settings.vignetteRadarHighlight == "event", "clicking a category row must spotlight it")
-assert(panel.rows.event.selection:IsShown(), "the selected category needs a visible UI treatment")
+assert(panel.rows.event.selection:IsShown() and panel.rows.event.focusCue:IsShown()
+    and panel.rows.event.focusCue.text == "FOCUS",
+    "the selected category needs an explicit spotlight cue")
 assert(panel.rows.event.alpha == 1 and panel.rows.other.alpha == 0.58,
     "the selected row must remain strong while nonfocused enabled rows are dimmed")
 panel.all.scripts.OnClick(panel.all)
-assert(settings.vignetteRadarHighlight == nil, "the ALL action must clear highlighting")
+assert(settings.vignetteRadarHighlight == nil and not panel.rows.event.focusCue:IsShown()
+    and panel.status.text == "SPOTLIGHT OFF · SHOWN TYPES EQUAL",
+    "CLEAR must remove the spotlight while preserving visibility filters")
 
 local before = legend.IsCategoryEnabled("other")
 panel.rows.other.toggle.scripts.OnClick(panel.rows.other.toggle)

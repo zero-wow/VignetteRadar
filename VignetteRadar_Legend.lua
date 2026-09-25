@@ -1,7 +1,7 @@
 local _, addon = ...
 if type(addon) ~= "table" then return end
 
-local PANEL_W, PANEL_H = 232, 370
+local PANEL_W, PANEL_H = 232, 390
 local QUEST_PANEL_W, QUEST_VISIBLE_ROWS = 224, 8
 local QUEST_ROW_H, QUEST_ROW_STEP = 22, 26
 local QUEST_DIAMOND_TEXTURE = "Interface\\AddOns\\VignetteRadar\\Media\\quest-diamond.tga"
@@ -199,7 +199,7 @@ local function CreateCategoryRow(parent, category, index)
     local definition = CATEGORIES[category]
     local row = CreateFrame("Button", nil, parent, "BackdropTemplate")
     row:SetSize(PANEL_W - 18, 23)
-    row:SetPoint("TOPLEFT", 9, -39 - ((index - 1) * 27))
+    row:SetPoint("TOPLEFT", 9, -53 - ((index - 1) * 27))
     Surface(row, 0.065, 0.073, 0.082, 0.98, 0.10)
     row.category = category
 
@@ -240,7 +240,7 @@ local function CreateCategoryRow(parent, category, index)
 
     row.label = Text(row, 10, definition.label)
     row.label:SetPoint("LEFT", category == "rare" and 39 or 29, 0)
-    row.label:SetWidth(category == "rare" and 98 or 108)
+    row.label:SetWidth(category == "rare" and 90 or 100)
     if row.label.SetMaxLines then row.label:SetMaxLines(1) end
 
     row.toggle = CreateFrame("Button", nil, row, "BackdropTemplate")
@@ -250,6 +250,11 @@ local function CreateCategoryRow(parent, category, index)
     row.toggle.label = Text(row.toggle, 8, "ON")
     row.toggle.label:SetAllPoints()
     row.toggle.label:SetJustifyH("CENTER")
+    row.focusCue = Text(row, 7, "FOCUS")
+    row.focusCue:SetSize(31, 12)
+    row.focusCue:SetPoint("RIGHT", row.toggle, "LEFT", -4, 0)
+    row.focusCue:SetJustifyH("CENTER")
+    row.focusCue:Hide()
     AddPressState(row)
     AddPressState(row.toggle)
 
@@ -259,8 +264,8 @@ local function CreateCategoryRow(parent, category, index)
     row:SetScript("OnEnter", function(self)
         self.hover:Show()
         Tooltip(self, definition.label:sub(1, 1) .. definition.label:sub(2):lower(), category == "rare"
-            and "Silver skull: rare enemy. Red skull: world boss. Both use this filter. Click to spotlight."
-            or "Click the row to spotlight this type. Other enabled dots stay visible but dim.")
+            and "Silver skull: rare enemy. Red skull: world boss. Click this row to spotlight both; click again to clear. Other shown types dim."
+            or "Click this row to spotlight this live type; click again to clear. Other shown types dim.")
     end)
     row:SetScript("OnLeave", function(self)
         self.hover:Hide()
@@ -271,8 +276,8 @@ local function CreateCategoryRow(parent, category, index)
     end)
     row.toggle:SetScript("OnEnter", function(self)
         Tooltip(self, "Filter " .. definition.label:sub(1, 1) .. definition.label:sub(2):lower(),
-            category == "rare" and "Silver skull: rare enemy. Red skull: world boss. Both use this filter."
-            or "Turn this category on or off on the radar.")
+            category == "rare" and "Show or hide both rare enemies and world bosses. This button does not set the spotlight."
+            or "Show or hide this live type. This button does not set the spotlight.")
     end)
     row.toggle:SetScript("OnLeave", function() if GameTooltip then GameTooltip:Hide() end end)
     return row
@@ -313,7 +318,7 @@ end
 
 local function CreateMapNote(parent, definition, index)
     local x = index % 2 == 1 and 10 or 120
-    local y = index <= 2 and 172 or 194
+    local y = index <= 2 and 189 or 211
     local row = GuideRow(parent, definition.label, x, y)
     row.kind, row.colorSlot = definition.kind, definition.color
     row.rim = Circle(row, 9)
@@ -461,55 +466,68 @@ local function EnsurePanel()
     panel.title:SetTextColor(ACCENT[1], ACCENT[2], ACCENT[3], 1)
 
     panel.divider = panel:CreateTexture(nil, "ARTWORK")
-    panel.divider:SetPoint("TOPLEFT", 9, -31)
-    panel.divider:SetPoint("TOPRIGHT", -9, -31)
+    panel.divider:SetPoint("TOPLEFT", 9, -45)
+    panel.divider:SetPoint("TOPRIGHT", -9, -45)
     panel.divider:SetHeight(1)
     panel.divider:SetColorTexture(ACCENT[1], ACCENT[2], ACCENT[3], 0.18)
 
     panel.all = CreateFrame("Button", nil, panel, "BackdropTemplate")
-    panel.all:SetSize(38, 18)
+    panel.all:SetSize(42, 18)
     panel.all:SetPoint("TOPRIGHT", -9, -7)
     Surface(panel.all, 0.03, 0.038, 0.043, 0.96, 0.16)
-    panel.all.label = Text(panel.all, 8, "ALL")
+    panel.all.label = Text(panel.all, 8, "CLEAR")
     panel.all.label:SetAllPoints()
     panel.all.label:SetJustifyH("CENTER")
     AddPressState(panel.all)
     panel.all:SetScript("OnClick", function() API.SetHighlight(nil) end)
     panel.all:SetScript("OnEnter", function(self)
-        Tooltip(self, "Show all enabled", "Clear the spotlight and return enabled categories to equal strength.")
+        Tooltip(self, "Clear spotlight", "Return shown live types to equal strength. Hidden types stay hidden.")
     end)
     panel.all:SetScript("OnLeave", function() if GameTooltip then GameTooltip:Hide() end end)
+
+    panel.liveHint = Text(panel, 8, "CLICK LIVE TYPE TO SPOTLIGHT")
+    panel.liveHint:SetPoint("TOPLEFT", 10, -29)
+    panel.liveHint:SetSize(163, 12)
+    panel.liveHint:SetTextColor(.62, .72, .72, 1)
+    panel.showHint = Text(panel, 8, "SHOW")
+    panel.showHint:SetPoint("TOPRIGHT", -11, -29)
+    panel.showHint:SetSize(42, 12)
+    panel.showHint:SetJustifyH("CENTER")
+    panel.showHint:SetTextColor(.62, .72, .72, 1)
 
     panel.rows = {}
     for index, category in ipairs(CATEGORY_ORDER) do
         panel.rows[category] = CreateCategoryRow(panel, category, index)
     end
 
-    panel.mapRule = SectionRule(panel, 148)
-    panel.mapHeading = GuideLabel(panel, "MAP NOTES  /  HOLLOW DOTS", 10, 151, PANEL_W - 20, 9)
+    panel.mapRule = SectionRule(panel, 165)
+    panel.mapHeading = GuideLabel(panel, "MAP NOTES · REFERENCE ONLY", 10, 168, PANEL_W - 20, 9)
+    panel.mapHeading:SetHeight(12)
     panel.mapHeading:SetTextColor(.68, .75, .77, 1)
     panel.mapNotes = {}
     for index, definition in ipairs(MAP_NOTES) do
         panel.mapNotes[definition.kind] = CreateMapNote(panel, definition, index)
     end
-    panel.mapCaption = GuideLabel(panel, "Saved in one pack; not live detections", 10, 216, PANEL_W - 20, 8)
+    panel.mapCaption = GuideLabel(panel, "Saved in one pack; not live detections", 10, 233, PANEL_W - 20, 8)
+    panel.mapCaption:SetHeight(10)
     panel.mapCaption:SetTextColor(.5, .57, .59, 1)
 
-    panel.otherRule = SectionRule(panel, 233)
-    panel.otherHeading = GuideLabel(panel, "MORE ON THE RADAR", 10, 238, PANEL_W - 20, 9)
+    panel.otherRule = SectionRule(panel, 250)
+    panel.otherHeading = GuideLabel(panel, "OTHER MARKS · REFERENCE ONLY", 10, 255, PANEL_W - 20, 9)
+    panel.otherHeading:SetHeight(12)
     panel.otherHeading:SetTextColor(.68, .75, .77, 1)
     panel.guides = {
-        quest = CreateOtherGuide(panel, "Quest diamond", 10, 256, "quest"),
-        area = CreateOtherGuide(panel, "Quest area", 120, 256, "area"),
-        pin = CreateOtherGuide(panel, "Saved pin", 10, 278, "pin"),
-        route = CreateOtherGuide(panel, "Route stop", 120, 278, "route"),
-        trail = CreateOtherGuide(panel, "Travel trail", 10, 300, "trail"),
-        stale = CreateOtherGuide(panel, "Last seen", 120, 300, "stale"),
-        edge = CreateOtherGuide(panel, "Off-range cue", 10, 322, "edge"),
+        quest = CreateOtherGuide(panel, "Quest diamond", 10, 273, "quest"),
+        area = CreateOtherGuide(panel, "Quest area", 120, 273, "area"),
+        pin = CreateOtherGuide(panel, "Saved pin", 10, 295, "pin"),
+        route = CreateOtherGuide(panel, "Route stop", 120, 295, "route"),
+        trail = CreateOtherGuide(panel, "Travel trail", 10, 317, "trail"),
+        stale = CreateOtherGuide(panel, "Last seen", 120, 317, "stale"),
+        edge = CreateOtherGuide(panel, "Off-range cue", 10, 339, "edge"),
     }
-    panel.footerRule = SectionRule(panel, 346)
+    panel.footerRule = SectionRule(panel, 363)
 
-    panel.status = Text(panel, 8, "NO SPOTLIGHT")
+    panel.status = Text(panel, 8, "SPOTLIGHT OFF · SHOWN TYPES EQUAL")
     panel.status:SetPoint("BOTTOMLEFT", 10, 7)
     panel.status:SetTextColor(0.48, 0.55, 0.56, 1)
     -- WoW creates frames shown by default. Keep the lazy panel closed until the
@@ -831,6 +849,8 @@ function API.Refresh()
             row.swatch:SetAlpha(0.38)
             if row.bossSwatch then row.bossSwatch:SetAlpha(0.38) end
         end
+        row.focusCue:SetShown(selected)
+        row.focusCue:SetTextColor(accentRed, accentGreen, accentBlue, 1)
         if selected then row.selection:Show() else row.selection:Hide() end
     end
     local function Color(slot, fallback)
@@ -917,7 +937,7 @@ function API.Refresh()
         panel.status:SetText("SPOTLIGHT: " .. CATEGORIES[highlight].label)
         panel.all.label:SetTextColor(0.62, 0.66, 0.68, 1)
     else
-        panel.status:SetText("NO SPOTLIGHT")
+        panel.status:SetText("SPOTLIGHT OFF · SHOWN TYPES EQUAL")
         panel.all.label:SetTextColor(accentRed, accentGreen, accentBlue, 1)
     end
 end
