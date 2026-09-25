@@ -824,11 +824,11 @@ function API.Refresh()
         questRed, questGreen, questBlue = first[1], first[2], first[3]
     end
     panel.guides.quest.fill:SetVertexColor(questRed, questGreen, questBlue, 1)
-    panel.guides.quest.halo:SetVertexColor(questRed, questGreen, questBlue, .16)
+    panel.guides.quest.halo:SetVertexColor(.34, .60, 1, .16)
     local showQuestHalo = settings.vignetteRadarQuestDots and settings.vignetteRadarQuestAreas
         and settings.vignetteRadarQuestHalos
     panel.guides.quest.halo:SetShown(showQuestHalo == true)
-    panel.guides.area.fill:SetVertexColor(questRed, questGreen, questBlue, .3)
+    panel.guides.area.fill:SetVertexColor(.34, .60, 1, .3)
     panel.guides.quest:SetAlpha(settings.vignetteRadarQuestDots and 1 or .6)
     panel.guides.quest.label:SetText(not settings.vignetteRadarQuestDots and "Quest off"
         or showQuestHalo and "Quest + halo" or "Quest diamond")

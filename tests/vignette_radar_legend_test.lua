@@ -198,6 +198,8 @@ assert(panel.mapNotes.treasure.alpha == 1 and panel.mapNotes.mob.alpha == .6
     and panel.guides.quest.alpha == 1 and panel.guides.quest.halo:IsShown()
     and panel.guides.quest.label.text == "Quest + halo"
     and panel.guides.area.label.text == "Native area" and panel.guides.trail.alpha == 1
+    and panel.guides.area.fill.vertexColor[3] > panel.guides.area.fill.vertexColor[1]
+    and panel.guides.quest.halo.vertexColor[3] > panel.guides.quest.halo.vertexColor[1]
     and panel.guides.trail.label.text == "Trail: Ticks"
     and panel.guides.trail.marks[1]:IsShown() and not panel.guides.trail.dots[1]:IsShown()
     and panel.rows.rare.swatch.texture == "Interface\\CharacterFrame\\TempPortraitAlphaMask"
@@ -245,7 +247,7 @@ assert(legend.Reanchor(squat) and panel.point[1] == "TOPLEFT" and panel.point[3]
 assert(legend.Toggle(squat) == false, "legend Squat toggle must close")
 
 -- The quest key is independent of the category legend and mirrors the same
--- per-quest color slot used by the radar diamond and native area texture.
+-- per-quest color slot used by the radar diamond and quest key.
 addon.VignetteRadarQuestColors = {
     { 94/255, 219/255, 199/255 }, { 255/255, 179/255, 87/255 },
 }
@@ -267,7 +269,7 @@ assert(questPanel.point[1] == "TOPRIGHT" and questPanel.point[3] == "TOPLEFT"
 assert(questPanel.rows[1].name.text == "Quest 1" and questPanel.rows[1].fill.vertexColor[1] == 1
     and questPanel.rows[1].fill.vertexColor[2] == 179/255
     and questPanel.rows[1].fill.vertexColor[3] == 87/255,
-    "quest names and diamonds must use the exact native blob palette")
+    "quest names and diamonds must use the exact quest marker palette")
 assert(questPanel.scrollTrack:IsShown() and questPanel.rows[8]:IsShown()
     and not questPanel.rows[9], "the compact key must scroll instead of escaping its panel")
 questPanel.scripts.OnMouseWheel(questPanel, -1)

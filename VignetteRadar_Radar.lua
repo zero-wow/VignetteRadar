@@ -38,6 +38,7 @@ local ROUNDED_SQUARE_TEXTURE = "Interface\\AddOns\\VignetteRadar\\Media\\radar-r
 local ROUNDED_BORDER_TEXTURE = "Interface\\AddOns\\VignetteRadar\\Media\\radar-rounded-border.tga"
 local ROUNDED_CONTROL_TEXTURE = "Interface\\AddOns\\VignetteRadar\\Media\\control-rounded-square.tga"
 local QUEST_CLIP_INSET = 4
+local QUEST_AREA_BLUE = { .34, .60, 1 }
 local QUEST_COLORS = {
     { 94/255, 219/255, 199/255 }, { 255/255, 179/255, 87/255 },
     { 181/255, 150/255, 255/255 }, { 255/255, 120/255, 133/255 },
@@ -1062,10 +1063,7 @@ local function RenderQuestDots(player, range)
     end
     local haloRadius = math.max(10, math.min(panel.plotRadius,
         (Settings().vignetteRadarQuestHaloRadius or 10) * panel.plotRadius / range))
-    local haloRed, haloGreen, haloBlue = 1, .74, .27
-    if showHalos and addon.VignetteRadarStyle then
-        haloRed, haloGreen, haloBlue = addon.VignetteRadarStyle.Color("quest")
-    end
+    local haloAlpha = .16 * math.max(.2, math.min(1, (SafeNumber(range) or 300) / 300))
     local count = 0
     for _, quest in ipairs(activeQuests) do
         if not (player.instanceID and quest.instanceID and player.instanceID ~= quest.instanceID) then
@@ -1160,9 +1158,8 @@ local function RenderQuestDots(player, range)
                         dot.halo:SetSize(haloRadius * 2, haloRadius * 2)
                         dot.halo:ClearAllPoints()
                         dot.halo:SetPoint("CENTER", panel.field, "CENTER", x, y)
-                        local color = Settings().vignetteRadarQuestColors and QUEST_COLORS[quest.colorSlot or 1]
-                        dot.halo.fill:SetVertexColor(color and color[1] or haloRed,
-                            color and color[2] or haloGreen, color and color[3] or haloBlue, .16)
+                        dot.halo.fill:SetVertexColor(QUEST_AREA_BLUE[1], QUEST_AREA_BLUE[2],
+                            QUEST_AREA_BLUE[3], haloAlpha)
                         dot.halo:SetAlpha(spotlight and spotlight ~= quest.questID and .65 or 1)
                         dot.halo:Show()
                     elseif dot.halo then
@@ -1289,61 +1286,26 @@ local function HideQuestAreas()
         panel.questBlob:Hide()
         panel.questBlob.drawnKey = nil
         panel.questBlob.nextDrawAt = nil
-        if panel.questColorBlobs then
-            for index = 2, #panel.questColorBlobs do
-                local colored = panel.questColorBlobs[index]
-                colored:Hide()
-                colored.drawnKey = nil
-            end
-        end
     end
 end
 
-local function ColoredQuestBlobs()
-    if not (Settings().vignetteRadarQuestColors and not panel.questColorFailed) then return nil end
-    if panel.questColorBlobs then return panel.questColorBlobs end
-    if type(InCombatLockdown) == "function" and SafeBoolean(Call(InCombatLockdown)) then return nil end
-    local blobs = { panel.questBlob }
-    for index = 2, #QUEST_COLORS do
-        local ok, blob = pcall(CreateFrame, "QuestPOIFrame", nil, panel.questClip)
-        if not (ok and blob and type(blob.DrawNone) == "function" and type(blob.DrawBlob) == "function"
-            and type(blob.SetMapID) == "function" and type(blob.SetFillTexture) == "function"
-            and type(blob.SetBorderTexture) == "function") then
-            for _, created in ipairs(blobs) do if created ~= panel.questBlob then created:Hide() end end
-            panel.questColorFailed = true
-            return nil
-        end
-        blob:SetFrameLevel(panel.field:GetFrameLevel() + 2)
-        blob:EnableMouse(false)
-        blob:Hide()
-        blobs[index] = blob
-    end
-    panel.questColorBlobs = blobs
-    return blobs
-end
-
-local function StyleQuestBlob(blob, slot, range)
-    -- Blob widgets use Blizzard-style BLP paths. Unsupported custom fills
-    -- can otherwise appear as the client's missing-texture green.
-    local fill = slot and ("Interface\\AddOns\\VignetteRadar\\Media\\quest-blob-%02d"):format(slot)
-        or "Interface\\WorldMap\\UI-QuestBlob-Inside"
-    local border = slot and fill or "Interface\\WorldMap\\UI-QuestBlob-Outside"
+local function StyleQuestBlob(blob, range)
+    -- Keep the native quest-area artwork blue regardless of diamond colors.
     -- A close zoom can put the player inside a quest shape that covers the
     -- entire radar. Fade the native mesh itself so markers remain legible.
     local opacity = math.max(.2, math.min(1, (SafeNumber(range) or 300) / 300))
-    local fillAlpha = math.max(3, math.floor((slot and 38 or 48) * opacity + .5))
-    local borderAlpha = slot and math.max(5, math.floor(78 * opacity + .5)) or 0
+    local fillAlpha = math.max(3, math.floor(48 * opacity + .5))
     local ok = pcall(function()
-        if blob.colorSlot ~= slot then
-            blob:SetFillTexture(fill)
-            blob:SetBorderTexture(border)
+        if not blob._radarDefaultTextures then
+            blob:SetFillTexture("Interface\\WorldMap\\UI-QuestBlob-Inside")
+            blob:SetBorderTexture("Interface\\WorldMap\\UI-QuestBlob-Outside")
         end
         if blob._radarFillAlpha ~= fillAlpha then blob:SetFillAlpha(fillAlpha) end
-        if blob._radarBorderAlpha ~= borderAlpha then blob:SetBorderAlpha(borderAlpha) end
+        if blob._radarBorderAlpha ~= 0 then blob:SetBorderAlpha(0) end
     end)
     if ok then
-        blob.colorSlot = slot
-        blob._radarFillAlpha, blob._radarBorderAlpha = fillAlpha, borderAlpha
+        blob._radarDefaultTextures = true
+        blob._radarFillAlpha, blob._radarBorderAlpha = fillAlpha, 0
     end
     return ok
 end
@@ -1384,12 +1346,7 @@ local function UpdateQuestAreaTooltip()
                 x, y = (cursorX - blobLeft) / width, (blobTop - cursorY) / height
             end
             if x and y and x >= 0 and x <= 1 and y >= 0 and y <= 1 then
-                for _, source in ipairs(panel.questBlobSources or { blob }) do
-                    if source:IsShown() and type(source.UpdateMouseOverTooltip) == "function" then
-                        questID = SafeNumber(Call(source.UpdateMouseOverTooltip, source, x, y))
-                        if questID then break end
-                    end
-                end
+                questID = SafeNumber(Call(blob.UpdateMouseOverTooltip, blob, x, y))
             end
         end
     end
@@ -1475,61 +1432,33 @@ local function RenderQuestAreas(player, mapID, range)
     panel.questAreaPlayerMapX, panel.questAreaPlayerMapY = player.mapX, player.mapY
     local key = tostring(mapID) .. ":" .. tostring(width) .. ":" .. tostring(height)
     for _, quest in ipairs(activeQuests) do key = key .. ":" .. tostring(quest.questID) end
-    local colored = ColoredQuestBlobs()
-    local sources = colored or { blob }
-    panel.questBlobSources = sources
-    for index, source in ipairs(sources) do
-        local slot = colored and index or nil
-        if not StyleQuestBlob(source, slot, range) then
-            if colored then
-                panel.questColorFailed = true
-                HideQuestAreas()
-                return RenderQuestAreas(player, mapID, range)
-            end
-            HideQuestAreas()
-            return
-        end
-        if source._radarCanvasScale ~= canvasScale then
-            source:SetScale(canvasScale)
-            source._radarCanvasScale = canvasScale
-        end
-        source:SetSize(width / canvasScale, height / canvasScale)
-        source:ClearAllPoints()
-        source:SetPoint("CENTER", panel.field, "CENTER", (0.5 - player.mapX) * width / canvasScale,
-            (player.mapY - 0.5) * height / canvasScale)
-        local sourceKey = key .. ":" .. tostring(index) .. ":" .. tostring(colored ~= nil)
-        if source.drawnKey ~= sourceKey or now >= (source.nextDrawAt or 0) then
-            local ok = true
-            if source.mapContextID ~= mapID then
-                ok = pcall(source.SetMapID, source, mapID)
-                if ok then source.mapContextID = mapID end
-            end
-            if ok then ok = pcall(source.DrawNone, source) end
-            if ok then
-                for _, quest in ipairs(activeQuests) do
-                    if not slot or quest.colorSlot == slot then
-                        if not pcall(source.DrawBlob, source, quest.questID, true) then ok = false; break end
-                    end
-                end
-            end
-            if not ok then
-                if colored then
-                    panel.questColorFailed = true
-                    HideQuestAreas()
-                    return RenderQuestAreas(player, mapID, range)
-                end
-                HideQuestAreas()
-                return
-            end
-            source.drawnKey = sourceKey
-            -- DrawBlob can succeed before Blizzard loads the shape data.
-            source.nextDrawAt = now + RESCAN_SECONDS
-        end
-        source:Show()
+    if not StyleQuestBlob(blob, range) then HideQuestAreas(); return end
+    if blob._radarCanvasScale ~= canvasScale then
+        blob:SetScale(canvasScale)
+        blob._radarCanvasScale = canvasScale
     end
-    if not colored and panel.questColorBlobs then
-        for index = 2, #panel.questColorBlobs do panel.questColorBlobs[index]:Hide() end
+    blob:SetSize(width / canvasScale, height / canvasScale)
+    blob:ClearAllPoints()
+    blob:SetPoint("CENTER", panel.field, "CENTER", (0.5 - player.mapX) * width / canvasScale,
+        (player.mapY - 0.5) * height / canvasScale)
+    if blob.drawnKey ~= key or now >= (blob.nextDrawAt or 0) then
+        local ok = true
+        if blob.mapContextID ~= mapID then
+            ok = pcall(blob.SetMapID, blob, mapID)
+            if ok then blob.mapContextID = mapID end
+        end
+        if ok then ok = pcall(blob.DrawNone, blob) end
+        if ok then
+            for _, quest in ipairs(activeQuests) do
+                if not pcall(blob.DrawBlob, blob, quest.questID, true) then ok = false; break end
+            end
+        end
+        if not ok then HideQuestAreas(); return end
+        blob.drawnKey = key
+        -- DrawBlob can succeed before Blizzard loads the shape data.
+        blob.nextDrawAt = now + RESCAN_SECONDS
     end
+    blob:Show()
     return true
 end
 
@@ -2731,8 +2660,6 @@ function addon.GetVignetteRadarStatusLines()
         lines[#lines + 1] = "This client cannot clip the native quest-area layer."
     elseif questMapBasis and not questMapBasis.horizontal then
         lines[#lines + 1] = "This map's axes cannot align with Blizzard's quest-area layer yet."
-    elseif panel and panel.questColorFailed and settings.vignetteRadarQuestColors then
-        lines[#lines + 1] = "Per-quest area coloring failed; shared Blizzard area is used."
     elseif #activeQuests > 0 then
         lines[#lines + 1] = "Quest areas render only where Blizzard supplies shape data."
     end

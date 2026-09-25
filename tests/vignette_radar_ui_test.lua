@@ -1146,20 +1146,20 @@ settings.vignetteRadarQuestNumbers = true
 now = now + 1
 addon.VignetteRadarAPI.Refresh(false)
 assert(secondQuestDot:IsShown() and secondQuestDot.fill.vertexColor[1] ~= questDot.fill.vertexColor[1]
-    and secondQuestDot.halo.fill.vertexColor[1] == secondQuestDot.fill.vertexColor[1]
-    and panel.questColorBlobs[1].drawnQuests[1] == 12345
-    and panel.questColorBlobs[2].drawnQuests[1] == 12346
-    and panel.questColorBlobs[1].fillTexture ~= panel.questColorBlobs[2].fillTexture
-    and panel.questColorBlobs[1].borderAlpha > 0,
-    "each nearby quest needs matching diamond, circle, and bordered native area colors")
+    and secondQuestDot.halo.fill.vertexColor[1] == questDot.halo.fill.vertexColor[1]
+    and secondQuestDot.halo.fill.vertexColor[3] > secondQuestDot.halo.fill.vertexColor[1]
+    and panel.questBlob.drawnQuests[1] == 12345
+    and panel.questBlob.drawnQuests[2] == 12346
+    and panel.questBlob.fillTexture == "Interface\\WorldMap\\UI-QuestBlob-Inside"
+    and panel.questBlob.borderAlpha == 0,
+    "distinct quest diamonds must share the original blue quest-area renderer")
 local regularQuestFill = panel.questBlob.fillAlpha
-local regularQuestBorder = panel.questBlob.borderAlpha
 local regularQuestRange = settings.vignetteRadarRange
 settings.vignetteRadarRange = 50
 addon.VignetteRadarAPI.Refresh(false)
 assert(panel.questBlob:IsShown() and panel.questBlob.fillAlpha < regularQuestFill
-    and panel.questBlob.borderAlpha < regularQuestBorder,
-    "close zoom must soften both the exact quest area and its border")
+    and questDot.halo.fill.vertexColor[4] < .16,
+    "close zoom must soften both exact and estimated blue quest areas")
 settings.vignetteRadarRange = 10
 local regularPlotRadius = panel.plotRadius
 panel.plotRadius = 150
@@ -1187,7 +1187,7 @@ panel.plotRadius = regularPlotRadius
 settings.vignetteRadarRange = regularQuestRange
 addon.VignetteRadarAPI.Refresh(false)
 assert(panel.questBlob:GetScale() == 1 and panel.questBlob.fillAlpha == regularQuestFill
-    and panel.questBlob.borderAlpha == regularQuestBorder,
+    and panel.questBlob.borderAlpha == 0,
     "normal zoom must restore the original quest area opacity and canvas scale")
 local beforeQuestKeyLeft = panel:GetLeft()
 panel.legend.scripts.OnClick(panel.legend, "RightButton")
@@ -1275,8 +1275,8 @@ assert(not questKey:IsShown() and panel:GetLeft() == beforeQuestKeyLeft,
     "closing the left key must restore a radar shifted to make room")
 addon.VignetteRadarExploration.FocusQuest(12346)
 addon.VignetteRadarAPI.Refresh(false)
-assert(panel.questColorBlobs[1].drawnQuests[1] == 12345
-    and panel.questColorBlobs[2].drawnQuests[1] == 12346
+assert(panel.questBlob.drawnQuests[1] == 12345
+    and panel.questBlob.drawnQuests[2] == 12346
     and questDot.halo:IsShown() and questDot.halo.alpha >= .65,
     "spotlighting one quest must not erase other tracked quests' areas")
 addon.VignetteRadarExploration.FocusQuest(nil)
@@ -1300,8 +1300,8 @@ addon.VignetteRadarAPI.Refresh(false)
 settings.vignetteRadarQuestColors = false
 addon.VignetteRadarAPI.Refresh(false)
 assert(panel.questBlob.fillTexture == "Interface\\WorldMap\\UI-QuestBlob-Inside"
-    and #panel.questBlob.drawnQuests == 2 and not panel.questColorBlobs[2]:IsShown(),
-    "turning off individual colors must restore the shared Blizzard area renderer")
+    and #panel.questBlob.drawnQuests == 2,
+    "turning off diamond colors must leave the shared blue quest area unchanged")
 settings.vignetteRadarRange = 50
 addon.VignetteRadarAPI.Refresh(false)
 assert(panel.questBlob:IsShown() and panel.questBlob.fillAlpha < 48,
@@ -1401,23 +1401,8 @@ local blobCount = 0
 for _, object in ipairs(objects) do
     if object.kind == "QuestPOIFrame" then blobCount = blobCount + 1 end
 end
-assert(blobCount == 8 and #panel.questColorBlobs == 8,
-    "quest colors must reuse at most eight native blob renderers across layouts")
-for index, blob in ipairs(panel.questColorBlobs) do
-    local asset = ("Interface\\AddOns\\VignetteRadar\\Media\\quest-blob-%02d"):format(index)
-    assert(blob.fillTexture == asset and blob.borderTexture == asset,
-        "native blob widgets must receive the matching BLP asset path")
-    local file = assert(io.open(("Media/quest-blob-%02d.blp"):format(index), "rb"))
-    local bytes = file:read("*a")
-    file:close()
-    local color = addon.VignetteRadarQuestColors[index]
-    assert(bytes:sub(1, 4) == "BLP2" and bytes:byte(9) == 1
-        and bytes:byte(149) == math.floor(color[3] * 255 + .5)
-        and bytes:byte(150) == math.floor(color[2] * 255 + .5)
-        and bytes:byte(151) == math.floor(color[1] * 255 + .5)
-        and bytes:byte(152) == 255,
-        "each native blob BLP must contain the exact quest diamond palette color")
-end
+assert(blobCount == 1 and panel.questBlob.fillTexture == "Interface\\WorldMap\\UI-QuestBlob-Inside",
+    "quest areas must reuse one default-blue Blizzard blob across layouts")
 SlashCmdList.VIGNETTERADAR("preview")
 addon.HandleVignetteClick(panel.blipByKey["preview-rare"].target, "LeftButton")
 for _, name in ipairs({ "classic", "compact", "squat" }) do

@@ -585,7 +585,7 @@ local function Build()
     Check(quests, "vignetteRadarFollowTrackedQuest", "Outline Blizzard's tracked quest", 14, -87)
     Check(quests, "vignetteRadarNorthUp", "Keep north at the top", 14, -115)
     Check(quests, "vignetteRadarEdgeCues", "Show nearby off-screen cues", 14, -143)
-    Check(quests, "vignetteRadarQuestColors", "Color each quest uniquely", 14, -171)
+    Check(quests, "vignetteRadarQuestColors", "Color quest diamonds", 14, -171)
     Label(quests, "Exact blobs need north-up; circles are estimates.", 14, -196, 10)
     Stepper(quests, "vignetteRadarQuestHaloRadius", "Circle radius", -214,
         { 10, 20, 40, 80 }, function(value) return value .. " yd" end)
