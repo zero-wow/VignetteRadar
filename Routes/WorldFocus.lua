@@ -579,7 +579,7 @@ function API.ExplainActive()
         or item.source and ("Saved map note · " .. item.source) or "Selected location"
     local rule = item.kind == "quest" and "advances on objective progress"
         or item.kind == "treasure" and "advances at 3 yd or on matching loot"
-        or item.kind == "rare" and "advances at the chosen arrival distance"
+        or item.kind == "rare" and "advances when cleared or skipped"
         or "follows its guide step"
     return source .. " · " .. rule
 end
@@ -919,7 +919,10 @@ function API.Sync(mapID, snapshot, liveTargets, questPoints, mapNotes)
         return
     end
     if route and active.kind ~= "quest" and addon.VignetteRadarRecent
-        and addon.VignetteRadarRecent.IsHidden(active.item) then
+        and addon.VignetteRadarRecent.IsHidden(active.item)
+        and (active.kind ~= "rare" or Number(step.worldX) and Number(step.worldY)
+            and Distance(player.worldX, player.worldY,
+                step.worldX, step.worldY) <= ArrivalRadius()) then
         AdvanceRoute()
         return
     end
@@ -968,6 +971,10 @@ function API.Sync(mapID, snapshot, liveTargets, questPoints, mapNotes)
             active.index, active.wasOutside = active.index + 1, false
             RouteNote("NEXT STEP", active.name .. " · " .. active.index .. "/" .. #active.steps)
         end
+    elseif route and active.kind == "rare" then
+        -- Reaching a rare is not completing it. Keep the current target while
+        -- the player fights; a recorded kill/clear or Skip Stop advances it.
+        return
     elseif route then AdvanceRoute()
     else
         RouteNote("ARRIVED", active.name)

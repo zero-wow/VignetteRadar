@@ -111,7 +111,7 @@ local function CircleOnly()
     return Settings().vignetteRadarCircleOnly == true and not radarPeekActive
 end
 
-local function DrawTrailGlyph(definition, primary, extras, frame, x, y, ux, uy, r, g, b, alpha, index, sizeScale)
+local function DrawTrailGlyph(definition, primary, extras, frame, x, y, ux, uy, r, g, b, alpha, index, sizeScale, facing)
     sizeScale = sizeScale or 1
     if definition.dot or definition.square then
         local size = definition.alternating and (index % 2 == 0 and 3 or 6)
@@ -120,6 +120,7 @@ local function DrawTrailGlyph(definition, primary, extras, frame, x, y, ux, uy, 
         primary:SetVertexColor(r, g, b, alpha)
         primary:ClearAllPoints()
         primary:SetPoint("CENTER", frame, "CENTER", x, y)
+        if facing then addon.VignetteRadarTurn.TrackPoint(primary, x, y, facing) end
         primary:Show()
         return
     end
@@ -130,8 +131,11 @@ local function DrawTrailGlyph(definition, primary, extras, frame, x, y, ux, uy, 
         local x2, y2 = segment[3] * scale, segment[4] * scale
         line:SetThickness(segment[5] * sizeScale)
         line:SetColorTexture(r, g, b, alpha)
-        line:SetStartPoint("CENTER", frame, x + ux*x1 - uy*y1, y + uy*x1 + ux*y1)
-        line:SetEndPoint("CENTER", frame, x + ux*x2 - uy*y2, y + uy*x2 + ux*y2)
+        local startX, startY = x + ux*x1 - uy*y1, y + uy*x1 + ux*y1
+        local endX, endY = x + ux*x2 - uy*y2, y + uy*x2 + ux*y2
+        line:SetStartPoint("CENTER", frame, startX, startY)
+        line:SetEndPoint("CENTER", frame, endX, endY)
+        if facing then addon.VignetteRadarTurn.TrackLine(line, startX, startY, endX, endY, facing) end
         line:Show()
     end
 end
@@ -1259,6 +1263,7 @@ local function RenderMapNotes(player, range, targets)
                     dot.note, dot.distance = note, distance
                     dot:ClearAllPoints()
                     dot:SetPoint("CENTER", panel.field, "CENTER", x, y)
+                    addon.VignetteRadarTurn.TrackPoint(dot, x, y, player.facing)
                     dot:Show()
                 end
             end
@@ -1307,6 +1312,11 @@ local function RenderQuestDots(player, range)
                         dot.fill:SetSize(9, 9)
                         dot.fill:SetPoint("CENTER")
                         dot.fill:SetTexture(QUEST_DIAMOND_TEXTURE)
+                        dot.selection = dot:CreateTexture(nil, "OVERLAY")
+                        dot.selection:SetTexture(addon.VignetteRadarQuestHollowTexture)
+                        dot.selection:SetSize(18, 18)
+                        dot.selection:SetPoint("CENTER")
+                        dot.selection:SetVertexColor(.96, .97, 1, .92)
                         dot.number = Text(dot, 8, "")
                         dot.number:SetPoint("CENTER", dot, "CENTER")
                         dot.number:SetTextColor(.03, .04, .05, 1)
@@ -1385,10 +1395,12 @@ local function RenderQuestDots(player, range)
                         and tostring(quest.colorSlot or 1) or "")
                     local exploration = addon.VignetteRadarExploration
                     local spotlight = exploration and exploration.GetFocusedQuest()
-                    dot:SetAlpha(spotlight and spotlight ~= quest.questID and .65 or 1)
+                    dot:SetAlpha(1)
+                    dot.selection:SetShown(showDots and spotlight == quest.questID)
                     dot.screenX, dot.screenY = x, y
                     dot:ClearAllPoints()
                     dot:SetPoint("CENTER", panel.field, "CENTER", x, y)
+                    addon.VignetteRadarTurn.TrackPoint(dot, x, y, player.facing)
                     dot:SetShown(showDots)
                     if showHalos then
                         if not dot.halo then
@@ -1405,12 +1417,13 @@ local function RenderQuestDots(player, range)
                         dot.halo:SetSize(haloRadius * 2, haloRadius * 2)
                         dot.halo:ClearAllPoints()
                         dot.halo:SetPoint("CENTER", panel.field, "CENTER", x, y)
+                        addon.VignetteRadarTurn.TrackPoint(dot.halo, x, y, player.facing)
                         local haloColor = Settings().vignetteRadarQuestColors
                             and Settings().vignetteRadarQuestAreaColors
                             and QUEST_COLORS[quest.colorSlot or 1] or QUEST_AREA_BLUE
                         dot.halo.fill:SetVertexColor(haloColor[1], haloColor[2],
                             haloColor[3], haloAlpha)
-                        dot.halo:SetAlpha(spotlight and spotlight ~= quest.questID and .65 or 1)
+                        dot.halo:SetAlpha(1)
                         dot.halo:Show()
                     elseif dot.halo then
                         dot.halo:Hide()
@@ -1539,6 +1552,7 @@ addon.RenderVignetteRadarQuestStarts = function(player, mapID, range)
                             or entry.floor == "below" and "↓" or "!")
                         dot:ClearAllPoints()
                         dot:SetPoint("CENTER", panel.field, "CENTER", x, y)
+                        addon.VignetteRadarTurn.TrackPoint(dot, x, y, player.facing)
                         dot:Show()
                     end
                 end
@@ -1755,14 +1769,14 @@ local function RenderQuestAreas(player, mapID, range)
         if not ok then HideQuestAreas(); return end
         blob.drawnKey = key
         -- DrawBlob can succeed before Blizzard loads the shape data.
-        blob.retryDelay = math.min(5, (blob.retryDelay or 1) * 2)
+        blob.retryDelay = math.min(20, (blob.retryDelay or 1) * 2)
         blob.nextDrawAt = now + blob.retryDelay
     end
     blob:Show()
     return true
 end
 
-local function PlaceBlip(key, screenX, screenY, target)
+local function PlaceBlip(key, screenX, screenY, target, facing)
     local blip = panel.blipByKey[key]
     if not blip then
         blip = AcquireBlip()
@@ -1790,6 +1804,7 @@ local function PlaceBlip(key, screenX, screenY, target)
     blip:SetAlpha(CategoryOpacity(target.category) * TargetAlpha(target))
     blip:ClearAllPoints()
     blip:SetPoint("CENTER", panel.field, "CENTER", screenX, screenY)
+    if facing then addon.VignetteRadarTurn.TrackPoint(blip, screenX, screenY, facing) end
 end
 
 local function RenderExploration(player, range)
@@ -1834,6 +1849,7 @@ local function RenderExploration(player, range)
         line:SetColorTexture(r, g, b, a)
         line:SetStartPoint("CENTER", panel.field, x1, y1)
         line:SetEndPoint("CENTER", panel.field, x2, y2)
+        addon.VignetteRadarTurn.TrackLine(line, x1, y1, x2, y2, player.facing)
         line:Show()
     end
     local function Dot(item, x, y, label, r, g, b, onClick)
@@ -1873,6 +1889,7 @@ local function RenderExploration(player, range)
         dot.text:SetText(label)
         dot:ClearAllPoints()
         dot:SetPoint("CENTER", panel.field, "CENTER", x, y)
+        addon.VignetteRadarTurn.TrackPoint(dot, x, y, player.facing)
         dot:Show()
     end
     local trail, trailMap = exploration.GetTrail()
@@ -1979,7 +1996,7 @@ local function RenderExploration(player, range)
                     dot._trailTexture = texture
                 end
                 DrawTrailGlyph(definition, dot, nil, panel.field, sample.x, sample.y,
-                    sample.ux, sample.uy, r, g, b, markAlpha, index, sizeScale)
+                    sample.ux, sample.uy, r, g, b, markAlpha, index, sizeScale, player.facing)
             else
                 local mark = panel.trailMarks[index]
                 if not mark then
@@ -1996,7 +2013,7 @@ local function RenderExploration(player, range)
                     extraParts[part - 1] = extra
                 end
                 DrawTrailGlyph(definition, mark, extraParts, panel.field, sample.x, sample.y,
-                    sample.ux, sample.uy, r, g, b, markAlpha, index, sizeScale)
+                    sample.ux, sample.uy, r, g, b, markAlpha, index, sizeScale, player.facing)
             end
         end
     end
@@ -2035,8 +2052,9 @@ local function RenderCardinals(facing)
         local relative = NormalizeAngle(definition.angle - facing)
         local label = panel.cardinals[index]
         label:ClearAllPoints()
-        label:SetPoint("CENTER", panel.field, "CENTER",
-            -math.sin(relative) * radius, math.cos(relative) * radius)
+        local x, y = -math.sin(relative) * radius, math.cos(relative) * radius
+        label:SetPoint("CENTER", panel.field, "CENTER", x, y)
+        addon.VignetteRadarTurn.TrackPoint(label, x, y, facing)
     end
 end
 
@@ -3863,6 +3881,7 @@ local function RenderEdgeCues(player, range, targets)
         if x and y then
             cue:ClearAllPoints()
             cue:SetPoint("CENTER", panel.field, "CENTER", x, y)
+            addon.VignetteRadarTurn.TrackPoint(cue, x, y, player.facing)
             cue:Show()
         else cue:Hide() end
     end
@@ -4008,6 +4027,7 @@ Render = function()
     end
     local cueX, cueY
     if Settings().vignetteRadarActiveCue ~= false and activeStep
+        and activeKind ~= "quest" and not activeStep.questID
         and SafeNumber(activeStep.worldX) and SafeNumber(activeStep.worldY)
         and activeStep.mapID == mapID then
         local dx, dy = activeStep.worldX - player.worldX, activeStep.worldY - player.worldY
@@ -4020,7 +4040,8 @@ Render = function()
         local r, g, b = addon.VignetteRadarStyle.Color(activeKind or "quest")
         panel.activeCue:ClearAllPoints()
         panel.activeCue:SetPoint("CENTER", panel.field, "CENTER", cueX, cueY)
-        panel.activeCue:SetVertexColor(r, g, b, .10 + .09 * (.5 + .5 * math.sin(Now() * 4)))
+        addon.VignetteRadarTurn.TrackPoint(panel.activeCue, cueX, cueY, player.facing)
+        panel.activeCue:SetVertexColor(r, g, b, .16)
         panel.activeCue:Show()
     else
         panel.activeCue:Hide()
@@ -4112,7 +4133,7 @@ Render = function()
                         x, y = x*factor, y*factor
                     end
                 end
-                PlaceBlip(entry.target.key, x, y, entry.target)
+                PlaceBlip(entry.target.key, x, y, entry.target, player.facing)
                 local blip = panel.blipByKey[entry.target.key]
                 if blip and size > 1 then
                     blip.clusterKey = items[1].target.key
@@ -4638,6 +4659,7 @@ UpdateLauncher = function(elapsed, updateTargets)
         dot:SetSize(size + 2, size + 2)
         dot:ClearAllPoints()
         dot:SetPoint("CENTER", launcher.instrument, "CENTER", x, y)
+        if player then addon.VignetteRadarTurn.TrackPoint(dot, x, y, player.facing) end
         dot:Show()
         return shown < #launcher.miniBlips
     end
@@ -4848,6 +4870,23 @@ EnsureLauncher = function()
     end)
     launcher:SetScript("OnUpdate", function(self, elapsed)
         local started = ProfileTime()
+        local turn = addon.VignetteRadarTurn
+        self._turnElapsed = (self._turnElapsed or 0) + elapsed
+        if self._turnElapsed >= turn.Interval(self, addon.VignetteRadarBudget
+            and addon.VignetteRadarBudget.softThrottle) then
+            self._turnElapsed = 0
+            if not preview and Settings().vignetteRadarEnabled
+                and type(GetPlayerFacing) == "function" then
+                local ok, facing = pcall(GetPlayerFacing)
+                facing = ok and SafeNumber(facing) or nil
+                if facing then
+                    if Settings().vignetteRadarNorthUp then
+                        DrawPlayerHeading(self.direction, self.instrument, facing, 6, 12)
+                        DrawLauncherChevron(self.chevron, self.instrument, facing)
+                    else turn.UpdateLauncher(self, facing) end
+                end
+            end
+        end
         self._sweepElapsed = (self._sweepElapsed or 0) + elapsed
         self._targetElapsed = (self._targetElapsed or 0) + elapsed
         self._scanElapsed = (self._scanElapsed or 0) + elapsed
@@ -5769,6 +5808,24 @@ local function EnsurePanel()
 
     panel:SetScript("OnUpdate", function(self, elapsed)
         local started = ProfileTime()
+        local turn = addon.VignetteRadarTurn
+        self._turnElapsed = (self._turnElapsed or 0) + elapsed
+        if self._turnElapsed >= turn.Interval(self, addon.VignetteRadarBudget
+            and addon.VignetteRadarBudget.softThrottle) then
+            self._turnElapsed = 0
+            if not preview and Settings().vignetteRadarEnabled
+                and type(GetPlayerFacing) == "function" then
+                local ok, facing = pcall(GetPlayerFacing)
+                facing = ok and SafeNumber(facing) or nil
+                if facing then
+                    if Settings().vignetteRadarNorthUp then
+                        local tip, outer = HeadingGeometry(self.plotRadius)
+                        DrawPlayerHeading(self.direction, self.field, facing, tip, outer)
+                        DrawPlayerChevron(self.headingChevron, self.field, facing)
+                    else turn.UpdateRadar(self, facing) end
+                end
+            end
+        end
         self._renderElapsed = (self._renderElapsed or 0) + elapsed
         self._scanElapsed = (self._scanElapsed or 0) + elapsed
         local settings = Settings()

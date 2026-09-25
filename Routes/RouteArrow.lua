@@ -7,7 +7,7 @@ addon.VignetteRadarRouteArrow = API
 local frame
 local atan2 = math.atan2 or function(y, x) return math.atan(y, x) end
 local CIRCLE = "Interface\\CharacterFrame\\TempPortraitAlphaMask"
-local POINTER = "Interface\\AddOns\\VignetteRadar\\Media\\route-crystal-pointer.tga"
+local POINTER = "Interface\\AddOns\\VignetteRadar\\Media\\route-nav-chevron.tga"
 local KIND_TITLE = { quest = "Quest", treasure = "Treasure", rare = "Rare",
     boss = "World Boss", guide = "Zygor", zygor = "Zygor",
     exploration = "Map Note", event = "Event" }
@@ -55,15 +55,15 @@ local function SetColor(kind)
     local r, g, b = .05, .82, .62
     local slot = (kind == "guide" or kind == "zygor") and "accent" or kind
     if style and style.Color then r, g, b = style.Color(slot or "accent") end
-    frame.pointer:SetVertexColor(r, g, b, 1)
-    frame.pointerGlow:SetVertexColor(r, g, b, .16)
+    -- Keep the tiny directional art neutral and let the status surface carry color.
+    frame.pointer:SetVertexColor(1, 1, 1, 1)
     frame.node.mark:SetVertexColor(r, g, b, 1)
-    frame.node.meta:SetTextColor(r, g, b, .96)
+    frame.node.meta:SetTextColor(.72, .81, .83, 1)
     local controls = addon.VignetteRadarControls
     if controls and controls.RefreshRoundedStatusSurface then
         controls.RefreshRoundedStatusSurface(frame.node)
         for _, edge in ipairs(frame.node.statusSurface.edge) do
-            edge:SetVertexColor(r, g, b, .54)
+            edge:SetVertexColor(r, g, b, .38)
         end
     end
 end
@@ -79,7 +79,7 @@ end
 local function Ensure()
     if frame then return frame end
     frame = CreateFrame("Button", "VignetteRadarRouteArrow", UIParent)
-    frame:SetSize(160, 52)
+    frame:SetSize(160, 86)
     frame:SetFrameStrata("HIGH")
     frame:SetClampedToScreen(true)
     frame:SetMovable(true)
@@ -90,13 +90,9 @@ local function Ensure()
     frame.pointer:SetTexture(POINTER)
     frame.pointer:SetSize(16, 16)
     frame.pointer:SetPoint("TOP", frame, "TOP", 0, -2)
-    frame.pointerGlow = frame:CreateTexture(nil, "ARTWORK")
-    frame.pointerGlow:SetTexture(CIRCLE)
-    frame.pointerGlow:SetSize(25, 25)
-    frame.pointerGlow:SetPoint("CENTER", frame.pointer, "CENTER")
     frame.node = CreateFrame("Frame", nil, frame)
     frame.node:SetSize(160, 30)
-    frame.node:SetPoint("TOP", frame, "TOP", 0, -22)
+    frame.node:SetPoint("TOP", frame, "TOP", 0, -34)
     local controls = addon.VignetteRadarControls
     if controls and controls.RoundedStatusSurface then
         controls.RoundedStatusSurface(frame.node)
@@ -117,16 +113,23 @@ local function Ensure()
     frame.node.meta:SetSize(132, 11)
     frame.node.meta:SetPoint("BOTTOMLEFT", frame.node, "BOTTOMLEFT", 21, 3)
     frame.node.meta:SetJustifyH("LEFT")
+    frame.next = frame:CreateFontString(nil, "OVERLAY")
+    frame.next:SetFont(STANDARD_TEXT_FONT or "Fonts\\FRIZQT__.TTF", 9, "OUTLINE")
+    frame.next:SetSize(142, 15)
+    frame.next:SetPoint("TOPLEFT", frame, "TOPLEFT", 9, -68)
+    frame.next:SetJustifyH("LEFT")
+    frame.next:SetWordWrap(false)
+    frame.next:SetTextColor(.70, .79, .81, 1)
     frame.horizon = CreateFrame("Frame", nil, frame)
     frame.horizon:SetSize(160, 102)
-    frame.horizon:SetPoint("TOP", frame, "TOP", 0, -56)
+    frame.horizon:SetPoint("TOP", frame, "TOP", 0, -88)
     if controls and controls.RoundedStatusSurface then
         controls.RoundedStatusSurface(frame.horizon)
     end
     frame.horizon.title = frame.horizon:CreateFontString(nil, "OVERLAY")
     frame.horizon.title:SetFont(STANDARD_TEXT_FONT or "Fonts\\FRIZQT__.TTF", 9, "OUTLINE")
     frame.horizon.title:SetPoint("TOPLEFT", frame.horizon, "TOPLEFT", 9, -7)
-    frame.horizon.title:SetText("UP NEXT")
+    frame.horizon.title:SetText("Up Next")
     frame.horizon.why = controls.Button(frame.horizon, "Why?", 38, 16)
     frame.horizon.why:SetPoint("TOPRIGHT", frame.horizon, "TOPRIGHT", -7, -4)
     frame.horizon.why:SetScript("OnClick", function()
@@ -204,6 +207,15 @@ local function Ensure()
     end)
     frame:SetScript("OnUpdate", function(self, elapsed)
         self.elapsed = (self.elapsed or 0) + elapsed
+        self.bearingElapsed = (self.bearingElapsed or 0) + elapsed
+        if self.bearingElapsed >= .033 then
+            self.bearingElapsed = 0
+            if Number(self.routeDX) and Number(self.routeDY)
+                and type(GetPlayerFacing) == "function" then
+                local ok, facing = pcall(GetPlayerFacing)
+                if ok and Number(facing) then DrawBearing(self.routeDX, self.routeDY, facing) end
+            end
+        end
         if self.elapsed >= .2 then
             self.elapsed = 0
             API.Refresh()
@@ -254,12 +266,8 @@ function API.Refresh()
     end
     Ensure()
     SetColor(kind)
+    frame.routeDX, frame.routeDY = dx, dy
     DrawBearing(dx, dy, player.facing)
-    if settings.vignetteRadarActiveCue == true then
-        local now = type(GetTime) == "function" and GetTime() or 0
-        frame.pointerGlow:SetAlpha(.45 + .25 * math.sin(now * 4))
-        frame.pointerGlow:Show()
-    else frame.pointerGlow:Hide() end
     local rounded = math.floor(distance + .5)
     local name = type(step.name) == "string" and step.name ~= "" and step.name
         or type(routeName) == "string" and routeName ~= "" and routeName
@@ -277,13 +285,13 @@ function API.Refresh()
         and (" " .. routeIndex .. "/" .. routeCount) or ""
     local yards = rounded < 10000 and (rounded .. " yd")
         or (math.floor(rounded / 1000 + .5) .. "k yd")
-    local meta = kindTitle .. progress .. "  ·  " .. yards
+    local meta = "Now · " .. kindTitle .. progress .. " · " .. yards
     if frame.nodeMeta ~= meta then
         frame.nodeMeta = meta
         frame.node.meta:SetText(meta)
     end
     local expanded = settings.vignetteRadarRouteHorizonExpanded == true
-    local wantedHeight = expanded and 160 or 52
+    local wantedHeight = expanded and 192 or 86
     if frame:GetHeight() ~= wantedHeight then
         frame:SetHeight(wantedHeight)
         local scale = frame:GetScale()
@@ -293,13 +301,15 @@ function API.Refresh()
         end
     end
     frame.horizon:SetShown(expanded)
+    local upcoming = focus.GetHorizon and focus.GetHorizon() or {}
+    frame.next:SetText(upcoming[2] and ("Next  " .. (upcoming[2].name or "Route Stop"))
+        or "Next  —")
     if expanded then
         local controls = addon.VignetteRadarControls
         if controls and controls.RefreshRoundedStatusSurface then
             controls.RefreshRoundedStatusSurface(frame.horizon)
         end
         local focus = addon.VignetteRadarWorldFocus
-        local upcoming = focus and focus.GetHorizon and focus.GetHorizon() or {}
         frame.horizon.title:SetTextColor(.88, .94, .95, 1)
         for index, row in ipairs(frame.horizon.rows) do
             local stop = upcoming[index]

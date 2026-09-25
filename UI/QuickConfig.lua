@@ -538,7 +538,7 @@ local function Build()
     Stepper(layout, "vignetteRadarScale", "Radar Scale", -151,
         { .8, .9, 1, 1.1, 1.2, 1.3, 1.4, 1.5, 1.6, 1.7, 1.8 },
         function(value) return math.floor(value * 100 + .5) .. "%" end)
-    Check(layout, "vignetteRadarActiveCue", "Pulse Active Destination", 14, -191)
+    Check(layout, "vignetteRadarActiveCue", "Highlight Active Destination", 14, -191)
     Check(layout, "vignetteRadarRouteHorizonExpanded", "Show Upcoming Route Stops", 14, -221)
     Check(layout, "vignetteRadarSourceBadges", "Show Marker Source Badges", 14, -251)
 

@@ -225,6 +225,19 @@ assert(loadfile("Data/Zygor.lua"))("VignetteRadar", addon)
 assert(loadfile("Routes/Beacons.lua"))("VignetteRadar", addon)
 assert(loadfile(legendSourcePath))("VignetteRadar", addon)
 assert(loadfile(targetPickerSourcePath))("VignetteRadar", addon)
+assert(loadfile("UI/TurnSmoothing.lua"))("VignetteRadar", addon)
+do
+    local point = { IsShown = function() return true end,
+        SetPoint = function(self, _, _, _, x, y) self.x, self.y = x, y end }
+    local turn = addon.VignetteRadarTurn
+    local radar = { field = {}, blips = { point } }
+    turn.TrackPoint(point, 0, 10, 0)
+    assert(turn.UpdateRadar(radar, math.pi / 2)
+        and math.abs(point.x - 10) < .001 and math.abs(point.y) < .001
+        and not turn.UpdateRadar(radar, math.pi / 2)
+        and turn.Interval(radar, true) == .10,
+        "turn-only updates must rotate cached markers without a full render and obey CPU throttling")
+end
 assert(loadfile(sourcePath))("VignetteRadar", addon)
 assert(loadfile("Routes/RouteArrow.lua"))("VignetteRadar", addon)
 assert(loadfile(optionsSourcePath))("VignetteRadar", addon)
@@ -1535,7 +1548,9 @@ addon.VignetteRadarExploration.FocusQuest(12346)
 addon.VignetteRadarAPI.Refresh(false)
 assert(panel.questBlob.drawnQuests[1] == 12345
     and panel.questBlob.drawnQuests[2] == 12346
-    and questDot.halo:IsShown() and questDot.halo.alpha >= .65,
+    and questDot.halo:IsShown() and questDot.halo.alpha == 1
+    and secondQuestDot.selection:IsShown() and not questDot.selection:IsShown()
+    and not panel.activeCue:IsShown(),
     "spotlighting one quest must not erase other tracked quests' areas")
 addon.VignetteRadarExploration.FocusQuest(nil)
 settings.vignetteRadarQuestDots = false
@@ -2470,10 +2485,14 @@ C_QuestLog = savedQuestLog
 do
     local focus = addon.VignetteRadarWorldFocus
     local originalRoutePoint = focus.GetRoutePoint
+    local originalHorizon = focus.GetHorizon
     local snapshot = addon.VignetteRadarAPI.GetPlayerSnapshot()
     local routeStep = { name = "Crystal Cache", worldX = snapshot.worldX + 300, worldY = snapshot.worldY,
         instanceID = snapshot.instanceID }
     focus.GetRoutePoint = function() return routeStep, "treasure", "Treasure Route", 2, 3 end
+    focus.GetHorizon = function()
+        return { { name = "Crystal Cache" }, { name = "Silvermaw" } }
+    end
     settings.vignetteRadarRouteArrow = true
     addon.VignetteRadarAPI.Refresh(false)
     local widget = addon.VignetteRadarRouteArrow.GetFrame()
@@ -2483,8 +2502,15 @@ do
         and widget.pointer.width == 16 and widget.pointer.height == 16
         and math.abs(initialRotation + snapshot.facing) < .01
         and widget.node.name.text == "Crystal Cache"
-        and widget.node.meta.text == "Approach 2/3  ·  300 yd",
+        and widget.node.meta.text == "Now · Approach 2/3 · 300 yd"
+        and widget.next.text == "Next  Silvermaw",
         "the movable crystal pointer and node readout must show the active route stop")
+    local originalFacing = GetPlayerFacing
+    GetPlayerFacing = function() return snapshot.facing + .5 end
+    widget.scripts.OnUpdate(widget, .04)
+    assert(math.abs(widget.pointer.rotation - initialRotation + .5) < .01,
+        "bearing-only updates must turn the arrow between full route refreshes")
+    GetPlayerFacing = originalFacing
     local arrowTool = panel.hoverTools[9]
     assert(arrowTool.toolID == "arrow" and arrowTool.reference == panel.arrowToggle)
     arrowTool.scripts.OnClick(arrowTool, "LeftButton")
@@ -2497,8 +2523,8 @@ do
     widget.left, widget.top = 500, 80
     settings.vignetteRadarRouteHorizonExpanded = true
     addon.VignetteRadarRouteArrow.Refresh()
-    assert(widget.height == 160 and widget.horizon:IsShown()
-        and widget.point[5] >= -600 + 160 + 8,
+    assert(widget.height == 192 and widget.horizon:IsShown()
+        and widget.point[5] >= -600 + 192 + 8,
         "the expanded route horizon must rise into view when the arrow is near the bottom edge")
     settings.vignetteRadarRouteHorizonExpanded = false
     widget.left, widget.top = nil, nil
@@ -2534,6 +2560,7 @@ do
     assert(settings.vignetteRadarRouteArrowPosition == nil and widget.point[1] == "CENTER",
         "reset positions must recenter the independently movable arrow")
     focus.GetRoutePoint = originalRoutePoint
+    focus.GetHorizon = originalHorizon
 end
 
 -- Exploration overlays stay inside the field and crowded detections remain selectable.

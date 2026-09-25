@@ -126,10 +126,23 @@ assert(waypoint.position.x == .6,
     "the current map pin must remain until Auto Route is within 10 yards")
 player.worldX = 590.1
 focus.Sync(123, player, { rareA, rareB }, {}, { rareNote })
-assert(waypoint.position.x == .8, "Auto Route should advance after entering 10 yards")
+assert(waypoint.position.x == .6,
+    "an engaged rare must stay current at arrival until killed, cleared, or skipped")
+addon.VignetteRadarRecent = { IsHidden = function(item) return item.key == rareA.key end }
+player.worldX = 589.9
+focus.Sync(123, player, { rareA, rareB }, {}, { rareNote })
+assert(waypoint.position.x == .6,
+    "a matching clear outside the selected rare radius must not jump the route")
+player.worldX = 590.1
+focus.Sync(123, player, { rareA, rareB }, {}, { rareNote })
+assert(waypoint.position.x == .8,
+    "a recorded rare kill should advance to the next stop")
+addon.VignetteRadarRecent = nil
 player.worldX = 800
 focus.Sync(123, player, { rareA, rareB }, {}, { rareNote })
-assert(waypoint.position.x == .9, "rare route should continue into the selected map pack")
+assert(waypoint.position.x == .8, "arriving at the next rare must keep that target current")
+assert(focus.SkipRouteStop() and waypoint.position.x == .9,
+    "rare route should continue into the selected map pack after a confirmed skip")
 waypoint = UiMapPoint.CreateFromCoordinates(123, .97, .5)
 focus.Sync(123, player, { rareA, rareB }, {}, { rareNote })
 assert(not focus.IsRouteActive(), "a manually replaced waypoint must stop Auto Route")
@@ -526,6 +539,9 @@ do
         "Closest should continue from the treasure to the nearby rare")
     player.worldX = 321
     focus.Sync(123, player, { rare }, { objective }, { cache })
+    assert(waypoint.position.x == .33 and select(2, focus.GetRoutePoint()) == "rare",
+        "Closest must not switch away from a rare merely because the player engaged it")
+    assert(focus.SkipRouteStop(), "a rare can still be advanced explicitly")
     assert(focus.IsRouteActive() and focus.GetRoutePoint() == nil
         and focus.Status():find("Waiting for Nearby Points", 1, true),
         "Closest should remain armed after its current points are exhausted")
@@ -547,7 +563,7 @@ do
     local horizon = focus.GetHorizon()
     assert(horizon[1] and horizon[1].name == "Tied rare"
         and horizon[2] and horizon[2].name == "Tied cache"
-        and focus.ExplainActive():find("arrival distance", 1, true),
+        and focus.ExplainActive():find("cleared or skipped", 1, true),
         "the route horizon must show likely next stops and explain the active stop")
     assert(focus.ToggleRouteLock() and focus.IsRouteLocked())
     player.worldX = 339
@@ -556,8 +572,10 @@ do
         "locking the current stop must prevent proximity advancement")
     assert(focus.ToggleRouteLock() and not focus.IsRouteLocked())
     focus.Sync(123, player, { tiedRare }, {}, { tiedCache })
-    assert(select(2, focus.GetRoutePoint()) == "treasure",
-        "unlocking must resume the normal mixed-route arrival rule")
+    assert(select(2, focus.GetRoutePoint()) == "rare",
+        "unlocking must keep a nearby rare current until it is cleared or skipped")
+    assert(focus.SkipRouteStop() and select(2, focus.GetRoutePoint()) == "treasure",
+        "skipping the rare must resume the mixed route")
     assert(focus.Clear())
 end
 io.write("vignette radar World Focus tests passed\n")
