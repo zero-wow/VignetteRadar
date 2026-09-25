@@ -84,6 +84,18 @@ function addon.GetSettings()
     if type(db.vignetteRadarEnabled) ~= "boolean" then db.vignetteRadarEnabled = true end
     if type(db.vignetteRadarHideWhenEmpty) ~= "boolean" then db.vignetteRadarHideWhenEmpty = true end
     if type(db.vignetteRadarLauncherVisible) ~= "boolean" then db.vignetteRadarLauncherVisible = true end
+    if type(db.vignetteRadarBeaconsEnabled) ~= "boolean" then db.vignetteRadarBeaconsEnabled = false end
+    if type(db.vignetteRadarBeaconRares) ~= "boolean" then db.vignetteRadarBeaconRares = true end
+    if type(db.vignetteRadarBeaconQuests) ~= "boolean" then db.vignetteRadarBeaconQuests = true end
+    if db.vignetteRadarBeaconRange ~= 150 and db.vignetteRadarBeaconRange ~= 450
+        and db.vignetteRadarBeaconRange ~= 1200 and db.vignetteRadarBeaconRange ~= 2400 then
+        db.vignetteRadarBeaconRange = 1200
+    end
+    if db.vignetteRadarBeaconMax ~= 4 and db.vignetteRadarBeaconMax ~= 8
+        and db.vignetteRadarBeaconMax ~= 12 and db.vignetteRadarBeaconMax ~= 16
+        and db.vignetteRadarBeaconMax ~= 24 then
+        db.vignetteRadarBeaconMax = 8
+    end
     local validRange = false
     for _, range in ipairs(addon.VignetteRadarRanges) do
         if db.vignetteRadarRange == range then

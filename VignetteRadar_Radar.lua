@@ -11,7 +11,8 @@ local LAYOUTS = {
     squat = { width = 374, height = 230, field = 184 },
     compact = { width = 210, height = 260, field = 164, footer = 50, focus = 64 },
 }
-local LAUNCHER_SIZE, LAUNCHER_RADIUS, LAUNCHER_RANGE = 58, 16, 150
+local LAUNCHER_DIMENSIONS = { width = 140, height = 64 }
+local LAUNCHER_RADIUS, LAUNCHER_RANGE = 16, 150
 local HEADING_HALF_WIDTH = 4
 local UPDATE_SECONDS, RESCAN_SECONDS = 0.05, 1
 local SLOW_UPDATE_MS, STALLED_UPDATE_MS = 50, 250
@@ -452,7 +453,8 @@ end
 local function CollectQuests(mapID, force)
     local quests = {}
     if not (mapID and C_QuestLog and C_QuestLog.GetQuestsOnMap
-        and (force or Settings().vignetteRadarQuestDots or Settings().vignetteRadarQuestAreas)) then
+        and (force or Settings().vignetteRadarQuestDots or Settings().vignetteRadarQuestAreas
+            or (Settings().vignetteRadarBeaconsEnabled and Settings().vignetteRadarBeaconQuests))) then
         return quests
     end
     local records = Call(C_QuestLog.GetQuestsOnMap, mapID)
@@ -2384,9 +2386,14 @@ ApplyAppearance = function()
             if index % 2 == 0 then facet.core:SetVertexColor(hr, hg, hb, 1)
             else facet.core:SetVertexColor(ar, ag, ab, 1) end
         end
-        launcher.chrome:SetVertexColor(.46, .48, .52, .72)
+        launcher.chrome:SetVertexColor(.46, .48, .52, .26)
         launcher.bezel:SetVertexColor(ar, ag, ab, 1)
         launcher.closed:SetVertexColor(.62, .65, .70, 1)
+        launcher.titleLabel:SetTextColor(hr, hg, hb, .92)
+        launcher.readoutLine:SetColorTexture(ar, ag, ab, .35)
+        for _, line in ipairs(launcher.expandChevron) do
+            line:SetColorTexture(ar, ag, ab, .84)
+        end
     end
     if addon.VignetteRadarControls and addon.VignetteRadarControls.RefreshTheme then
         addon.VignetteRadarControls.RefreshTheme()
@@ -3454,8 +3461,8 @@ local function PlaceLauncher(left, top)
         and width > 0 and height > 0) then return end
     left = SafeNumber(left) and left or 30
     top = SafeNumber(top) and top or height - 170
-    left = math.max(4, math.min(left, width - LAUNCHER_SIZE * scale - 4))
-    top = math.max(LAUNCHER_SIZE * scale + 4, math.min(top, height - 4))
+    left = math.max(4, math.min(left, width - LAUNCHER_DIMENSIONS.width * scale - 4))
+    top = math.max(LAUNCHER_DIMENSIONS.height * scale + 4, math.min(top, height - 4))
     launcher:ClearAllPoints()
     launcher:SetPoint("TOPLEFT", UIParent, "TOPLEFT", left / scale, (top - height) / scale)
     return left, top
@@ -3481,7 +3488,8 @@ function Morph.LauncherCenter()
     local scale = launcher:GetScale()
     local left, top = SafeNumber(launcher:GetLeft()), SafeNumber(launcher:GetTop())
     if not (SafeNumber(scale) and left and top) then return nil end
-    return (left + LAUNCHER_SIZE / 2) * scale, (top - LAUNCHER_SIZE / 2) * scale
+    return (left + LAUNCHER_DIMENSIONS.width / 2) * scale,
+        (top - LAUNCHER_DIMENSIONS.height / 2) * scale
 end
 
 function Morph.RadarSurface()
@@ -3506,8 +3514,9 @@ function Morph.MoveLauncherToRadar()
     if not launcher or not panel then return end
     local x, y = Morph.RadarSurface()
     if not (x and y) then return end
-    local half = LAUNCHER_SIZE * launcher:GetScale() / 2
-    local left, top = PlaceLauncher(x - half, y + half)
+    local scale = launcher:GetScale()
+    local left, top = PlaceLauncher(x - LAUNCHER_DIMENSIONS.width * scale / 2,
+        y + LAUNCHER_DIMENSIONS.height * scale / 2)
     if left and top then
         Settings().vignetteRadarLauncherPosition = { x = left, y = top - UIParent:GetHeight() }
     end
@@ -3550,12 +3559,20 @@ function Morph.Start(opening, fromX, fromY, fromWidth, fromHeight,
         Morph.shell.border = Morph.shell:CreateTexture(nil, "OVERLAY")
         Morph.shell.border:SetAllPoints()
         Morph.shell.border:SetTexture(ROUNDED_BORDER_TEXTURE)
+        Morph.shell.launcherFace = Morph.shell:CreateTexture(nil, "BACKGROUND", nil, 1)
+        Morph.shell.launcherFace:SetAllPoints()
+        Morph.shell.launcherFace:SetTexture("Interface\\AddOns\\VignetteRadar\\Media\\launcher-housing.tga")
+        Morph.shell.launcherBorder = Morph.shell:CreateTexture(nil, "OVERLAY", nil, 1)
+        Morph.shell.launcherBorder:SetAllPoints()
+        Morph.shell.launcherBorder:SetTexture("Interface\\AddOns\\VignetteRadar\\Media\\launcher-outline.tga")
     end
     local morphShell = Morph.shell
     local style = addon.VignetteRadarStyle
     if style and style.Color then
         morphShell.face:SetVertexColor(style.Color("background"))
         morphShell.border:SetVertexColor(style.Color("accent"))
+        morphShell.launcherFace:SetVertexColor(style.Color("background"))
+        morphShell.launcherBorder:SetVertexColor(style.Color("accent"))
     end
     morphShell.opening = opening
     morphShell.elapsed = 0
@@ -3565,6 +3582,10 @@ function Morph.Start(opening, fromX, fromY, fromWidth, fromHeight,
     morphShell:ClearAllPoints()
     morphShell:SetPoint("CENTER", UIParent, "BOTTOMLEFT", fromX, fromY)
     morphShell:SetAlpha(1)
+    morphShell.face:SetAlpha(opening and 0 or 1)
+    morphShell.border:SetAlpha(opening and 0 or 1)
+    morphShell.launcherFace:SetAlpha(opening and 1 or 0)
+    morphShell.launcherBorder:SetAlpha(opening and 1 or 0)
     Morph.running = true
     if panel then
         panel._morphAlpha = opening and 0 or 1
@@ -3583,6 +3604,11 @@ function Morph.Start(opening, fromX, fromY, fromWidth, fromHeight,
             from[4] + (to[4] - from[4]) * eased)
         self:ClearAllPoints()
         self:SetPoint("CENTER", UIParent, "BOTTOMLEFT", x, y)
+        local launcherBlend = opening and 1 - eased or eased
+        self.face:SetAlpha(1 - launcherBlend)
+        self.border:SetAlpha(1 - launcherBlend)
+        self.launcherFace:SetAlpha(launcherBlend)
+        self.launcherBorder:SetAlpha(launcherBlend)
         self:SetAlpha(opening and 1 - eased or eased)
         if panel then
             panel._morphAlpha = opening and eased or 1 - eased
@@ -3659,7 +3685,7 @@ local function ToggleRadarPanel()
         local picker = TargetPickerAPI()
         if picker and type(picker.Hide) == "function" then pcall(picker.Hide) end
         Morph.Start(false, x, y, width, height,
-            targetX, targetY, LAUNCHER_SIZE, LAUNCHER_SIZE)
+            targetX, targetY, LAUNCHER_DIMENSIONS.width, LAUNCHER_DIMENSIONS.height)
     else
         local x, y = Morph.LauncherCenter()
         Settings().vignetteRadarEnabled = true
@@ -3668,7 +3694,7 @@ local function ToggleRadarPanel()
         if panel and panel:IsShown() and x and y then
             Morph.MoveRadarToLauncher(x, y)
             local targetX, targetY, width, height = Morph.RadarSurface()
-            Morph.Start(true, x, y, LAUNCHER_SIZE, LAUNCHER_SIZE,
+            Morph.Start(true, x, y, LAUNCHER_DIMENSIONS.width, LAUNCHER_DIMENSIONS.height,
                 targetX, targetY, width, height)
         end
     end
@@ -3717,7 +3743,7 @@ local function UpdateLauncherSweep(frame, elapsed)
         if animated then
             local angle = frame._sweepAngle - ((index - 1) * 0.13)
             line:SetColorTexture(ACCENT[1], ACCENT[2], ACCENT[3], 0.22 / index)
-            line:SetEndPoint("CENTER", frame, math.sin(angle) * 14,
+            line:SetEndPoint("CENTER", frame.instrument, math.sin(angle) * 14,
                 math.cos(angle) * 14)
         end
     end
@@ -3767,8 +3793,8 @@ UpdateLauncher = function(elapsed, updateTargets)
     for _, line in ipairs(launcher.chevron) do line:SetShown(hasHeading) end
     if hasHeading then
         local facing = preview and 0.65 or player.facing
-        DrawPlayerHeading(launcher.direction, launcher, facing, 6, 12)
-        DrawLauncherChevron(launcher.chevron, launcher, facing)
+        DrawPlayerHeading(launcher.direction, launcher.instrument, facing, 6, 12)
+        DrawLauncherChevron(launcher.chevron, launcher.instrument, facing)
     end
     local function ShowDot(target, x, y)
         shown = shown + 1
@@ -3785,7 +3811,7 @@ UpdateLauncher = function(elapsed, updateTargets)
         dot:SetAlpha(CategoryOpacity(target.category) * TargetAlpha(target))
         dot:SetSize(size + 2, size + 2)
         dot:ClearAllPoints()
-        dot:SetPoint("CENTER", launcher, "CENTER", x, y)
+        dot:SetPoint("CENTER", launcher.instrument, "CENTER", x, y)
         dot:Show()
         return shown < #launcher.miniBlips
     end
@@ -3813,7 +3839,7 @@ UpdateLauncher = function(elapsed, updateTargets)
     launcher.rares, launcher.bosses = rares, bosses
     local active = Settings().vignetteRadarEnabled == true or preview
     launcher.rangeLabel:SetText(not active and "OFF" or (bosses > 0 and "BOSS"
-        or (rares > 0 and "RARE" or "150")))
+        or (rares > 0 and "RARE" or "150 YD")))
     if not active then launcher.rangeLabel:SetTextColor(.72, .74, .78, .7)
     elseif bosses > 0 then launcher.rangeLabel:SetTextColor(1, 0.25, 0.18, 1)
     elseif rares > 0 then launcher.rangeLabel:SetTextColor(0.78, 0.88, 1, 1)
@@ -3829,7 +3855,7 @@ end
 EnsureLauncher = function()
     if launcher then return launcher end
     launcher = CreateFrame("Button", "VignetteRadarLauncher", UIParent)
-    launcher:SetSize(LAUNCHER_SIZE, LAUNCHER_SIZE)
+    launcher:SetSize(LAUNCHER_DIMENSIONS.width, LAUNCHER_DIMENSIONS.height)
     launcher:SetFrameStrata("MEDIUM")
     launcher:SetClampedToScreen(true)
     launcher:SetMovable(true)
@@ -3842,61 +3868,64 @@ EnsureLauncher = function()
         UIParent:GetHeight() + (savedY or -170))
 
     launcher.face = launcher:CreateTexture(nil, "BORDER")
-    launcher.face:SetSize(LAUNCHER_SIZE, LAUNCHER_SIZE)
+    launcher.face:SetSize(LAUNCHER_DIMENSIONS.width, LAUNCHER_DIMENSIONS.height)
     launcher.face:SetPoint("CENTER")
-    launcher.face:SetTexture(ROUNDED_SQUARE_TEXTURE)
+    launcher.face:SetTexture("Interface\\AddOns\\VignetteRadar\\Media\\launcher-housing.tga")
     launcher.face:SetVertexColor(0.012, 0.046, 0.052, 0.98)
-    launcher.depth = launcher:CreateTexture(nil, "BORDER", nil, 1)
+    launcher.instrument = CreateFrame("Frame", nil, launcher)
+    launcher.instrument:SetSize(56, 56)
+    launcher.instrument:SetPoint("LEFT", launcher, "LEFT", 4, 0)
+    launcher.depth = launcher.instrument:CreateTexture(nil, "BORDER", nil, 1)
     launcher.depth:SetSize(42, 42)
     launcher.depth:SetPoint("CENTER")
     launcher.depth:SetTexture(CIRCLE_TEXTURE)
     launcher.depth:SetVertexColor(ACCENT[1], ACCENT[2], ACCENT[3], .07)
-    launcher.ring = CreateLauncherRing(launcher, 15, 0.18)
-    launcher.dial = CreateLauncherRing(launcher, 21, .64, 32, 1.5)
+    launcher.ring = CreateLauncherRing(launcher.instrument, 15, 0.18)
+    launcher.dial = CreateLauncherRing(launcher.instrument, 21, .64, 32, 1.5)
     launcher.cardinals = {}
     for index = 1, 4 do
         local angle = (index - 1) * math.pi / 2
         local x, y = math.sin(angle), math.cos(angle)
-        local line = launcher:CreateLine(nil, "ARTWORK")
+        local line = launcher.instrument:CreateLine(nil, "ARTWORK")
         line:SetThickness(1.7)
-        line:SetStartPoint("CENTER", launcher, x * 24, y * 24)
-        line:SetEndPoint("CENTER", launcher, x * 27, y * 27)
+        line:SetStartPoint("CENTER", launcher.instrument, x * 24, y * 24)
+        line:SetEndPoint("CENTER", launcher.instrument, x * 27, y * 27)
         launcher.cardinals[index] = line
     end
 
     launcher.sweepLines = {}
     for index = 1, 2 do
-        local line = launcher:CreateLine(nil, "OVERLAY")
+        local line = launcher.instrument:CreateLine(nil, "OVERLAY")
         line:SetThickness(index == 1 and 1.2 or 1)
-        line:SetStartPoint("CENTER", launcher, 0, 0)
+        line:SetStartPoint("CENTER", launcher.instrument, 0, 0)
         launcher.sweepLines[index] = line
     end
-    launcher.centerGlow = launcher:CreateTexture(nil, "OVERLAY")
+    launcher.centerGlow = launcher.instrument:CreateTexture(nil, "OVERLAY")
     launcher.centerGlow:SetSize(9, 9)
     launcher.centerGlow:SetPoint("CENTER")
     launcher.centerGlow:SetTexture(CIRCLE_TEXTURE)
     launcher.centerGlow:SetVertexColor(ACCENT[1], ACCENT[2], ACCENT[3], 0.22)
-    launcher.center = launcher:CreateTexture(nil, "OVERLAY", nil, 1)
+    launcher.center = launcher.instrument:CreateTexture(nil, "OVERLAY", nil, 1)
     launcher.center:SetSize(4, 4)
     launcher.center:SetPoint("CENTER")
     launcher.center:SetTexture(CIRCLE_TEXTURE)
     launcher.center:SetVertexColor(ACCENT[1], ACCENT[2], ACCENT[3], 1)
-    launcher.direction = launcher:CreateLine(nil, "OVERLAY")
+    launcher.direction = launcher.instrument:CreateLine(nil, "OVERLAY")
     launcher.direction:SetThickness(1.5)
     launcher.direction:SetColorTexture(ACCENT[1], ACCENT[2], ACCENT[3], 0.95)
     launcher.direction:Hide()
     launcher.chevron = {}
     for index = 1, 2 do
-        local line = launcher:CreateLine(nil, "OVERLAY")
+        local line = launcher.instrument:CreateLine(nil, "OVERLAY")
         line:SetThickness(1.3)
         line:Hide()
         launcher.chevron[index] = line
     end
     launcher.miniBlips = {}
     for index = 1, 5 do
-        local dot = CreateFrame("Frame", nil, launcher)
+        local dot = CreateFrame("Frame", nil, launcher.instrument)
         dot.isMini = true
-        dot:SetFrameLevel(launcher:GetFrameLevel() + 1)
+        dot:SetFrameLevel(launcher.instrument:GetFrameLevel() + 1)
         dot:SetSize(3, 3)
         dot.dot = dot:CreateTexture(nil, "OVERLAY")
         dot.dot:SetPoint("CENTER")
@@ -3904,40 +3933,43 @@ EnsureLauncher = function()
         dot:Hide()
         launcher.miniBlips[index] = dot
     end
-    launcher.rangeLabel = Text(launcher, 8, "150")
-    launcher.rangeLabel:SetPoint("BOTTOM", launcher, "BOTTOM", 0, 16)
-    launcher.rangeLabel:SetJustifyH("CENTER")
+    launcher.titleLabel = Text(launcher, 10, "RADAR", true)
+    launcher.titleLabel:SetPoint("LEFT", launcher, "LEFT", 72, 9)
+    launcher.titleLabel:SetWidth(54)
+    launcher.rangeLabel = Text(launcher, 10, "150 YD")
+    launcher.rangeLabel:SetPoint("LEFT", launcher, "LEFT", 72, -9)
+    launcher.rangeLabel:SetWidth(56)
+    launcher.rangeLabel:SetJustifyH("LEFT")
     launcher.rangeLabel:SetTextColor(0.56, 0.78, 0.74, 0.68)
+    launcher.readoutLine = launcher:CreateLine(nil, "ARTWORK")
+    launcher.readoutLine:SetThickness(1)
+    launcher.readoutLine:SetStartPoint("CENTER", launcher, -4, -16)
+    launcher.readoutLine:SetEndPoint("CENTER", launcher, -4, 16)
+    launcher.expandChevron = {}
+    for index, points in ipairs({ { 57, -5, 62, 0 }, { 62, 0, 57, 5 } }) do
+        local line = launcher:CreateLine(nil, "OVERLAY")
+        line:SetThickness(1.5)
+        line:SetStartPoint("CENTER", launcher, points[1], points[2])
+        line:SetEndPoint("CENTER", launcher, points[3], points[4])
+        launcher.expandChevron[index] = line
+    end
     launcher.chrome = launcher:CreateTexture(nil, "OVERLAY", nil, 2)
     launcher.chrome:SetAllPoints()
-    launcher.chrome:SetTexture(ROUNDED_BORDER_TEXTURE)
-    launcher.chrome:SetVertexColor(.46, .48, .52, .72)
+    launcher.chrome:SetTexture("Interface\\AddOns\\VignetteRadar\\Media\\launcher-outline.tga")
+    launcher.chrome:SetVertexColor(.46, .48, .52, .26)
     launcher.bezel = launcher:CreateTexture(nil, "OVERLAY", nil, 3)
-    launcher.bezel:SetSize(LAUNCHER_SIZE - 4, LAUNCHER_SIZE - 4)
+    launcher.bezel:SetSize(LAUNCHER_DIMENSIONS.width, LAUNCHER_DIMENSIONS.height)
     launcher.bezel:SetPoint("CENTER")
-    launcher.bezel:SetTexture(ROUNDED_BORDER_TEXTURE)
+    launcher.bezel:SetTexture("Interface\\AddOns\\VignetteRadar\\Media\\launcher-outline.tga")
     launcher.bezel:SetAlpha(0.92)
     launcher.closed = launcher:CreateTexture(nil, "OVERLAY", nil, 3)
-    launcher.closed:SetSize(LAUNCHER_SIZE - 4, LAUNCHER_SIZE - 4)
+    launcher.closed:SetSize(LAUNCHER_DIMENSIONS.width, LAUNCHER_DIMENSIONS.height)
     launcher.closed:SetPoint("CENTER")
-    launcher.closed:SetTexture(ROUNDED_BORDER_TEXTURE)
+    launcher.closed:SetTexture("Interface\\AddOns\\VignetteRadar\\Media\\launcher-outline.tga")
     launcher.closed:SetAlpha(0.62)
     launcher.closed:Hide()
     launcher.facets = {}
-    for index, point in ipairs({ { 0, 24 }, { 24, 0 }, { 0, -24 }, { -24, 0 } }) do
-        local size = index == 1 and 8 or 6
-        local rim = launcher:CreateTexture(nil, "OVERLAY", nil, 4)
-        rim:SetSize(size, size)
-        rim:SetPoint("CENTER", launcher, "CENTER", point[1], point[2])
-        rim:SetTexture(QUEST_DIAMOND_TEXTURE)
-        rim:SetVertexColor(.77, .79, .82, .86)
-        local core = launcher:CreateTexture(nil, "OVERLAY", nil, 5)
-        core:SetSize(size - 3, size - 3)
-        core:SetPoint("CENTER", launcher, "CENTER", point[1], point[2])
-        core:SetTexture(QUEST_DIAMOND_TEXTURE)
-        launcher.facets[index] = { rim = rim, core = core }
-    end
-    launcher.shock = launcher:CreateTexture(nil, "OVERLAY", nil, 4)
+    launcher.shock = launcher.instrument:CreateTexture(nil, "OVERLAY", nil, 4)
     launcher.shock:SetPoint("CENTER")
     launcher.shock:SetTexture(CIRCLE_TEXTURE)
     launcher.shock:SetVertexColor(ACCENT[1], ACCENT[2], ACCENT[3], 1)
@@ -5103,6 +5135,10 @@ ScanVignettes = function(mapID)
             if target.key == approachPulseKey then target.newUntil = approachPulseUntil; break end
         end
     end
+    if addon.VignetteRadarBeacons then
+        addon.VignetteRadarBeacons.Sync(mapID, PlayerSnapshot(mapID),
+            activeTargets, activeQuests, activeMapNotes, TargetVisible)
+    end
 end
 
 RefreshRadar = function(rescan)
@@ -5296,8 +5332,8 @@ function addon.ResetVignetteRadarPositions()
     if panel then PlacePanel(30, UIParent:GetHeight() - 520, panel:GetScale()) end
     Settings().vignetteRadarLauncherVisible = true
     local button = EnsureLauncher()
-    PlaceLauncher(UIParent:GetWidth() / 2 - LAUNCHER_SIZE / 2,
-        UIParent:GetHeight() / 2 + LAUNCHER_SIZE / 2)
+    PlaceLauncher(UIParent:GetWidth() / 2 - LAUNCHER_DIMENSIONS.width / 2,
+        UIParent:GetHeight() / 2 + LAUNCHER_DIMENSIONS.height / 2)
     button:SetFrameStrata("TOOLTIP")
     button._rescueRaised = true
     button:Show()

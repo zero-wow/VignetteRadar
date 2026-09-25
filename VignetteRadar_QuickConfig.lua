@@ -515,6 +515,39 @@ local function Build()
     Choice(markers, "vignetteRadarMarkerSize", 9, "Large", 194, -154, 80)
     Check(markers, "vignetteRadarShapes", "Recognizable icons", 14, -190)
     Check(markers, "vignetteRadarShowHealth", "Focused rare health", 14, -218)
+    Button(markers, "World beacons...", 14, -251, 260, function()
+        SelectPage("Beacons")
+    end)
+
+    local beacons = CreateFrame("Frame", nil, quick)
+    beacons:SetSize(WIDTH, HEIGHT - 137)
+    beacons:SetPoint("TOPLEFT", quick, "TOPLEFT", 0, -137)
+    beacons.searchPage = "Beacons"
+    beacons:Hide()
+    quick.pages.Beacons = beacons
+    Section(beacons, "WORLD BEACONS", -3)
+    Check(beacons, "vignetteRadarBeaconsEnabled", "Show multi-point bearing display", 14, -22)
+    Check(beacons, "vignetteRadarBeaconRares", "Rares + bosses", 14, -50, nil, 95)
+    Check(beacons, "vignetteRadarBeaconQuests", "Quest points", 147, -50, nil, 95)
+    Section(beacons, "SHOW WITHIN", -88)
+    Choice(beacons, "vignetteRadarBeaconRange", 150, "150 yd", 14, -106, 60)
+    Choice(beacons, "vignetteRadarBeaconRange", 450, "450 yd", 80, -106, 60)
+    Choice(beacons, "vignetteRadarBeaconRange", 1200, "1200 yd", 146, -106, 60)
+    Choice(beacons, "vignetteRadarBeaconRange", 2400, "2400 yd", 212, -106, 62)
+    Section(beacons, "MOST IMPORTANT POINTS", -149)
+    for index, limit in ipairs({ 4, 8, 12, 16, 24 }) do
+        Choice(beacons, "vignetteRadarBeaconMax", limit, tostring(limit),
+            14 + (index - 1) * 52, -167, 48)
+    end
+    Button(beacons, "Preview", 14, -211, 124, function()
+        if addon.VignetteRadarBeacons then addon.VignetteRadarBeacons.Preview(true) end
+    end)
+    Button(beacons, "Back to markers", 150, -211, 124, function()
+        if addon.VignetteRadarBeacons then addon.VignetteRadarBeacons.Preview(false) end
+        SelectPage("Markers")
+    end)
+    Label(beacons, "Drag the display's top edge to move it.", 14, -245, 9)
+    Label(beacons, "Click a marker to focus it on the radar.", 14, -260, 9)
 
     local guides = quick.pages.Guides
     Section(guides, "RADAR GUIDES & FACING", -3)
@@ -818,7 +851,10 @@ local function Build()
 
     SelectPage("Radar")
     quick:SetScript("OnShow", API.Refresh)
-    quick:SetScript("OnHide", API.Refresh)
+    quick:SetScript("OnHide", function()
+        if addon.VignetteRadarBeacons then addon.VignetteRadarBeacons.Preview(false) end
+        API.Refresh()
+    end)
     quick:Hide()
     return quick
 end

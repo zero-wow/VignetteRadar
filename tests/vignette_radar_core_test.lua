@@ -45,6 +45,12 @@ assert(loadfile(sourcePath))("VignetteRadar", fresh)
 local defaults = fresh.GetSettings()
 assert(defaults.vignetteRadarRangeLabelOpacity == defaults.vignetteRadarRingOpacity,
     "yard labels must start at the same visibility as the range rings")
+assert(defaults.vignetteRadarBeaconsEnabled == false
+    and defaults.vignetteRadarBeaconRares == true
+    and defaults.vignetteRadarBeaconQuests == true
+    and defaults.vignetteRadarBeaconRange == 1200
+    and defaults.vignetteRadarBeaconMax == 8,
+    "the multi-point display must be optional with bounded defaults")
 defaults.vignetteRadarRingOpacity = 1.25
 defaults.vignetteRadarRangeLabelOpacity = nil
 fresh.GetSettings()

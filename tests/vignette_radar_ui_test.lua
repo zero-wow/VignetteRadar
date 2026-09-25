@@ -218,6 +218,7 @@ assert(loadfile("VignetteRadar_QuestData.lua"))("VignetteRadar", addon)
 assert(loadfile("VignetteRadar_RouteDraft.lua"))("VignetteRadar", addon)
 assert(loadfile("VignetteRadar_Exploration.lua"))("VignetteRadar", addon)
 assert(loadfile("VignetteRadar_POIs.lua"))("VignetteRadar", addon)
+assert(loadfile("VignetteRadar_Beacons.lua"))("VignetteRadar", addon)
 assert(loadfile(legendSourcePath))("VignetteRadar", addon)
 assert(loadfile(targetPickerSourcePath))("VignetteRadar", addon)
 assert(loadfile(sourcePath))("VignetteRadar", addon)
@@ -307,17 +308,18 @@ assert(panel.blips[1] == firstBlip and panel.blips[2] == secondBlip and firstBli
 assert(#panel.outerRing == 64 and #panel.middleRing == 64 and #panel.innerRing == 64,
     "all radar rings must be complete and bounded")
 assert(panel.clamped == true and panel.movable == true, "panel must remain movable and clamped to screen")
-assert(launcher.width == 58 and launcher.height == 58 and launcher.clamped == true and launcher.movable == true,
+assert(launcher.width == 140 and launcher.height == 64 and launcher.clamped == true and launcher.movable == true,
     "launcher must be a compact draggable instrument that stays on screen")
 assert(launcher.clickButtons[1] == "LeftButtonUp" and launcher.clickButtons[2] == "RightButtonUp"
     and launcher.dragButtons[1] == "LeftButton", "launcher must expose distinct click and drag gestures")
 assert(#launcher.ring == 24 and #launcher.dial == 32 and #launcher.cardinals == 4
-    and #launcher.facets == 4 and #launcher.chevron == 2 and #launcher.sweepLines == 2
-    and launcher.face.texture:find("radar%-rounded%-square%.tga$")
-    and launcher.bezel.texture:find("radar%-rounded%-border%.tga$")
-    and launcher.closed.texture:find("radar%-rounded%-border%.tga$")
-    and launcher.horizontal == nil and launcher.vertical == nil,
-    "launcher must use the panel's themed face, border, compass points, and live radar rings")
+    and #launcher.facets == 0 and #launcher.chevron == 2 and #launcher.sweepLines == 2
+    and launcher.instrument.width == 56 and launcher.ring[1].parent == launcher.instrument
+    and launcher.face.texture:find("launcher%-housing%.tga$")
+    and launcher.bezel.texture:find("launcher%-outline%.tga$")
+    and launcher.closed.texture:find("launcher%-outline%.tga$")
+    and launcher.titleLabel.text == "RADAR" and #launcher.expandChevron == 2,
+    "launcher must be a connected horizontal control with a live radar lens and readout")
 assert(launcher.rangeLabel.text == "BOSS" and #launcher.miniBlips == 5 and launcher.miniBlips[1]:IsShown(),
     "launcher preview must mirror category markers with a plain boss cue")
 launcher.scripts.OnUpdate(launcher, 0.10)
@@ -353,7 +355,7 @@ assert(addon.VignetteRadarTargetPicker.GetFocus() == nil,
 SlashCmdList.VIGNETTERADAR("off")
 assert(launcher.closed:IsShown() and not launcher.bezel:IsShown() and not launcher.miniBlips[1]:IsShown()
     and launcher.rangeLabel.text == "OFF" and launcher.center.alpha < 1
-    and launcher.facets[1].core.alpha < 1 and launcher.dial[1].alpha < 1,
+    and launcher.dial[1].alpha < 1,
     "disabled tracking must dim the instrument and clearly label its dormant state")
 local idleSweepAngle = launcher._sweepAngle
 for _ = 1, 6 do launcher.scripts.OnUpdate(launcher, 0.05) end
@@ -1697,7 +1699,7 @@ assert(quick.tabs.Radar.backdrop == nil
     and quick.tabs.Radar.face.texture == "Interface\\Buttons\\WHITE8X8"
     and quick.tabs.Radar.edge.height == 1 and quick.find.width == 44,
     "settings buttons need quiet flat artwork and an untruncated Find control")
-assert(quick.pages.Status and quick.pages.Search and quick.find,
+assert(quick.pages.Status and quick.pages.Search and quick.pages.Beacons and quick.find,
     "diagnostics and search must be reachable from the compact settings panel")
 quick.find.scripts.OnClick(quick.find)
 quick.searchInput:SetText("arrival")
@@ -1712,6 +1714,38 @@ for _ in pairs(quick.tabs) do tabCount = tabCount + 1 end
 assert(tabCount == 12 and quick.pages.Themes and quick.pages.Guides and quick.pages.Explore
     and quick.pages.Wayfinding and quick.pages["Map Data"],
     "compact settings must visibly include exploration controls")
+local openBeacons, previewBeacons, backFromBeacons
+for _, object in ipairs(objects) do
+    if object.parent == quick.pages.Markers and object.text == "World beacons..." then
+        openBeacons = object
+    elseif object.parent == quick.pages.Beacons and object.text == "Preview" then
+        previewBeacons = object
+    elseif object.parent == quick.pages.Beacons and object.text == "Back to markers" then
+        backFromBeacons = object
+    end
+end
+assert(openBeacons and previewBeacons and backFromBeacons,
+    "multi-point beacons must have a visible entry and preview in Quick settings")
+openBeacons.scripts.OnClick(openBeacons)
+assert(quick.pages.Beacons:IsShown(), "the marker settings must open beacon options")
+previewBeacons.scripts.OnClick(previewBeacons)
+local beaconRail = assert(_G.VignetteRadarBeaconRail)
+assert(beaconRail:IsShown() and beaconRail.width == 520 and beaconRail.height == 146,
+    "beacon preview must show a bounded movable display")
+local previewCards = 0
+for _, object in ipairs(objects) do
+    if object.parent == beaconRail and object.kind == "Button" and object:IsShown() then
+        previewCards = previewCards + 1
+        local x, y = object.point[4], object.point[5]
+        assert(math.abs(x) + object.width / 2 < beaconRail.width / 2 - 8
+            and -y + object.height < beaconRail.height - 4,
+            "beacon cards must stay inside the themed display at its smallest size")
+    end
+end
+assert(previewCards == 2, "preview should show both a rare and a quest point")
+backFromBeacons.scripts.OnClick(backFromBeacons)
+assert(quick.pages.Markers:IsShown() and not beaconRail:IsShown(),
+    "leaving preview must restore marker settings without a stuck overlay")
 local escapePanels = {}
 for _, name in ipairs(UISpecialFrames) do escapePanels[name] = true end
 assert(escapePanels.VignetteRadarExplorePanel
@@ -1839,8 +1873,8 @@ assert(settings.vignetteRadarTheme == "ember" and panel.title.textColor[1] == 1
     and panel.field.background.vertexColor[1] > .04,
     "theme presets must recolor the panel and radar surface")
 assert(launcher.bezel.vertexColor[1] == 1 and launcher.dial[1].color[1] > .8
-    and launcher.facets[1].core.vertexColor[1] == 1,
-    "the launcher face, dial, and compass facets must follow the selected theme")
+    and launcher.expandChevron[1].color[1] == 1,
+    "the launcher lens, outline, and expansion cue must follow the selected theme")
 ColorPickerFrame = {
     SetupColorPickerAndShow = function(self, info) self.info = info end,
     GetColorRGB = function() return .2, .4, .6 end,
@@ -1855,7 +1889,7 @@ assert(ColorPickerFrame.info, "a color swatch must open Blizzard's color picker"
 ColorPickerFrame.info.swatchFunc()
 assert(math.abs(panel.player.vertexColor[1] - .2) < .001 and quick.customLabel.text == "CUSTOM COLORS",
     "a custom accent must immediately recolor the player dot")
-assert(math.abs(launcher.facets[1].core.vertexColor[1] - .2) < .001,
+assert(math.abs(launcher.expandChevron[1].color[1] - .2) < .001,
     "custom accent colors must also recolor the miniature instrument")
 quickControl("Themes", "vignetteRadarTheme", "frost").scripts.OnClick()
 assert(settings.vignetteRadarTheme == "frost" and not addon.VignetteRadarStyle.IsCustomized(),
