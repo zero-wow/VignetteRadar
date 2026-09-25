@@ -611,7 +611,6 @@ local function RefreshQuestRows()
     local style = addon.VignetteRadarStyle
     local red, green, blue = ACCENT[1], ACCENT[2], ACCENT[3]
     if style then red, green, blue = style.Color("accent") end
-    questPanel.accent:SetColorTexture(red, green, blue, .8)
     questPanel.title:SetTextColor(red, green, blue, 1)
     questPanel.rule:SetColorTexture(red, green, blue, .18)
     questPanel.count:SetText(count .. " IN RANGE")
@@ -685,10 +684,6 @@ local function EnsureQuestPanel()
     if questPanel.EnableMouse then questPanel:EnableMouse(true) end
     Surface(questPanel)
     if addon.VignetteRadarControls then addon.VignetteRadarControls.PopupSurface(questPanel) end
-    questPanel.accent = questPanel:CreateTexture(nil, "OVERLAY")
-    questPanel.accent:SetPoint("TOPRIGHT", -1, -1)
-    questPanel.accent:SetPoint("BOTTOMRIGHT", -1, 1)
-    questPanel.accent:SetWidth(2)
     questPanel.title = Text(questPanel, 11, "QUEST KEY")
     questPanel.title:SetPoint("TOPLEFT", 12, -10)
     questPanel.count = Text(questPanel, 8, "0 IN RANGE")

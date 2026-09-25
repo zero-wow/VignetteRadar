@@ -840,18 +840,48 @@ function API.ShowGuide(anchorFrame)
         guide.title = title
         title:SetTextColor(addon.VignetteRadarStyle.Color("accent"))
         local items = {
-            { "●", "World boss", "boss" },
-            { "●", "Rare", "rare" },
-            { "■", "Treasure or chest", "treasure" },
-            { "◇", "Quest (solid when complete)", "quest" },
-            { "○", "Saved map note", "other" },
-            { "~", "Shaded area: quest search zone", "quest" },
+            { "boss", "World boss", "boss" },
+            { "rare", "Rare", "rare" },
+            { "treasure", "Treasure or chest", "treasure" },
+            { "quest", "Quest (solid when complete)", "quest" },
+            { "note", "Saved map note", "other" },
+            { "area", "Shaded area: quest search zone", "quest" },
         }
         guide.symbols = {}
         for index, item in ipairs(items) do
-            local symbol = Label(guide, item[1], 17, -38 - (index - 1) * 23, 13, 21)
-            symbol:SetTextColor(addon.VignetteRadarStyle.Color(item[3]))
-            guide.symbols[index] = { label = symbol, slot = item[3] }
+            local symbol = CreateFrame("Frame", nil, guide)
+            symbol:SetSize(21, 21)
+            symbol:SetPoint("TOPLEFT", guide, "TOPLEFT", 15, -36 - (index - 1) * 23)
+            symbol:Show()
+            local parts = {}
+            local function AddTexture(path, size, dx, dy, opacity)
+                local texture = symbol:CreateTexture(nil, "ARTWORK")
+                texture:SetSize(size, size)
+                texture:SetPoint("CENTER", symbol, "CENTER", dx or 0, dy or 0)
+                texture:SetTexture(path)
+                parts[#parts + 1] = { texture = texture, opacity = opacity or 1 }
+                return texture
+            end
+            if item[1] == "boss" or item[1] == "rare" then
+                AddTexture("Interface\\TargetingFrame\\UI-TargetingFrame-Skull",
+                    item[1] == "boss" and 18 or 15)
+            elseif item[1] == "treasure" then
+                local icon = AddTexture("Interface\\Icons\\INV_Misc_Chest_01", 15)
+                if icon.SetAtlas then pcall(icon.SetAtlas, icon, "VignetteLoot") end
+            elseif item[1] == "quest" then
+                AddTexture("Interface\\AddOns\\VignetteRadar\\Media\\quest-diamond-hollow.tga", 14)
+            elseif item[1] == "note" then
+                AddTexture("Interface\\CharacterFrame\\TempPortraitAlphaMask", 11)
+                local core = symbol:CreateTexture(nil, "OVERLAY")
+                core:SetSize(4, 4)
+                core:SetPoint("CENTER")
+                core:SetTexture("Interface\\CharacterFrame\\TempPortraitAlphaMask")
+                core:SetVertexColor(.02, .03, .035, 1)
+            else
+                AddTexture("Interface\\CharacterFrame\\TempPortraitAlphaMask", 16, -2, 1, .22)
+                AddTexture("Interface\\CharacterFrame\\TempPortraitAlphaMask", 12, 3, -2, .18)
+            end
+            guide.symbols[index] = { frame = symbol, slot = item[3], parts = parts }
             Label(guide, item[2], 43, -39 - (index - 1) * 23, 10, 184)
         end
         Label(guide, "Click a marker to focus. Show All clears it.", 15, -184, 9, 211)
@@ -863,7 +893,10 @@ function API.ShowGuide(anchorFrame)
     addon.VignetteRadarControls.RefreshPopupSurface(guide)
     guide.title:SetTextColor(addon.VignetteRadarStyle.Color("accent"))
     for _, symbol in ipairs(guide.symbols) do
-        symbol.label:SetTextColor(addon.VignetteRadarStyle.Color(symbol.slot))
+        local red, green, blue = addon.VignetteRadarStyle.Color(symbol.slot)
+        for _, part in ipairs(symbol.parts) do
+            part.texture:SetVertexColor(red, green, blue, part.opacity)
+        end
     end
     guide:ClearAllPoints()
     if anchorFrame then guide:SetPoint("TOPLEFT", anchorFrame, "TOPRIGHT", 8, 0)

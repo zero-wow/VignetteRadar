@@ -2642,6 +2642,18 @@ quick:Show()
 addon.VignetteRadarQuickConfig.ShowGuide(panel.field)
 local guidePanel = assert(_G.VignetteRadarGuidePanel)
 assert(guidePanel:IsShown(), "the visual first-run guide must be reopenable")
+assert(#guidePanel.symbols == 6 and guidePanel.symbols[1].frame.kind == "Frame"
+    and guidePanel.symbols[1].frame:IsShown()
+    and guidePanel.symbols[1].parts[1].texture.texture
+        == "Interface\\TargetingFrame\\UI-TargetingFrame-Skull"
+    and guidePanel.symbols[4].parts[1].texture.texture:find("quest%-diamond%-hollow%.tga$")
+    and guidePanel.symbols[6].parts[1].opacity < 1,
+    "the guide must draw real rare, quest, and area markers instead of unsupported font glyphs")
+for _, symbol in ipairs(guidePanel.symbols) do
+    assert(symbol.frame.width == 21 and symbol.frame.height == 21
+        and symbol.frame.point[4] >= 12 and symbol.frame.point[4] + 21 < guidePanel.width - 12,
+        "guide markers must fit inside the popup without touching its border")
+end
 panel.settingsDot.hovered = true
 outsideClickEvents.scripts.OnEvent(outsideClickEvents, "GLOBAL_MOUSE_DOWN")
 assert(quick:IsShown(), "clicking a popup launch button must leave its toggle action in control")

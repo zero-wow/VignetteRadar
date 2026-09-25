@@ -286,8 +286,8 @@ assert(legend.ToggleQuest(questAnchor) and legend.IsQuestShown(),
     "quest key must open independently from the category legend")
 local questPanel = assert(legend.Testing.GetQuestPanel(), "quest key must have a stable panel")
 assert(questPanel.point[1] == "TOPRIGHT" and questPanel.point[3] == "TOPLEFT"
-    and questPanel.point[4] == -8 and questPanel.width == 224,
-    "quest key must prefer the left of the radar with a visible gutter")
+    and questPanel.point[4] == -8 and questPanel.width == 224 and not questPanel.accent,
+    "quest key must sit left of the radar without a colored edge rail")
 assert(questPanel.rows[1].name.text == "Quest 1" and questPanel.rows[1].fill.vertexColor[1] == 1
     and questPanel.rows[1].fill.vertexColor[2] == 179/255
     and questPanel.rows[1].fill.vertexColor[3] == 87/255,
