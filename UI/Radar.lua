@@ -3764,7 +3764,7 @@ function routeMenu.ShowGuideStrip(anchor)
             if RefreshRadar then RefreshRadar(false) end
         end)
         strip:SetScript("OnLeave", function()
-            if C_Timer and C_Timer.After then C_Timer.After(.15, function()
+            if C_Timer and C_Timer.After then C_Timer.After(.4, function()
                 if strip:IsShown() and not strip:IsMouseOver()
                     and not (routeMenu.guideAnchor and routeMenu.guideAnchor:IsMouseOver()) then
                     strip:Hide()
@@ -3785,13 +3785,11 @@ function routeMenu.ShowGuideStrip(anchor)
     strip.action:SetText(bridge.IsPaused() and "Resume"
         or bridge.IsFollowing() and "Pause" or "Follow")
     strip:ClearAllPoints()
-    local field = panel and panel.field
-    local bottom = field and field.GetBottom and field:GetBottom()
-    if (routeMenu.toast and routeMenu.toast:IsShown())
-        or (bottom and bottom < strip:GetHeight() + 12) then
-        strip:SetPoint("BOTTOM", field, "TOP", 0, 7)
+    local top = anchor.GetTop and anchor:GetTop()
+    if top and top < strip:GetHeight() + 12 then
+        strip:SetPoint("TOPRIGHT", anchor, "BOTTOMRIGHT", 0, -8)
     else
-        strip:SetPoint("TOP", field or anchor, "BOTTOM", 0, -7)
+        strip:SetPoint("BOTTOMRIGHT", anchor, "TOPRIGHT", 0, 8)
     end
     strip:Show()
 end
@@ -3869,8 +3867,17 @@ function routeMenu.SetupButtons(panel, ToolbarIcon)
         end
         self:RefreshAppearance()
     end
-    panel.routeToggle:RegisterForClicks("LeftButtonUp", "RightButtonUp")
+    panel.routeToggle:RegisterForClicks("LeftButtonUp", "RightButtonUp", "MiddleButtonUp")
     panel.routeToggle:SetScript("OnClick", function(self, button)
+        if button == "MiddleButton" then
+            local bridge = addon.VignetteRadarZygor
+            if bridge and bridge.IsPaused and bridge.IsPaused() then
+                bridge.ToggleFollow()
+                routeMenu.ShowGuideStrip(panel._routePopupAnchor or self)
+                if RefreshRadar then RefreshRadar(false) end
+            end
+            return
+        end
         if button == "RightButton" then
             if GameTooltip then GameTooltip:Hide() end
             routeMenu.Toggle(panel._routePopupAnchor or self)
@@ -3897,6 +3904,10 @@ function routeMenu.SetupButtons(panel, ToolbarIcon)
                 and "Resume Auto Route" or "Start Auto Route", 1, 1, 1)
         GameTooltip:AddLine("Click a rare, treasure, or quest first. The route chooses the next stop as you arrive.", .7, .8, .8, true)
         GameTooltip:AddLine("Right-click to choose a route, pin Zygor, or manage stops.", .55, .86, .76, true)
+        local bridge = addon.VignetteRadarZygor
+        if bridge and bridge.IsPaused and bridge.IsPaused() then
+            GameTooltip:AddLine("Middle-click to resume Zygor Follow.", .55, .86, .76, true)
+        end
         GameTooltip:Show()
     end)
     panel.routeToggle:HookScript("OnLeave", function() if GameTooltip then GameTooltip:Hide() end end)
@@ -6016,7 +6027,11 @@ local function EnsurePanel()
         tool:SetSize(16, 16)
         tool:SetFrameLevel(panel.field:GetFrameLevel() + 8)
         tool:SetPoint(point, panel.field, point, x, y)
-        tool:RegisterForClicks("LeftButtonUp", "RightButtonUp")
+        if id == "route" then
+            tool:RegisterForClicks("LeftButtonUp", "RightButtonUp", "MiddleButtonUp")
+        else
+            tool:RegisterForClicks("LeftButtonUp", "RightButtonUp")
+        end
         tool.toolID, tool.reference = id, reference
         tool.artColumn = ({ config = 0, target = 1, legend = 2, minus = 3,
             plus = 4, north = 5, trail = 6, eye = 7, help = 8, close = 9,
@@ -6039,6 +6054,12 @@ local function EnsurePanel()
             if GameTooltip then
                 GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
                 GameTooltip:SetText(title, 1, 1, 1)
+                if id == "route" then
+                    local bridge = addon.VignetteRadarZygor
+                    if bridge and bridge.IsPaused and bridge.IsPaused() then
+                        GameTooltip:AddLine("Middle-click to resume Zygor Follow.", .55, .86, .76, true)
+                    end
+                end
                 GameTooltip:Show()
             end
         end)
@@ -6108,7 +6129,7 @@ local function EnsurePanel()
         if tool.toolID == "route" then
             tool:HookScript("OnEnter", function(self) routeMenu.ShowGuideStrip(self) end)
             tool:HookScript("OnLeave", function(self)
-                if C_Timer and C_Timer.After then C_Timer.After(.15, function()
+                if C_Timer and C_Timer.After then C_Timer.After(.4, function()
                     local strip = routeMenu.guideStrip
                     if strip and strip:IsShown() and not strip:IsMouseOver()
                         and not self:IsMouseOver() then strip:Hide() end

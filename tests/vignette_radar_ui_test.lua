@@ -796,6 +796,42 @@ do
     routeHover.scripts.OnLeave(routeHover)
 end
 do
+    local bridge = addon.VignetteRadarZygor
+    local viewer = _G.ZygorGuidesViewer
+    local isPaused, isFollowing = bridge.IsPaused, bridge.IsFollowing
+    local guideLabel, status, toggleFollow = bridge.GuideLabel, bridge.Status, bridge.ToggleFollow
+    local resumes = 0
+    _G.ZygorGuidesViewer = {}
+    bridge.IsPaused = function() return true end
+    bridge.IsFollowing = function() return false end
+    bridge.GuideLabel = function() return "Example Guide · Step 1" end
+    bridge.Status = function() return "Zygor Follow Paused" end
+    bridge.ToggleFollow = function() resumes = resumes + 1; return true end
+    addon.SetVignetteRadarCircleOnly(true)
+    routeHover.scripts.OnEnter(routeHover)
+    local strip
+    for _, object in ipairs(objects) do
+        if object.kind == "Frame" and object.action and object.detail and object.title then
+            strip = object
+            break
+        end
+    end
+    assert(strip and strip:IsShown() and strip.point[1] == "BOTTOMRIGHT"
+        and strip.point[2] == routeHover and strip.point[3] == "TOPRIGHT"
+        and routeHover.clickButtons[3] == "MiddleButtonUp"
+        and panel.routeToggle.clickButtons[3] == "MiddleButtonUp",
+        "Zygor Follow must appear next to the route control with a direct resume shortcut")
+    routeHover.scripts.OnClick(routeHover, "MiddleButton")
+    assert(resumes == 1, "middle-clicking the radar Auto Route control must resume paused Zygor Follow")
+    strip.action.scripts.OnClick()
+    assert(resumes == 2, "the visible Resume action must remain clickable")
+    strip:Hide()
+    _G.ZygorGuidesViewer = viewer
+    bridge.IsPaused, bridge.IsFollowing = isPaused, isFollowing
+    bridge.GuideLabel, bridge.Status, bridge.ToggleFollow = guideLabel, status, toggleFollow
+    addon.SetVignetteRadarCircleOnly(false)
+end
+do
     panel.routeToggle.scripts.OnClick(panel.routeToggle, "RightButton")
     local chooser = assert(_G.VignetteRadarRouteChooserPopup)
     assert(chooser:IsShown() and chooser.width == 248 and chooser.height == 263
