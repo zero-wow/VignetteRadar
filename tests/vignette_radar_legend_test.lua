@@ -29,6 +29,7 @@ function methods:SetMaxLines(value) self.maxLines = value end
 function methods:SetColorTexture(...) self.color = { ... } end
 function methods:SetTexture(value) self.texture = value end
 function methods:SetAtlas(value) self.atlas = value end
+function methods:SetTexCoord(...) self.texCoord = { ... } end
 function methods:SetVertexColor(...) self.vertexColor = { ... } end
 function methods:SetAlpha(value) self.alpha = value end
 function methods:SetScript(name, callback) self.scripts = self.scripts or {}; self.scripts[name] = callback end
@@ -215,9 +216,26 @@ for index = 1, 10 do
     liveMarkers[index] = { name = "Marker " .. index, category = "other" }
 end
 liveMarkers[1].name = "Mailbox"
-local hiddenNames, rescans = {}, 0
+liveMarkers[1].atlasName = "VignetteMailbox"
+liveMarkers[2].atlasName = "VignetteVendorItems"
+liveMarkers[3].atlasName = "VignetteDecorVendor"
+local hiddenNames, hiddenTypes, rescans = {}, {}, 0
 addon.VignetteRadarFeatures = {
     GetHiddenMarkerNames = function() return hiddenNames end,
+    GetHiddenMarkerTypes = function() return hiddenTypes end,
+    MarkerTypeKey = function(target)
+        if target.atlasName == "VignetteVendorItems" then return "class:vendor-items" end
+        return target.atlasName and "atlas:" .. target.atlasName:lower()
+            or "category:" .. target.category
+    end,
+    MapNoteTypeKey = function(note)
+        return note.icon and "texture:" .. tostring(note.icon.texture)
+            or "map-kind:" .. note.kind
+    end,
+    SetMarkerTypeHidden = function(entry, hidden)
+        hiddenTypes[entry.typeKey] = hidden and { label = entry.label,
+            atlasName = entry.atlasName, texture = entry.texture } or nil
+    end,
     IsMarkerNameHidden = function(entry)
         return hiddenNames[entry.category .. ":" .. entry.name:lower()] ~= nil
     end,
@@ -235,30 +253,59 @@ assert(panel.markerButton.width == 212 and -panel.markerButton.point[3] >= 390
 panel.markerButton.scripts.OnClick(panel.markerButton)
 local markerPanel = assert(legend.Testing.GetMarkerPanel())
 assert(markerPanel:IsShown() and not panel:IsShown() and legend.IsShown()
-    and markerPanel.width == 232 and markerPanel.height == 290,
-    "individual live marker switches must open in the legend's place")
+    and markerPanel.width == 232 and markerPanel.height == 316,
+    "individual marker switches must open in the legend's place")
+assert(markerPanel.tabs.types and markerPanel.tabs.names
+    and markerPanel.count.text == "4 TYPES", "icon types must be the default marker view")
+assert(markerPanel.tabs.types.point[2] + markerPanel.tabs.types.width + 8
+    <= markerPanel.tabs.names.point[2]
+    and markerPanel.tabs.names.point[2] + markerPanel.tabs.names.width
+        <= markerPanel.width - 10,
+    "the two marker tabs need visible side and between-control gutters")
+local vendorTypeRow
+for _, row in ipairs(markerPanel.rows) do
+    if row.entry and row.entry.label == "Vendor Items" then vendorTypeRow = row; break end
+end
+assert(vendorTypeRow and vendorTypeRow.icon.atlas == "VignetteVendorItems",
+    "type rows must use the real icon and identify vendor items separately")
+vendorTypeRow.toggle.scripts.OnClick(vendorTypeRow.toggle)
+assert(hiddenTypes["class:vendor-items"] and rescans == 1
+    and vendorTypeRow.toggle.label.text == "OFF",
+    "a whole icon type must be hideable without changing name filters")
+markerPanel.tabs.names.scripts.OnClick(markerPanel.tabs.names)
 assert(markerPanel.rows[1].entry.name == "Mailbox" and markerPanel.rows[8]:IsShown()
-    and markerPanel.count.text == "10 NAMES", "marker list must include current live names")
+    and markerPanel.count.text == "10 NAMES", "the Names tab must preserve individual controls")
 for _, row in ipairs(markerPanel.rows) do
     assert(row.point[2] >= 10 and row.point[2] + row.width <= markerPanel.width - 10
-        and -row.point[3] + row.height <= markerPanel.height - 34,
+        and -row.point[3] + row.height <= markerPanel.height - 34
+        and row.icon.point[2] + row.icon.width + 6 <= row.name.point[2]
+        and row.name.point[2] + row.name.width + 8
+            <= row.width - 4 - row.toggle.width,
         "marker rows must retain side and footer gutters at the smallest panel size")
 end
 assert(markerPanel.back.point[2] + markerPanel.back.width + 8
     <= markerPanel.width - 10 - markerPanel.status.width,
     "the back button and status text must not overlap")
 markerPanel.rows[1].toggle.scripts.OnClick(markerPanel.rows[1].toggle)
-assert(hiddenNames["other:mailbox"] == "Mailbox" and rescans == 1
+assert(hiddenNames["other:mailbox"] == "Mailbox" and rescans == 2
     and markerPanel.rows[1].toggle.label.text == "OFF",
     "hiding one marker name must persist and rescan without hiding its whole category")
 liveMarkers = {}
+markerPanel.tabs.types.scripts.OnClick(markerPanel.tabs.types)
+assert(markerPanel.rows[1].entry.label == "Vendor Items"
+    and markerPanel.rows[1].toggle.label.text == "OFF",
+    "a hidden icon type must remain restorable after it leaves the map")
+markerPanel.rows[1].toggle.scripts.OnClick(markerPanel.rows[1].toggle)
+assert(hiddenTypes["class:vendor-items"] == nil,
+    "restoring an absent icon type must remove its saved filter")
+markerPanel.tabs.names.scripts.OnClick(markerPanel.tabs.names)
 legend.ToggleMarkers()
 legend.ToggleMarkers()
 assert(markerPanel.rows[1].entry.name == "Mailbox"
     and markerPanel.rows[1].toggle.label.text == "OFF",
     "hidden names must remain restorable after their markers disappear")
 markerPanel.rows[1].toggle.scripts.OnClick(markerPanel.rows[1].toggle)
-assert(hiddenNames["other:mailbox"] == nil and rescans == 2,
+assert(hiddenNames["other:mailbox"] == nil and rescans == 4,
     "turning the individual switch back on must restore the name")
 local savedNotes = { { name = "Vendor", kind = "note" } }
 addon.VignetteRadarAPI.GetRawMapNotes = function() return savedNotes end

@@ -6283,10 +6283,14 @@ ScanVignettes = function(mapID)
         if guide then activeMapNotes[#activeMapNotes + 1] = guide end
     end
     addon._rawMapNotes = activeMapNotes
-    if Features() and next(Features().GetHiddenMarkerNames()) then
+    local features = Features()
+    local hideNames = features and next(features.GetHiddenMarkerNames())
+    local hideTypes = features and next(features.GetHiddenMarkerTypes())
+    if hideNames or hideTypes then
         local shown = {}
         for _, note in ipairs(activeMapNotes) do
-            if not Features().IsMapNoteNameHidden(note) then
+            if (not hideNames or not features.IsMapNoteNameHidden(note))
+                and (not hideTypes or not features.IsMapNoteTypeHidden(note)) then
                 shown[#shown + 1] = note
             end
         end

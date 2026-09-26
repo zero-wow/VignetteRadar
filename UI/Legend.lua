@@ -12,6 +12,7 @@ local ACCENT = { 0.05, 0.82, 0.62 }
 local FONT_FALLBACK = "Fonts\\FRIZQT__.TTF"
 local SKULL_TEXTURE = "Interface\\TargetingFrame\\UI-TargetingFrame-Skull"
 local CIRCLE_TEXTURE = "Interface\\CharacterFrame\\TempPortraitAlphaMask"
+local UNPACK = unpack or table.unpack
 
 local CATEGORY_ORDER = { "rare", "treasure", "event", "other" }
 local CATEGORIES = {
@@ -39,7 +40,7 @@ local TRAIL_STYLES = addon.VignetteRadarTrailStyleByID or {
 local fallbackSettings = {}
 local panel
 local attachedTo
-local markerPanel, markerEntries, markerOffset = nil, {}, 0
+local markerPanel, markerEntries, markerOffset, markerMode = nil, {}, 0, "types"
 local questPanel, questAttachedTo, questEntries = nil, nil, {}
 local questOffset = 0
 local changeCallback
@@ -552,7 +553,7 @@ local function Attach(anchor)
     attachedTo = anchor
 end
 
-local function CollectMarkerEntries()
+local function CollectNameEntries()
     local features = addon.VignetteRadarFeatures
     local radar = addon.VignetteRadarAPI
     local raw = radar and radar.GetRawTargets and radar.GetRawTargets() or {}
@@ -565,7 +566,8 @@ local function CollectMarkerEntries()
             local key = category:lower() .. ":" .. name:lower()
             if not seen[key] then
                 seen[key] = true
-                entries[#entries + 1] = { name = name, category = category, key = key }
+                entries[#entries + 1] = { name = name, category = category, key = key,
+                    atlasName = target.atlasName }
             end
         end
     end
@@ -577,7 +579,10 @@ local function CollectMarkerEntries()
             local key = category .. ":" .. name:lower()
             if not seen[key] then
                 seen[key] = true
-                entries[#entries + 1] = { name = name, category = category, key = key }
+                local icon = type(note.icon) == "table" and note.icon or nil
+                entries[#entries + 1] = { name = name, category = category, key = key,
+                    texture = icon and icon.texture, texCoord = icon and icon.texCoord,
+                    color = icon and icon.color }
             end
         end
     end
@@ -596,10 +601,90 @@ local function CollectMarkerEntries()
     return entries
 end
 
+local function MarkerTypeLabel(atlas, fallback)
+    if type(atlas) ~= "string" or atlas == "" then return fallback or "Other Icon" end
+    local lower = atlas:lower()
+    local vendor = lower:find("vendor", 1, true) or lower:find("vender", 1, true)
+        or lower:find("merchant", 1, true)
+    local decor = lower:find("decor", 1, true) or lower:find("housing", 1, true)
+    local item = lower:find("item", 1, true) or lower:find("goods", 1, true)
+    if decor and vendor and item then
+        return "Decor Vendor Items"
+    elseif decor and vendor then
+        return "Decor Vendors"
+    elseif vendor and item then
+        return "Vendor Items"
+    elseif vendor then
+        return "Vendors"
+    elseif lower:find("mail", 1, true) then
+        return "Mailboxes"
+    elseif lower == "vignetteloot" then return "Treasure"
+    elseif lower == "vignettekill" then return "Rare"
+    elseif lower == "vignettekillelite" then return "Rare Elite"
+    end
+    local label = atlas:gsub("^Vignette", ""):gsub("([a-z])([A-Z])", "%1 %2")
+        :gsub("[-_]", " "):gsub("[Ii]con$", "")
+        :gsub("^%s+", ""):gsub("%s+$", "")
+    return label ~= "" and label or fallback or "Other Icon"
+end
+
+local function CollectTypeEntries()
+    local features = addon.VignetteRadarFeatures
+    local radar = addon.VignetteRadarAPI
+    local hidden = features and features.GetHiddenMarkerTypes and features.GetHiddenMarkerTypes() or {}
+    local entries, seen = {}, {}
+    for _, target in ipairs(radar and radar.GetRawTargets and radar.GetRawTargets() or {}) do
+        local key = features and features.MarkerTypeKey and features.MarkerTypeKey(target)
+        if key and not seen[key] and not target.sample then
+            seen[key] = true
+            entries[#entries + 1] = { typeKey = key,
+                label = MarkerTypeLabel(target.atlasName, CATEGORIES[CategoryKey(target.category)].label),
+                atlasName = target.atlasName, category = target.category }
+        end
+    end
+    for _, note in ipairs(radar and radar.GetRawMapNotes and radar.GetRawMapNotes() or {}) do
+        local key = features and features.MapNoteTypeKey and features.MapNoteTypeKey(note)
+        if key and not seen[key] then
+            seen[key] = true
+            local icon = type(note.icon) == "table" and note.icon or nil
+            local kind = type(note.kind) == "string" and note.kind or "note"
+            local definition
+            for _, candidate in ipairs(MAP_NOTES) do
+                if candidate.kind == kind then definition = candidate; break end
+            end
+            local label = definition and definition.label or "Map Note"
+            label = label:gsub("(%a)([%a]*)", function(first, rest)
+                return first:upper() .. rest
+            end)
+            if icon and icon.texture then label = label .. " Icon" end
+            entries[#entries + 1] = { typeKey = key, label = label,
+                texture = icon and icon.texture, texCoord = icon and icon.texCoord,
+                color = icon and icon.color,
+                category = "map:" .. kind }
+        end
+    end
+    for key, saved in pairs(hidden) do
+        if type(key) == "string" and not seen[key] then
+            local record = type(saved) == "table" and saved or {}
+            entries[#entries + 1] = { typeKey = key,
+                label = type(record.label) == "string" and record.label or key,
+                atlasName = record.atlasName, texture = record.texture,
+                texCoord = record.texCoord, color = record.color }
+        end
+    end
+    table.sort(entries, function(left, right)
+        if left.label:lower() ~= right.label:lower() then
+            return left.label:lower() < right.label:lower()
+        end
+        return left.typeKey < right.typeKey
+    end)
+    return entries
+end
+
 local function RefreshMarkerRows()
     if not markerPanel then return end
     if addon.VignetteRadarControls then addon.VignetteRadarControls.RefreshPopupSurface(markerPanel) end
-    markerEntries = CollectMarkerEntries()
+    markerEntries = markerMode == "types" and CollectTypeEntries() or CollectNameEntries()
     local count = #markerEntries
     markerOffset = math.max(0, math.min(markerOffset, math.max(0, count - MARKER_VISIBLE_ROWS)))
     local features = addon.VignetteRadarFeatures
@@ -608,15 +693,41 @@ local function RefreshMarkerRows()
     if style then red, green, blue = style.Color("accent") end
     markerPanel.title:SetTextColor(red, green, blue, 1)
     markerPanel.rule:SetColorTexture(red, green, blue, .18)
-    markerPanel.count:SetText(count .. " NAMES")
+    markerPanel.count:SetText(count .. (markerMode == "types" and " TYPES" or " NAMES"))
+    for mode, button in pairs(markerPanel.tabs) do
+        local selected = mode == markerMode
+        button.selection:SetColorTexture(red, green, blue, selected and .15 or 0)
+        button.label:SetTextColor(selected and red or .68, selected and green or .75,
+            selected and blue or .77, 1)
+    end
     for index, row in ipairs(markerPanel.rows) do
         local entry = markerEntries[markerOffset + index]
         row.entry = entry
         row:SetShown(entry ~= nil)
         if entry then
-            local isHidden = features and features.IsMarkerNameHidden
-                and features.IsMarkerNameHidden(entry)
-            row.name:SetText(entry.name)
+            local isHidden = markerMode == "types"
+                and features and features.GetHiddenMarkerTypes
+                    and features.GetHiddenMarkerTypes()[entry.typeKey] ~= nil
+                or markerMode == "names" and features and features.IsMarkerNameHidden
+                    and features.IsMarkerNameHidden(entry)
+            row.name:SetText(markerMode == "types" and entry.label or entry.name)
+            local atlasShown = entry.atlasName and row.icon.SetAtlas
+                and pcall(row.icon.SetAtlas, row.icon, entry.atlasName)
+            if not atlasShown and entry.texture then
+                row.icon:SetTexture(entry.texture)
+                if type(entry.texCoord) == "table" and #entry.texCoord == 4 then
+                    row.icon:SetTexCoord(UNPACK(entry.texCoord))
+                else row.icon:SetTexCoord(0, 1, 0, 1) end
+            elseif not atlasShown then
+                row.icon:SetTexture(CIRCLE_TEXTURE)
+                row.icon:SetTexCoord(0, 1, 0, 1)
+            end
+            local color = type(entry.color) == "table" and entry.color or nil
+            local r = color and type(color[1]) == "number" and color[1] or 1
+            local g = color and type(color[2]) == "number" and color[2] or 1
+            local b = color and type(color[3]) == "number" and color[3] or 1
+            local a = color and type(color[4]) == "number" and color[4] or 1
+            row.icon:SetVertexColor(r, g, b, a * (isHidden and .5 or 1))
             row.name:SetTextColor(isHidden and .55 or .84, isHidden and .60 or .89,
                 isHidden and .62 or .90, 1)
             row.toggle.label:SetText(isHidden and "OFF" or "ON")
@@ -628,14 +739,14 @@ local function RefreshMarkerRows()
     markerPanel.status:SetText(count == 0 and "No map markers here"
         or count > MARKER_VISIBLE_ROWS and (markerOffset + 1) .. "–"
             .. math.min(count, markerOffset + MARKER_VISIBLE_ROWS) .. " of " .. count .. " · Scroll"
-        or "Toggle a name to hide it")
+        or markerMode == "types" and "Toggle an icon type" or "Toggle a name")
 end
 
 local function EnsureMarkerPanel()
     if markerPanel then return markerPanel end
     if type(CreateFrame) ~= "function" or not UIParent then return nil end
     markerPanel = CreateFrame("Frame", "VignetteRadarMarkerLegendPanel", UIParent, "BackdropTemplate")
-    markerPanel:SetSize(PANEL_W, 290)
+    markerPanel:SetSize(PANEL_W, 316)
     if markerPanel.SetFrameStrata then markerPanel:SetFrameStrata("DIALOG") end
     if markerPanel.SetClampedToScreen then markerPanel:SetClampedToScreen(true) end
     if markerPanel.EnableMouse then markerPanel:EnableMouse(true) end
@@ -643,14 +754,29 @@ local function EnsureMarkerPanel()
     if addon.VignetteRadarControls then addon.VignetteRadarControls.PopupSurface(markerPanel) end
     markerPanel.title = Text(markerPanel, 11, "MAP MARKERS")
     markerPanel.title:SetPoint("TOPLEFT", 10, -10)
-    markerPanel.count = Text(markerPanel, 8, "0 NAMES")
+    markerPanel.count = Text(markerPanel, 8, "0 TYPES")
     markerPanel.count:SetPoint("TOPRIGHT", -10, -11)
     markerPanel.count:SetJustifyH("RIGHT")
     markerPanel.count:SetWidth(65)
     markerPanel.rule = SectionRule(markerPanel, 32)
-    markerPanel.hint = Text(markerPanel, 8, "Hide a name across all maps")
-    markerPanel.hint:SetPoint("TOPLEFT", 10, -39)
-    markerPanel.hint:SetTextColor(.62, .72, .72, 1)
+    markerPanel.tabs = {}
+    for index, mode in ipairs({ "types", "names" }) do
+        local button = CreateFrame("Button", nil, markerPanel, "BackdropTemplate")
+        button:SetSize(102, 21)
+        button:SetPoint("TOPLEFT", 10 + (index - 1) * 110, -39)
+        Surface(button, .03, .038, .043, .96, .16)
+        button.selection = button:CreateTexture(nil, "BACKGROUND")
+        button.selection:SetAllPoints()
+        button.label = Text(button, 9, mode == "types" and "ICON TYPES" or "NAMES")
+        button.label:SetAllPoints()
+        button.label:SetJustifyH("CENTER")
+        AddPressState(button)
+        button:SetScript("OnClick", function()
+            markerMode, markerOffset = mode, 0
+            RefreshMarkerRows()
+        end)
+        markerPanel.tabs[mode] = button
+    end
     markerPanel.rows = {}
     local function Scroll(_, delta)
         markerOffset = math.max(0, math.min(math.max(0, #markerEntries - MARKER_VISIBLE_ROWS),
@@ -662,12 +788,15 @@ local function EnsureMarkerPanel()
     for index = 1, MARKER_VISIBLE_ROWS do
         local row = CreateFrame("Frame", nil, markerPanel)
         row:SetSize(PANEL_W - 20, 22)
-        row:SetPoint("TOPLEFT", 10, -59 - (index - 1) * MARKER_ROW_STEP)
+        row:SetPoint("TOPLEFT", 10, -68 - (index - 1) * MARKER_ROW_STEP)
         if row.EnableMouseWheel then row:EnableMouseWheel(true) end
         row:SetScript("OnMouseWheel", Scroll)
+        row.icon = row:CreateTexture(nil, "ARTWORK")
+        row.icon:SetSize(16, 16)
+        row.icon:SetPoint("LEFT", 7, 0)
         row.name = Text(row, 9, "")
-        row.name:SetPoint("LEFT", 7, 0)
-        row.name:SetWidth(150)
+        row.name:SetPoint("LEFT", 29, 0)
+        row.name:SetWidth(127)
         if row.name.SetMaxLines then row.name:SetMaxLines(1) end
         row.toggle = CreateFrame("Button", nil, row, "BackdropTemplate")
         row.toggle:SetSize(42, 18)
@@ -680,17 +809,29 @@ local function EnsureMarkerPanel()
         row.toggle:SetScript("OnClick", function()
             local entry = row.entry
             local features = addon.VignetteRadarFeatures
-            if not (entry and features and features.SetMarkerNameHidden) then return end
-            features.SetMarkerNameHidden(entry, not features.IsMarkerNameHidden(entry))
+            if not (entry and features) then return end
+            if markerMode == "types" then
+                if not features.SetMarkerTypeHidden then return end
+                features.SetMarkerTypeHidden(entry,
+                    features.GetHiddenMarkerTypes()[entry.typeKey] == nil)
+            else
+                if not features.SetMarkerNameHidden then return end
+                features.SetMarkerNameHidden(entry, not features.IsMarkerNameHidden(entry))
+            end
             local radar = addon.VignetteRadarAPI
             if radar and radar.Refresh then radar.Refresh(true) else NotifyChanged() end
             RefreshMarkerRows()
         end)
         row.toggle:SetScript("OnEnter", function(self)
-            if row.entry then Tooltip(self, row.entry.name,
-                row.entry.category:match("^map:")
-                    and "Show or hide matching saved map notes across maps."
-                    or "Show or hide matching live detections across maps.") end
+            if not row.entry then return end
+            if markerMode == "types" then
+                Tooltip(self, row.entry.label, "Show or hide every marker using this icon type.")
+            else
+                Tooltip(self, row.entry.name,
+                    row.entry.category:match("^map:")
+                        and "Show or hide matching saved map notes across maps."
+                        or "Show or hide matching live detections across maps.")
+            end
         end)
         row.toggle:SetScript("OnLeave", function() if GameTooltip then GameTooltip:Hide() end end)
         row:Hide()
@@ -831,7 +972,8 @@ local function EnsurePanel()
     AddPressState(panel.markerButton)
     panel.markerButton:SetScript("OnClick", function() API.ToggleMarkers() end)
     panel.markerButton:SetScript("OnEnter", function(self)
-        Tooltip(self, "Manage Map Markers", "Hide individual names such as vendors or mailboxes.")
+        Tooltip(self, "Manage Map Markers",
+            "Hide whole icon types or individual names, including vendors and mailboxes.")
     end)
     panel.markerButton:SetScript("OnLeave", function() if GameTooltip then GameTooltip:Hide() end end)
     panel.footerRule = SectionRule(panel, 421)

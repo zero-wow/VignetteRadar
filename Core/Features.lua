@@ -71,6 +71,46 @@ local function MapNoteNameKey(note)
     return name and kind and "map:" .. kind:lower() .. ":" .. name:lower() or nil
 end
 
+local function MarkerTypeKey(target)
+    local atlas = String(Field(target, "atlasName"))
+    if atlas then
+        local lower = atlas:lower()
+        local vendor = lower:find("vendor", 1, true) or lower:find("vender", 1, true)
+            or lower:find("merchant", 1, true)
+        local decor = lower:find("decor", 1, true) or lower:find("housing", 1, true)
+        local item = lower:find("item", 1, true) or lower:find("goods", 1, true)
+        if vendor and decor and item then return "class:decor-vendor-items" end
+        if vendor and decor then return "class:decor-vendors" end
+        if vendor and item then return "class:vendor-items" end
+        if vendor then return "class:vendors" end
+        if lower:find("mailbox", 1, true) then return "class:mailboxes" end
+        return "atlas:" .. lower
+    end
+    local vignetteType = Number(Field(target, "vignetteType"))
+    if vignetteType then return "vignette:" .. tostring(vignetteType) end
+    local category = String(Field(target, "category"))
+    return category and "category:" .. category:lower() or nil
+end
+
+local function MapNoteTypeKey(note)
+    local icon = Field(note, "icon")
+    local texture = Field(icon, "texture")
+    if Number(texture) or String(texture) then
+        local key = "texture:" .. tostring(texture):lower()
+        local coords = Field(icon, "texCoord")
+        if type(coords) == "table" and not IsSecret(coords) then
+            for index = 1, 4 do
+                local coord = Number(Field(coords, index))
+                if not coord then break end
+                key = key .. ":" .. math.floor(coord * 10000 + .5)
+            end
+        end
+        return key
+    end
+    local kind = String(Field(note, "kind"))
+    return kind and "map-kind:" .. kind:lower() or nil
+end
+
 local function TableSetting(settings, key)
     local value = settings[key]
     if type(value) ~= "table" or IsSecret(value) then
@@ -95,12 +135,20 @@ function API.ToggleFavorite(target)
 end
 
 function API.IsIgnored(target)
+    local settings = Settings()
+    local names = TableSetting(settings, "vignetteRadarHiddenMarkerNames")
+    if next(names) then
+        local nameKey = MarkerNameKey(target)
+        if nameKey and Field(names, nameKey) ~= nil then return true end
+    end
+    local types = TableSetting(settings, "vignetteRadarHiddenMarkerTypes")
+    if next(types) then
+        local typeKey = MarkerTypeKey(target)
+        if typeKey and Field(types, typeKey) ~= nil then return true end
+    end
     local identity = Identity(target)
-    local markerName = MarkerNameKey(target)
-    return markerName ~= nil
-            and Field(TableSetting(Settings(), "vignetteRadarHiddenMarkerNames"), markerName) ~= nil
-        or identity ~= nil and (sessionIgnored[identity] == true
-            or Field(TableSetting(Settings(), "vignetteRadarIgnored"), identity) == true)
+    return identity ~= nil and (sessionIgnored[identity] == true
+            or Field(TableSetting(settings, "vignetteRadarIgnored"), identity) == true)
         or false
 end
 
@@ -112,6 +160,50 @@ end
 function API.IsMapNoteNameHidden(note)
     local key = MapNoteNameKey(note)
     return key ~= nil and Field(TableSetting(Settings(), "vignetteRadarHiddenMarkerNames"), key) ~= nil or false
+end
+
+function API.MarkerTypeKey(target) return MarkerTypeKey(target) end
+function API.MapNoteTypeKey(note) return MapNoteTypeKey(note) end
+
+function API.IsMarkerTypeHidden(target)
+    local key = MarkerTypeKey(target)
+    return key ~= nil and Field(TableSetting(Settings(), "vignetteRadarHiddenMarkerTypes"), key) ~= nil or false
+end
+
+function API.IsMapNoteTypeHidden(note)
+    local key = MapNoteTypeKey(note)
+    return key ~= nil and Field(TableSetting(Settings(), "vignetteRadarHiddenMarkerTypes"), key) ~= nil or false
+end
+
+function API.SetMarkerTypeHidden(entry, hidden)
+    local key = String(Field(entry, "typeKey"))
+    if not key then return false, "no-marker-type" end
+    local types = TableSetting(Settings(), "vignetteRadarHiddenMarkerTypes")
+    if hidden == true then
+        local atlas = String(Field(entry, "atlasName"))
+        local texture = Field(entry, "texture")
+        local coords = Field(entry, "texCoord")
+        local color = Field(entry, "color")
+        local saved = { label = (String(Field(entry, "label")) or key):sub(1, 100) }
+        if atlas then saved.atlasName = atlas:sub(1, 120) end
+        if Number(texture) or String(texture) then saved.texture = texture end
+        if type(coords) == "table" and not IsSecret(coords) then
+            saved.texCoord = {}
+            for index = 1, 4 do saved.texCoord[index] = Number(Field(coords, index)) end
+        end
+        if type(color) == "table" and not IsSecret(color) then
+            saved.color = {}
+            for index = 1, 4 do saved.color[index] = Number(Field(color, index)) end
+        end
+        types[key] = saved
+    else
+        types[key] = nil
+    end
+    return true
+end
+
+function API.GetHiddenMarkerTypes()
+    return TableSetting(Settings(), "vignetteRadarHiddenMarkerTypes")
 end
 
 function API.SetMarkerNameHidden(target, hidden)
@@ -146,6 +238,7 @@ end
 function API.ClearIgnored()
     Settings().vignetteRadarIgnored = {}
     Settings().vignetteRadarHiddenMarkerNames = {}
+    Settings().vignetteRadarHiddenMarkerTypes = {}
     sessionIgnored = {}
 end
 

@@ -42,10 +42,32 @@ F.SetMarkerNameHidden({ name = "Mailbox", category = "map:note" }, true)
 assert(F.IsMapNoteNameHidden(mailboxNote)
     and db.vignetteRadarHiddenMarkerNames["map:note:mailbox"] == "Mailbox",
     "saved map notes must support the same per-name visibility controls")
+local decorVendor = target("decor-vendor", 401, "First Decor Merchant", "other")
+decorVendor.atlasName = "VignetteDecorVendor"
+local anotherVendor = target("decor-vendor-2", 402, "Second Decor Merchant", "other")
+anotherVendor.atlasName = "VignetteDecorVendor"
+assert(F.MarkerTypeKey(decorVendor) == "class:decor-vendors")
+anotherVendor.atlasName = "MinimapHousingMerchant"
+F.SetMarkerTypeHidden({ typeKey = F.MarkerTypeKey(decorVendor),
+    label = "Decor Vendors", atlasName = decorVendor.atlasName }, true)
+assert(F.IsMarkerTypeHidden(anotherVendor) and F.IsIgnored(anotherVendor)
+    and not F.IsMarkerTypeHidden(vendor),
+    "an atlas type filter must hide different names sharing one icon without hiding other icons")
+local noteIcon = { name = "A Different Note", kind = "note",
+    icon = { texture = 134400, texCoord = { .1, .9, .2, .8 } } }
+local noteTypeKey = F.MapNoteTypeKey(noteIcon)
+F.SetMarkerTypeHidden({ typeKey = noteTypeKey, label = "Other Note Icon",
+    texture = 134400, texCoord = noteIcon.icon.texCoord }, true)
+assert(F.IsMapNoteTypeHidden(noteIcon)
+    and not F.IsMapNoteTypeHidden(mailboxNote),
+    "map-note icon filters must match icon artwork, including sprite coordinates")
+F.SetMarkerTypeHidden({ typeKey = noteTypeKey }, false)
+assert(not F.IsMapNoteTypeHidden(noteIcon), "map-note icon types must be restorable")
 F.SetMarkerNameHidden(vendor, true)
 F.ClearIgnored()
-assert(not F.IsIgnored(vendor) and next(F.GetHiddenMarkerNames()) == nil,
-    "clearing ignored detections must also restore hidden live names")
+assert(not F.IsIgnored(vendor) and next(F.GetHiddenMarkerNames()) == nil
+    and next(F.GetHiddenMarkerTypes()) == nil,
+    "clearing ignored detections must also restore saved name and icon filters")
 
 local first, alerts = F.Update({ a }, 1, 0, live)
 assert(#first == 1 and #alerts == 0, "initial scan must seed silently")

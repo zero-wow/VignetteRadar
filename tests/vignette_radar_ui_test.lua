@@ -587,6 +587,22 @@ do
 if not addon.VignetteRadarLegend.IsShown() then addon.VignetteRadarLegend.Toggle(panel.legend) end
 assert(addon.VignetteRadarLegend.ToggleMarkers(), "the Radar Legend must open individual live marker controls")
 local markerPanel = assert(_G.VignetteRadarMarkerLegendPanel)
+markerPanel.tabs.types.scripts.OnClick(markerPanel.tabs.types)
+local treasureTypeRow
+for _, row in ipairs(markerPanel.rows) do
+    if row.entry and row.entry.label == "Treasure" then treasureTypeRow = row; break end
+end
+assert(treasureTypeRow and treasureTypeRow.icon.atlas == "VignetteLoot",
+    "the icon type list must show the same treasure icon used by the radar")
+treasureTypeRow.toggle.scripts.OnClick(treasureTypeRow.toggle)
+assert(settings.vignetteRadarHiddenMarkerTypes["atlas:vignetteloot"]
+    and not panel.blipByKey.treasure and panel.blipByKey.rare,
+    "hiding a live icon type must remove matching blips")
+treasureTypeRow.toggle.scripts.OnClick(treasureTypeRow.toggle)
+assert(settings.vignetteRadarHiddenMarkerTypes["atlas:vignetteloot"] == nil
+    and panel.blipByKey.treasure,
+    "the icon type switch must restore matching blips")
+markerPanel.tabs.names.scripts.OnClick(markerPanel.tabs.names)
 local treasureMarkerRow
 for _, row in ipairs(markerPanel.rows) do
     if row.entry and row.entry.name == "Nearby treasure" then treasureMarkerRow = row; break end
@@ -3223,6 +3239,22 @@ do
     if not addon.VignetteRadarLegend.IsShown() then addon.VignetteRadarLegend.Toggle(panel.legend) end
     assert(addon.VignetteRadarLegend.ToggleMarkers())
     local markerPanel = assert(_G.VignetteRadarMarkerLegendPanel)
+    markerPanel.tabs.types.scripts.OnClick(markerPanel.tabs.types)
+    local noteTypeRow
+    for _, row in ipairs(markerPanel.rows) do
+        if row.entry and row.entry.label == "Other Note Icon" then noteTypeRow = row; break end
+    end
+    assert(noteTypeRow and noteTypeRow.icon.texture == 134400,
+        "saved map-note types must show their actual pack icons")
+    noteTypeRow.toggle.scripts.OnClick(noteTypeRow.toggle)
+    assert(not panel.mapNotes[1]:IsShown()
+        and next(settings.vignetteRadarHiddenMarkerTypes) ~= nil,
+        "hiding a map-note icon type must filter its matching dots")
+    noteTypeRow.toggle.scripts.OnClick(noteTypeRow.toggle)
+    assert(panel.mapNotes[1]:IsShown()
+        and next(settings.vignetteRadarHiddenMarkerTypes) == nil,
+        "restoring a map-note icon type must redraw its dots")
+    markerPanel.tabs.names.scripts.OnClick(markerPanel.tabs.names)
     local noteRow
     for _, row in ipairs(markerPanel.rows) do
         if row.entry and row.entry.name == "A map note" then noteRow = row; break end
