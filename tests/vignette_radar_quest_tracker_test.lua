@@ -16,6 +16,7 @@ function methods:SetMovable(value) self.movable = value end
 function methods:EnableMouse(value) self.mouse = value end
 function methods:EnableMouseWheel(value) self.mouseWheel = value end
 function methods:RegisterForDrag(value) self.dragButton = value end
+function methods:RegisterForClicks(value) self.clickButton = value end
 function methods:RegisterEvent(value) self.events = self.events or {}; self.events[value] = true end
 function methods:SetScript(key, value) self.scripts = self.scripts or {}; self.scripts[key] = value end
 function methods:StartMoving() self.moving = true end
@@ -193,7 +194,8 @@ assert(settings.vignetteRadarQuestTrackerView == "tray"
     and panel.point[1] == "TOPLEFT" and panel.point[2] == radarPanel.field
     and panel.point[3] == "TOPRIGHT" and panel.point[4] == -2
     and panel.point[5] == -2 and panel.height == 196
-    and panel.handle:IsShown() and not panel.close:IsShown()
+    and panel.handle:IsShown() and panel.handle.clickButton == "LeftButtonUp"
+    and not panel.close:IsShown()
     and not panel.statusSurface.edge[1].shown and panel.statusSurface.edge[3].shown
     and not panel.handle.statusSurface.edge[1].shown,
     "Tray must slide from the visible radar edge with an exposed handle and open join")

@@ -573,6 +573,7 @@ local function EnsureFrame()
     frame.slideProgress = Settings().vignetteRadarQuestTrackerRetracted == true and 0 or 1
     frame.handle = CreateFrame("Button", nil, frame)
     frame.handle:EnableMouse(true)
+    frame.handle:RegisterForClicks("LeftButtonUp")
     addon.VignetteRadarControls.RoundedStatusSurface(frame.handle)
     if type(frame.handle.statusSurface) == "table" then
         for _, texture in ipairs(frame.handle.statusSurface.face or {}) do
