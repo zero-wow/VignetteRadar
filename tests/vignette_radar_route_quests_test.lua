@@ -39,6 +39,22 @@ local player = { worldX = 12350, worldY = 50, instanceID = 1 }
 pool.Bind(123, player, function(mapID, vector)
     return mapID * 100 + vector.x * 100, vector.y * 100, 1
 end, function(x, y) return { x = x, y = y } end, settings)
+local nextStepReads = 0
+addon.VignetteRadarQuestData.GetNextStep = function(questID, mapID)
+    nextStepReads = nextStepReads + 1
+    assert(questID == 9002 and mapID == 123)
+    return { mapID = 123, x = .75, y = .4, text = "Find the objective" }
+end
+local acceptedStep = pool.CurrentQuestWaypoint(9002)
+assert(acceptedStep and acceptedStep.questID == 9002
+    and acceptedStep.mapID == 123 and acceptedStep.mapX == .75
+    and acceptedStep.worldX == 12375 and acceptedStep.worldY == 40
+    and acceptedStep.nextStep.text == "Find the objective",
+    "an accepted quest's waypoint must be routeable without a map record or watch")
+settings.vignetteRadarAutoRouteNearbyZones = false
+assert(pool.CurrentQuestWaypoint(9002).mapX == .75 and nextStepReads == 2,
+    "the current quest's next step must work when nearby-zone routing is off")
+settings.vignetteRadarAutoRouteNearbyZones = true
 pool.Tick()
 assert(scans == 0, "remote maps should remain idle without a quest route")
 wantsPool = true

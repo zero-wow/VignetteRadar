@@ -379,12 +379,18 @@ local function NextRouteStop()
         for _, quest in ipairs(quests) do
             Consider(QuestRouteItem(quest))
         end
+        local pool = addon.VignetteRadarRouteQuests
+        if pool and type(pool.CurrentQuestWaypoint) == "function"
+            and active and active.item and active.item.availableStart
+            and route.questID == active.item.questID
+            and Call(C_QuestLog, "IsOnQuest", route.questID) == true then
+            Consider(pool.CurrentQuestWaypoint(route.questID))
+        end
         if settings.vignetteRadarAutoRouteQuestStarts ~= false then
             for _, start in ipairs(addon.VignetteRadarAvailableStarts or {}) do
                 Consider(StartRouteItem(start))
             end
         end
-        local pool = addon.VignetteRadarRouteQuests
         if pool and settings.vignetteRadarAutoRouteNearbyZones ~= false then
             for _, quest in ipairs(pool.Candidates()) do Consider(quest) end
         end
@@ -516,7 +522,9 @@ local function AdvanceRoute(force)
         or addon.GetSettings().vignetteRadarAutoRouteNearbyZones ~= false
         or addon.GetSettings().vignetteRadarAutoRouteQuestStarts ~= false)
     if route.waiting then
-        RouteNote("AUTO ROUTE", "Waiting for the next quest location")
+        RouteNote("AUTO ROUTE", active.item.availableStart
+            and "Waiting for the accepted quest objective"
+            or "Waiting for the next quest location")
     else
         route = nil
         if API.Clear then API.Clear(true) else active = nil end
@@ -1092,12 +1100,15 @@ function API.Status()
         and Number(player.worldX) and Number(player.worldY)
         and math.floor(Distance(player.worldX, player.worldY,
             step.worldX, step.worldY) + .5)
-    local prefix = distance and distance .. " yd · " or ""
+    local prefix = distance and not (route and route.waiting)
+        and distance .. " yd · " or ""
     if route then
         local kind = route.kind == "rare" and "Rare" or route.kind == "treasure"
             and "Treasure" or route.kind == "closest" and "Closest" or "Quest"
         return prefix .. "Auto Route · " .. kind .. (route.locked and " · Locked" or "") .. " · " .. (route.waiting
-            and (route.kind == "closest" and "Waiting for Nearby Points"
+            and (active and active.item and active.item.availableStart
+                and "Waiting for Accepted Quest Objective"
+                or route.kind == "closest" and "Waiting for Nearby Points"
                 or "Waiting for Next Quest")
             or active and active.name or "Choosing Next Stop")
     end

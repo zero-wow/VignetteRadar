@@ -635,6 +635,42 @@ do
 end
 do
     focus.Clear()
+    settings.vignetteRadarAutoRouteQuestNearest = false
+    settings.vignetteRadarAutoRouteQuestStarts = true
+    settings.vignetteRadarAutoRouteNearbyZones = false
+    questActive[305] = false
+    local objectiveAvailable = false
+    local acceptedObjective = Step(420)
+    acceptedObjective.kind, acceptedObjective.questID = "quest", 305
+    acceptedObjective.name = "New quest objective"
+    addon.VignetteRadarAvailableStarts = { {
+        questID = 305, questName = "New quest", mapID = 123,
+        x = .33, y = .5, worldX = 330, worldY = 500, instanceID = 42,
+    } }
+    addon.VignetteRadarRouteQuests = {
+        Tick = function() end,
+        Candidates = function() return {} end,
+        CurrentQuestWaypoint = function(id)
+            if objectiveAvailable and id == 305 then return acceptedObjective end
+        end,
+    }
+    player.worldX = 300
+    focus.Sync(123, player, {}, {}, {})
+    assert(focus.StartNearest("quest") and waypoint.position.x == .33,
+        "an available quest may be the only initial route point")
+    questActive[305] = true
+    focus.Sync(123, player, {}, {}, {})
+    assert(focus.IsRouteActive() and focus.GetRoutePoint() == nil
+        and focus.Status():find("Waiting for Accepted Quest Objective", 1, true),
+        "the route must clearly remain armed while Blizzard's new objective settles")
+    objectiveAvailable = true
+    focus.Sync(123, player, {}, {}, {})
+    assert(waypoint.position.x == .42 and focus.GetRoutePoint().questID == 305,
+        "the accepted quest must automatically advance to its next-step waypoint")
+    assert(focus.Clear())
+end
+do
+    focus.Clear()
     settings.vignetteRadarWorldFocusSavedNotes = false
     settings.vignetteRadarAutoRouteMapNotes = true
     player.worldX = 300

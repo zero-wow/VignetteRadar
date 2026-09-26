@@ -218,6 +218,23 @@ function API.Bind(mapID, player, mapToWorld, mapVector, settings)
         mapVector = mapVector, settings = settings }
 end
 
+-- An accepted quest may have a next-step waypoint without a quest-level map
+-- record or a watch. Read only the quest that was just picked up; QuestData
+-- caches the Blizzard lookup between the existing radar scans.
+function API.CurrentQuestWaypoint(questID)
+    if not (context and Number(questID) and addon.VignetteRadarQuestData
+        and type(addon.VignetteRadarQuestData.GetNextStep) == "function") then return nil end
+    local step = addon.VignetteRadarQuestData.GetNextStep(questID, context.mapID)
+    if not (step and Number(step.mapID) and Number(step.x) and Number(step.y)
+        and WaypointMap(step.mapID)) then return nil end
+    local worldX, worldY, instanceID = Position(step.mapID, step.x, step.y)
+    if not worldX then return nil end
+    return { kind = "quest", questID = questID,
+        name = Call(C_QuestLog, "GetTitleForQuestID", questID) or "Quest Objective",
+        nextStep = step, mapID = step.mapID, mapX = step.x, mapY = step.y,
+        worldX = worldX, worldY = worldY, instanceID = instanceID }
+end
+
 function API.Tick(force)
     if not context or context.settings.vignetteRadarAutoRouteNearbyZones == false then return end
     if not force and not (addon.VignetteRadarWorldFocus
