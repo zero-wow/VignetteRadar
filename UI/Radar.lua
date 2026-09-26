@@ -1259,7 +1259,10 @@ local function RenderMapNotes(player, range, targets)
         if count >= MAX_MAP_NOTES then break end
         local dx, dy = note.worldX - player.worldX, note.worldY - player.worldY
         local distanceSquared = dx * dx + dy * dy
-        if distanceSquared >= minimumDistanceSquared and distanceSquared <= rangeSquared
+        if (distanceSquared >= minimumDistanceSquared
+            or settings.vignetteRadarKeepCenterClear
+                and addon.KeepCenterMarker("note", note.key, 0, range))
+            and distanceSquared <= rangeSquared
             and addon.KeepCenterMarker("note", note.key, math.sqrt(distanceSquared), range)
             and settings.vignetteRadarPOITypes[note.kind] ~= false
             and (not addon.VignetteRadarLensActive
