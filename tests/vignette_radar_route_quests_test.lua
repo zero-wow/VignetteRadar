@@ -15,11 +15,7 @@ C_Map = {
     CanSetUserWaypointOnMap = function() return true end,
 }
 C_QuestLog = {
-    GetNumQuestLogEntries = function() return 1 end,
-    GetQuestIDForLogIndex = function(index) return index == 1 and 9001 end,
-    GetNextWaypoint = function(questID)
-        if questID == 9001 then return 123, .6, .4 end
-    end,
+    GetNumQuestLogEntries = function() return 0 end,
     GetQuestsOnMap = function(mapID)
         scans = scans + 1
         return { { questID = mapID + 8000, name = "Remote objective", x = .5, y = .5 } }
@@ -64,20 +60,14 @@ assert(scans == 0, "remote maps should remain idle without a quest route")
 wantsPool = true
 pool.Tick()
 assert(scans == 2, "a radar scan may read at most two remote maps")
-local foundObjective, foundStart, foundLocal
+local foundObjective, foundStart
 for _, item in ipairs(pool.Candidates()) do
     if item.questID == 8124 then foundObjective = item end
     if item.questID == 9002 then foundStart = item end
-    if item.questID == 9001 then foundLocal = item end
 end
 assert(foundObjective and foundObjective.mapID == 124
-    and foundStart and foundStart.availableStart
-    and foundLocal and foundLocal.mapID == 123 and foundLocal.mapX == .6,
-    "the pool should include local quest-log waypoints absent from map records")
-local diagnostic = pool.Diagnostics()
-assert(diagnostic.logRead == 1 and diagnostic.logTotal == 1
-    and diagnostic.localPoints == 1 and diagnostic.otherPoints == 0,
-    "route diagnostics should distinguish the quest-log scan from map points")
+    and foundStart and foundStart.availableStart,
+    "the pool should expose mapped objectives and available quest starts")
 pool.Tick()
 assert(scans == 2, "repeated radar refreshes must reuse the map cache")
 now = now + 5
@@ -95,7 +85,6 @@ pool.Tick()
 assert(scans == 6, "a quest update should gradually refresh nearby maps")
 settings.vignetteRadarAutoRouteNearbyZones = false
 pool.Tick()
-assert(#pool.Candidates() == 1 and pool.Candidates()[1].questID == 9001
-    and scans == 6,
-    "turning off nearby zones should retain local quest-log waypoints without remote reads")
+assert(#pool.Candidates() == 0 and scans == 6,
+    "turning off nearby zones should stop remote reads and candidates")
 io.write("vignette radar route quest tests passed\n")

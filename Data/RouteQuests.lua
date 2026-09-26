@@ -1,9 +1,9 @@
 local _, addon = ...
 if type(addon) ~= "table" then return end
 
--- Quest routes can read quest-log waypoints on this map and look beyond it
--- without making map-wide API calls in a frame update. At most two neighboring
--- maps and eight quest-log entries are read on each existing radar scan.
+-- Quest routes can look beyond the current map without making map-wide API
+-- calls in a frame update. At most two neighboring maps and eight quest-log
+-- entries are read on each existing radar scan; results are reused between scans.
 local API = {}
 addon.VignetteRadarRouteQuests = API
 
@@ -178,11 +178,7 @@ local function ScanLog()
         logCursor = logCursor + 1
         if questID then
             local mapID, x, y = Call(C_QuestLog, "GetNextWaypoint", questID)
-            if not (Number(mapID) and Number(x) and Number(y)) then
-                x, y = Call(C_QuestLog, "GetNextWaypointForMap", questID, context.mapID)
-                mapID = context.mapID
-            end
-            if WaypointMap(mapID) then
+            if mapID ~= context.mapID and WaypointMap(mapID) then
                 local worldX, worldY, instanceID = Position(mapID, x, y)
                 if worldX then
                     logItems[#logItems + 1] = { kind = "quest", questID = questID,
@@ -222,9 +218,9 @@ function API.Bind(mapID, player, mapToWorld, mapVector, settings)
         mapVector = mapVector, settings = settings }
 end
 
--- An active quest may have a next-step waypoint without a quest-level map
--- record or a watch. Read only the current route's quest; QuestData caches
--- the Blizzard lookup between the existing radar scans.
+-- An accepted quest may have a next-step waypoint without a quest-level map
+-- record or a watch. Read only the quest that was just picked up; QuestData
+-- caches the Blizzard lookup between the existing radar scans.
 function API.CurrentQuestWaypoint(questID)
     if not (context and Number(questID) and addon.VignetteRadarQuestData
         and type(addon.VignetteRadarQuestData.GetNextStep) == "function") then return nil end
@@ -240,13 +236,12 @@ function API.CurrentQuestWaypoint(questID)
 end
 
 function API.Tick(force)
-    if not context then return end
+    if not context or context.settings.vignetteRadarAutoRouteNearbyZones == false then return end
     if not force and not (addon.VignetteRadarWorldFocus
         and addon.VignetteRadarWorldFocus.WantsQuestPool
         and addon.VignetteRadarWorldFocus.WantsQuestPool()) then return end
-    ScanLog()
-    if context.settings.vignetteRadarAutoRouteNearbyZones == false then return end
     if currentMap ~= context.mapID then BuildOrder(context.mapID) end
+    ScanLog()
     local now = Now()
     if not force and now < nextMapScanAt then return end
     nextMapScanAt = now + 5
@@ -272,13 +267,13 @@ end
 
 function API.Candidates()
     local result = {}
-    if not context then return result end
-    local nearby = context.settings.vignetteRadarAutoRouteNearbyZones ~= false
+    if not context or context.settings.vignetteRadarAutoRouteNearbyZones == false then
+        return result
+    end
     for _, item in ipairs(logItems) do
         if #result >= MAX_RESULTS then return result end
-        if nearby or item.mapID == context.mapID then result[#result + 1] = item end
+        result[#result + 1] = item
     end
-    if not nearby then return result end
     local now = Now()
     for _, map in ipairs(order) do
         local entry = cache[map.id]
@@ -293,19 +288,4 @@ function API.Candidates()
         end
     end
     return result
-end
-
-function API.Diagnostics()
-    local localPoints, otherPoints, cachedMaps = 0, 0, 0
-    for _, item in ipairs(logItems) do
-        if context and item.mapID == context.mapID then
-            localPoints = localPoints + 1
-        else otherPoints = otherPoints + 1 end
-    end
-    for _, entry in pairs(cache) do
-        if entry.expires > Now() then cachedMaps = cachedMaps + 1 end
-    end
-    return { logRead = logCursor and logCursor - 1 or logCount,
-        logTotal = logCount, localPoints = localPoints,
-        otherPoints = otherPoints, cachedMaps = cachedMaps }
 end
