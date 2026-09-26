@@ -381,7 +381,7 @@ local function NextRouteStop()
         end
         local pool = addon.VignetteRadarRouteQuests
         if pool and type(pool.CurrentQuestWaypoint) == "function"
-            and active and active.item and active.item.availableStart
+            and route.waiting and active and active.kind == "quest" and active.item
             and route.questID == active.item.questID
             and Call(C_QuestLog, "IsOnQuest", route.questID) == true then
             Consider(pool.CurrentQuestWaypoint(route.questID))
@@ -1115,6 +1115,19 @@ function API.Status()
     if pausedRoute then return prefix .. "Auto Route paused · " .. (active and active.name or "Waypoint kept") end
     if active then return prefix .. active.name .. "  ·  " .. active.index .. "/" .. #active.steps end
     return #candidates .. " possible focus points"
+end
+
+-- A read-only snapshot for explicit troubleshooting; no quest or map APIs run here.
+function API.Diagnostics()
+    local current = route or pausedRoute
+    local visited = 0
+    for _ in pairs(current and current.visited or {}) do visited = visited + 1 end
+    return { mode = current and current.kind or "off",
+        state = route and (route.waiting and "waiting" or "active")
+            or pausedRoute and "paused" or "off",
+        questID = active and active.item and active.item.questID,
+        radarPoints = #quests, availableStarts = #(addon.VignetteRadarAvailableStarts or {}),
+        visited = visited }
 end
 
 function API.Advance()

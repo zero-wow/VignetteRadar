@@ -6728,6 +6728,21 @@ SlashCmdList.VIGNETTERADAR = function(message)
     elseif message == "explore" then
         if addon.VignetteRadarExploration then addon.VignetteRadarExploration.TogglePanel() end
         return
+    elseif message == "route debug" then
+        local focus = addon.VignetteRadarWorldFocus
+        local pool = addon.VignetteRadarRouteQuests
+        local route = focus and focus.Diagnostics and focus.Diagnostics()
+        local data = pool and pool.Diagnostics and pool.Diagnostics()
+        if route and DEFAULT_CHAT_FRAME then
+            DEFAULT_CHAT_FRAME:AddMessage(("Vignette Radar Route: %s (%s), quest %s, %d visible quest points, %d visited, %d available starts."):format(
+                route.mode, route.state, tostring(route.questID or "none"),
+                route.radarPoints, route.visited, route.availableStarts))
+            if data then
+                DEFAULT_CHAT_FRAME:AddMessage(("Vignette Radar Cache: %d/%d quest-log entries scanned, %d local and %d other-map waypoints cached."):format(
+                    data.logRead, data.logTotal, data.localPoints, data.otherPoints))
+            end
+        end
+        return
     elseif message == "pin" or message:match("^pin%s+") then
         local exploration = addon.VignetteRadarExploration
         if exploration then

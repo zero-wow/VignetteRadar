@@ -57,6 +57,11 @@ assert(pool.CurrentQuestWaypoint(9002).mapX == .75 and nextStepReads == 2,
 settings.vignetteRadarAutoRouteNearbyZones = true
 pool.Tick()
 assert(scans == 0, "remote maps should remain idle without a quest route")
+local diagnostic = pool.Diagnostics()
+assert(diagnostic.logRead == 0 and diagnostic.logTotal == 0
+    and diagnostic.localPoints == 0 and diagnostic.otherPoints == 0
+    and scans == 0,
+    "route diagnostics must only report cached state and never trigger a scan")
 wantsPool = true
 pool.Tick()
 assert(scans == 2, "a radar scan may read at most two remote maps")

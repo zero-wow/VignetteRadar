@@ -218,9 +218,9 @@ function API.Bind(mapID, player, mapToWorld, mapVector, settings)
         mapVector = mapVector, settings = settings }
 end
 
--- An accepted quest may have a next-step waypoint without a quest-level map
--- record or a watch. Read only the quest that was just picked up; QuestData
--- caches the Blizzard lookup between the existing radar scans.
+-- An active quest may have a next-step waypoint without a quest-level map
+-- record or a watch. Read only the current route's quest; QuestData caches
+-- the Blizzard lookup between the existing radar scans.
 function API.CurrentQuestWaypoint(questID)
     if not (context and Number(questID) and addon.VignetteRadarQuestData
         and type(addon.VignetteRadarQuestData.GetNextStep) == "function") then return nil end
@@ -288,4 +288,16 @@ function API.Candidates()
         end
     end
     return result
+end
+
+-- Report cached counts only. Diagnostics must never trigger a map or quest scan.
+function API.Diagnostics()
+    local localPoints, otherPoints = 0, 0
+    for _, item in ipairs(logItems) do
+        if context and item.mapID == context.mapID then
+            localPoints = localPoints + 1
+        else otherPoints = otherPoints + 1 end
+    end
+    return { logRead = logCursor and logCursor - 1 or logCount,
+        logTotal = logCount, localPoints = localPoints, otherPoints = otherPoints }
 end

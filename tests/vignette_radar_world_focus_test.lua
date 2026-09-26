@@ -671,6 +671,50 @@ do
 end
 do
     focus.Clear()
+    settings.vignetteRadarAutoRouteQuestNearest = false
+    settings.vignetteRadarAutoRouteQuestStarts = false
+    settings.vignetteRadarAutoRouteNearbyZones = false
+    local first, later = Step(320), Step(460)
+    first.questID, first.name = 308, "First stage"
+    later.kind, later.questID, later.name = "quest", 308, "Next stage"
+    questActive[308] = true
+    local progress = { finished = false, numFulfilled = 0 }
+    local nextReady = false
+    local nextStepReads = 0
+    C_QuestLog.GetQuestObjectives = function(id)
+        if id == 308 then return { progress } end
+        return { { finished = false, numFulfilled = 0 } }
+    end
+    addon.VignetteRadarRouteQuests = {
+        Tick = function() end,
+        Candidates = function() return {} end,
+        CurrentQuestWaypoint = function(id)
+            nextStepReads = nextStepReads + 1
+            if id == 308 and nextReady then return later end
+        end,
+    }
+    player.worldX = 300
+    focus.Sync(123, player, {}, { first }, {})
+    assert(focus.StartNearest("quest") and waypoint.position.x == .32
+        and nextStepReads == 0,
+        "choosing Quest must not request a new next-step lookup synchronously")
+    progress.finished = true
+    focus.Sync(123, player, {}, { first }, {})
+    assert(focus.IsRouteActive() and focus.GetRoutePoint() == nil
+        and focus.GetRouteChoice() == "quest",
+        "Quest mode must stay selected while the next objective is unavailable")
+    nextReady = true
+    focus.Sync(123, player, {}, { first }, {})
+    assert(waypoint.position.x == .46 and focus.GetRouteChoice() == "quest",
+        "a delayed next step should resume Quest routing without a broad quest-log scan")
+    local diagnostic = focus.Diagnostics()
+    assert(diagnostic.mode == "quest" and diagnostic.state == "active"
+        and diagnostic.questID == 308 and diagnostic.radarPoints == 1,
+        "diagnostics should report the route's cached state")
+    assert(focus.Clear())
+end
+do
+    focus.Clear()
     settings.vignetteRadarWorldFocusSavedNotes = false
     settings.vignetteRadarAutoRouteMapNotes = true
     player.worldX = 300
