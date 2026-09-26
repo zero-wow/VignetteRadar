@@ -93,7 +93,9 @@ Confirmed treasure loots, nearby live-rare death or reward transitions, and watc
 
 ## Development validation
 
-Current development build: `0.1.0-dev.93` (base version `0.1.0`).
+Current development build: `0.1.0-dev.94` (base version `0.1.0`).
+
+If Quest Auto Route waits despite unfinished objectives, `/vr route debug` prints the selected mode, objective count, current-map points, and quest-log scan progress. The "Next (Preview)" list on the mini arrow shows only three upcoming stops; it is not the full route.
 
 Repeating launcher, radar, and idle updates have a session-only CPU guard. A stalled update, or three consecutive slow updates, pauses that repeating work and prints a chat warning. `/reload` retries it.
 

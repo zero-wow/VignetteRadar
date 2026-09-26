@@ -671,6 +671,76 @@ do
 end
 do
     focus.Clear()
+    settings.vignetteRadarAutoRouteQuestNearest = true
+    settings.vignetteRadarAutoRouteQuestStarts = false
+    settings.vignetteRadarAutoRouteNearbyZones = false
+    local currentObjective, logObjective = Step(320), Step(440)
+    currentObjective.questID, currentObjective.name = 306, "Mapped objective"
+    logObjective.kind, logObjective.questID = "quest", 307
+    logObjective.name = "Quest-log objective"
+    questActive[306], questActive[307] = true, true
+    local progress = { finished = false, numFulfilled = 0 }
+    C_QuestLog.GetQuestObjectives = function(id)
+        if id == 306 then return { progress } end
+        return { { finished = false, numFulfilled = 0 } }
+    end
+    addon.VignetteRadarRouteQuests = {
+        Tick = function() end,
+        Candidates = function() return { logObjective } end,
+    }
+    addon.VignetteRadarAvailableStarts = {}
+    player.worldX = 300
+    focus.Sync(123, player, {}, { currentObjective }, {})
+    assert(focus.StartNearest("quest") and waypoint.position.x == .32)
+    progress.finished = true
+    focus.Sync(123, player, {}, { currentObjective }, {})
+    assert(waypoint.position.x == .44 and focus.GetRouteChoice() == "quest",
+        "Quest mode must continue to a local quest-log objective absent from radar map records")
+    local diagnostic = focus.Diagnostics()
+    assert(diagnostic.mode == "quest" and diagnostic.state == "active"
+        and diagnostic.questID == 307 and diagnostic.radarPoints == 1
+        and diagnostic.visited == 1,
+        "route diagnostics should identify the active quest and visited point count")
+    assert(focus.Clear())
+end
+do
+    focus.Clear()
+    settings.vignetteRadarAutoRouteQuestNearest = false
+    settings.vignetteRadarAutoRouteQuestStarts = false
+    settings.vignetteRadarAutoRouteNearbyZones = false
+    local first, later = Step(320), Step(460)
+    first.questID, first.name = 308, "First stage"
+    later.kind, later.questID, later.name = "quest", 308, "Next stage"
+    questActive[308] = true
+    local progress = { finished = false, numFulfilled = 0 }
+    local nextReady = false
+    C_QuestLog.GetQuestObjectives = function(id)
+        if id == 308 then return { progress } end
+        return { { finished = false, numFulfilled = 0 } }
+    end
+    addon.VignetteRadarRouteQuests = {
+        Tick = function() end,
+        Candidates = function() return {} end,
+        CurrentQuestWaypoint = function(id)
+            if id == 308 and nextReady then return later end
+        end,
+    }
+    player.worldX = 300
+    focus.Sync(123, player, {}, { first }, {})
+    assert(focus.StartNearest("quest") and waypoint.position.x == .32)
+    progress.finished = true
+    focus.Sync(123, player, {}, { first }, {})
+    assert(focus.IsRouteActive() and focus.GetRoutePoint() == nil
+        and focus.GetRouteChoice() == "quest",
+        "an unfinished quest route must keep Quest mode while its next objective is unavailable")
+    nextReady = true
+    focus.Sync(123, player, {}, { first }, {})
+    assert(waypoint.position.x == .46 and focus.GetRouteChoice() == "quest",
+        "quest routing must acquire a delayed next-step waypoint after objective progress")
+    assert(focus.Clear())
+end
+do
+    focus.Clear()
     settings.vignetteRadarWorldFocusSavedNotes = false
     settings.vignetteRadarAutoRouteMapNotes = true
     player.worldX = 300

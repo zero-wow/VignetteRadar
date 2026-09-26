@@ -381,7 +381,7 @@ local function NextRouteStop()
         end
         local pool = addon.VignetteRadarRouteQuests
         if pool and type(pool.CurrentQuestWaypoint) == "function"
-            and active and active.item and active.item.availableStart
+            and active and active.kind == "quest" and active.item
             and route.questID == active.item.questID
             and Call(C_QuestLog, "IsOnQuest", route.questID) == true then
             Consider(pool.CurrentQuestWaypoint(route.questID))
@@ -391,7 +391,7 @@ local function NextRouteStop()
                 Consider(StartRouteItem(start))
             end
         end
-        if pool and settings.vignetteRadarAutoRouteNearbyZones ~= false then
+        if pool then
             for _, quest in ipairs(pool.Candidates()) do Consider(quest) end
         end
     end
@@ -1115,6 +1115,32 @@ function API.Status()
     if pausedRoute then return prefix .. "Auto Route paused · " .. (active and active.name or "Waypoint kept") end
     if active then return prefix .. active.name .. "  ·  " .. active.index .. "/" .. #active.steps end
     return #candidates .. " possible focus points"
+end
+
+function API.Diagnostics()
+    local current = route or pausedRoute
+    local questID = active and active.item and active.item.questID
+    local visited, objectives, unfinished = 0, nil, nil
+    for _ in pairs(current and current.visited or {}) do visited = visited + 1 end
+    local raw = questID and Call(C_QuestLog, "GetQuestObjectives", questID)
+    if type(raw) == "table" and not (issecretvalue and issecretvalue(raw)) then
+        local ok, total, open = pcall(function()
+            local total, open = math.min(#raw, 32), 0
+            for index = 1, total do
+                local done = raw[index].finished
+                if issecretvalue and issecretvalue(done) then return nil, nil end
+                if done ~= true then open = open + 1 end
+            end
+            return total, open
+        end)
+        if ok then objectives, unfinished = total, open end
+    end
+    return { mode = current and current.kind or "off",
+        state = route and (route.waiting and "waiting" or "active")
+            or pausedRoute and "paused" or "off",
+        questID = questID, radarPoints = #quests,
+        availableStarts = #(addon.VignetteRadarAvailableStarts or {}),
+        visited = visited, objectives = objectives, unfinished = unfinished }
 end
 
 function API.Advance()
