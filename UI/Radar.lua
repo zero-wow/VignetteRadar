@@ -1182,9 +1182,14 @@ local function RenderMapNotes(player, range, targets)
         end
     end
     local count = 0
+    local minimumDistance = MapNoteMinimumDistance(range)
+    local minimumDistanceSquared, rangeSquared = minimumDistance * minimumDistance, range * range
     for _, note in ipairs(activeMapNotes) do
         if count >= MAX_MAP_NOTES then break end
-        if settings.vignetteRadarPOITypes[note.kind] ~= false
+        local dx, dy = note.worldX - player.worldX, note.worldY - player.worldY
+        local distanceSquared = dx * dx + dy * dy
+        if distanceSquared >= minimumDistanceSquared and distanceSquared <= rangeSquared
+            and settings.vignetteRadarPOITypes[note.kind] ~= false
             and (not addon.VignetteRadarLensActive
                 or (addon.VignetteRadarLensActive == "quest" and note.kind == "guide")
                 or (addon.VignetteRadarLensActive == "rare" and note.kind == "mob")
@@ -1192,8 +1197,6 @@ local function RenderMapNotes(player, range, targets)
                     and (note.kind == "treasure" or note.kind == "entrance")))
             and not (addon.VignetteRadarRecent and addon.VignetteRadarRecent.IsHidden(note, settings))
             and not (player.instanceID and note.instanceID and player.instanceID ~= note.instanceID) then
-            local dx, dy = note.worldX - player.worldX, note.worldY - player.worldY
-            local distance = math.sqrt(dx * dx + dy * dy)
             local duplicate = false
             if note.kind == "mob" or note.kind == "treasure" then
                 local cellX, cellY = math.floor(note.worldX / 60), math.floor(note.worldY / 60)
@@ -1215,7 +1218,8 @@ local function RenderMapNotes(player, range, targets)
                     if duplicate then break end
                 end
             end
-            if not duplicate and distance >= MapNoteMinimumDistance(range) and distance <= range then
+            if not duplicate then
+                local distance = math.sqrt(distanceSquared)
                 local usePackIcon = settings.vignetteRadarPOIIcons == true and note.icon ~= nil
                 local x, y = Project(dx, dy, distance, ViewFacing(player.facing),
                     panel.plotRadius - (usePackIcon and 11 or 5), range)

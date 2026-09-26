@@ -3112,6 +3112,14 @@ settings.vignetteRadarRange = 10
 addon.VignetteRadarAPI.Refresh(false)
 assert(panel.mapNotes[1]:IsShown() and panel.mapNotes[1].note == closeNote,
     "a map note five yards away must remain visible at ten-yard zoom")
+closeNote.worldX = closePlayer.worldX + 20
+addon.VignetteRadarAPI.Refresh(false)
+assert(not panel.mapNotes[1]:IsShown(),
+    "a cached map note outside the displayed range must not draw")
+settings.vignetteRadarRange = 25
+addon.VignetteRadarAPI.Refresh(false)
+assert(panel.mapNotes[1]:IsShown() and panel.mapNotes[1].note == closeNote,
+    "zooming out must restore the cached note without collecting map data again")
 closeNote.worldX, closeNote.worldY = savedNoteX, savedNoteY
 settings.vignetteRadarRange = savedRange
 addon.VignetteRadarAPI.Refresh(false)
