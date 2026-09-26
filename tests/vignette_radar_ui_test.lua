@@ -642,6 +642,31 @@ panel.blipByKey.far.scripts.OnClick(panel.blipByKey.far, "LeftButton")
 assert(panel.focusReadout:IsShown() and panel.height == 324 and panel.zoomOut.point[5] == 6
     and panel.zoomOut.height == 20 and panel.focusReadout.point[3] >= 34,
     "disclosed focus readout must reserve a gutter above the zoom controls")
+do
+    local originalMapInfo = C_Map.GetMapInfo
+    local originalVignettePosition = C_VignetteInfo.GetVignettePosition
+    liveInfo.parentChest = { name = "Parent map cache", atlasName = "VignetteLoot",
+        vignetteID = 803, onMinimap = false, onWorldMap = true, inFogOfWar = false }
+    C_Map.GetMapInfo = function(id)
+        return id == 779 and { parentMapID = 780 } or nil
+    end
+    C_VignetteInfo.GetVignettePosition = function(key, requestedMap)
+        if key == "parentChest" then
+            return requestedMap == 780 and { x = .55, y = .5 } or nil
+        end
+        return originalVignettePosition(key, requestedMap)
+    end
+    guids = { "parentChest" }
+    addon.VignetteRadarAPI.Refresh(true)
+    local parentTarget = addon.VignetteRadarAPI.GetTargets()[1]
+    assert(parentTarget and parentTarget.name == "Parent map cache"
+        and parentTarget.mapID == 780 and parentTarget.mapX == .55,
+        "a visible Blizzard treasure positioned on the parent map must reach route data")
+    C_Map.GetMapInfo = originalMapInfo
+    C_VignetteInfo.GetVignettePosition = originalVignettePosition
+    guids = { "far", "fogged", "unpublished" }
+    addon.VignetteRadarAPI.Refresh(true)
+end
 settings.vignetteRadarWorldMap = false
 addon.VignetteRadarAPI.Refresh(true)
 assert(#addon.VignetteRadarAPI.GetTargets() == 0 and not panel.blipByKey.far and not panel.focusReadout:IsShown(),
@@ -1942,7 +1967,7 @@ assert(quick.tabs.Radar.backdrop == nil
     "settings buttons need quiet flat artwork and an untruncated Find control")
 assert(quick.pages.Status and quick.pages.Search and quick.pages.Beacons
     and quick.pages["World Focus"] and quick.pages["Auto Route"]
-    and quick.pages.Performance and quick.find,
+    and quick.pages["Quest Routing"] and quick.pages.Performance and quick.find,
     "diagnostics and search must be reachable from the compact settings panel")
 settings.vignetteRadarPerformance = "low"
 assert(addon.VignetteRadarRenderSeconds() == .25
@@ -2101,7 +2126,9 @@ for _, key in ipairs({ "vignetteRadarEnabled", "vignetteRadarHideWhenEmpty", "vi
     "vignetteRadarHideCleared", "vignetteRadarWorldFocusEnabled",
     "vignetteRadarWorldFocusAutoAdvance", "vignetteRadarWorldFocusRoutes",
     "vignetteRadarWorldFocusSavedNotes", "vignetteRadarWorldFocusZygor",
-    "vignetteRadarWorldFocusArrivalRadius" }) do
+    "vignetteRadarWorldFocusArrivalRadius",
+    "vignetteRadarAutoRouteNearbyZones", "vignetteRadarAutoRouteQuestStarts",
+    "vignetteRadarAutoRouteQuestNearest" }) do
     assert(exposed[key], "compact settings missing: " .. key)
 end
 for _, slot in ipairs(addon.VignetteRadarStyle.slots) do
@@ -2114,6 +2141,10 @@ local function quickControl(page, key, value)
             and (value == nil or object.optionValue == value) then return object end
     end
 end
+assert(quickControl("Quest Routing", "vignetteRadarAutoRouteNearbyZones").checked
+    and quickControl("Quest Routing", "vignetteRadarAutoRouteQuestStarts").checked
+    and quickControl("Quest Routing", "vignetteRadarAutoRouteQuestNearest").checked,
+    "all new quest routing choices should be enabled and visible by default")
 do
     local zygorCheck = assert(quickControl("World Focus", "vignetteRadarWorldFocusZygor"))
     local pinZygor = assert(quick.pages["World Focus"].pinZygor)
@@ -2485,15 +2516,41 @@ C_QuestLog = savedQuestLog
 do
     local focus = addon.VignetteRadarWorldFocus
     local originalRoutePoint = focus.GetRoutePoint
+    local originalTrackedKind = focus.GetTrackedRouteKind
     local originalHorizon = focus.GetHorizon
     local snapshot = addon.VignetteRadarAPI.GetPlayerSnapshot()
     local routeStep = { name = "Crystal Cache", worldX = snapshot.worldX + 300, worldY = snapshot.worldY,
         instanceID = snapshot.instanceID }
     focus.GetRoutePoint = function() return routeStep, "treasure", "Treasure Route", 2, 3 end
+    focus.GetTrackedRouteKind = function() return "treasure" end
     focus.GetHorizon = function()
         return { { name = "Crystal Cache" }, { name = "Silvermaw" } }
     end
     settings.vignetteRadarRouteArrow = true
+    addon.VignetteRadarAPI.Refresh(false)
+    local cornerRoute = panel.hoverTools[8]
+    assert(panel.routeToggle.trackingIcon:IsShown()
+        and panel.routeToggle.trackingIcon.atlas == "VignetteLoot"
+        and not panel.routeToggle.art:IsShown()
+        and cornerRoute.trackingIcon:IsShown()
+        and cornerRoute.trackingIcon.atlas == "VignetteLoot",
+        "both Auto Route buttons should show the current treasure symbol")
+    focus.GetTrackedRouteKind = function() return "quest" end
+    addon.VignetteRadarAPI.Refresh(false)
+    assert(panel.routeToggle.trackingIcon.texture == addon.VignetteRadarQuestHollowTexture
+        and cornerRoute.trackingIcon.texture == addon.VignetteRadarQuestHollowTexture,
+        "the route symbol should follow a new quest stop")
+    focus.GetTrackedRouteKind = function() return "rare" end
+    addon.VignetteRadarAPI.Refresh(false)
+    assert(panel.routeToggle.trackingIcon.texture == "Interface\\TargetingFrame\\UI-TargetingFrame-Skull"
+        and cornerRoute.trackingIcon.texture == "Interface\\TargetingFrame\\UI-TargetingFrame-Skull",
+        "the route symbol should follow a rare stop")
+    focus.GetTrackedRouteKind = function() return "zygor" end
+    addon.VignetteRadarAPI.Refresh(false)
+    assert(panel.routeToggle.trackingIcon.texture == panel.routeToggle.art.texture
+        and cornerRoute.trackingIcon.texture == cornerRoute.art.texture,
+        "the route symbol should retain the themed guide mark for Zygor")
+    focus.GetTrackedRouteKind = function() return "treasure" end
     addon.VignetteRadarAPI.Refresh(false)
     local widget = addon.VignetteRadarRouteArrow.GetFrame()
     local initialRotation = widget and widget.pointer.rotation
@@ -2560,7 +2617,12 @@ do
     assert(settings.vignetteRadarRouteArrowPosition == nil and widget.point[1] == "CENTER",
         "reset positions must recenter the independently movable arrow")
     focus.GetRoutePoint = originalRoutePoint
+    focus.GetTrackedRouteKind = originalTrackedKind
     focus.GetHorizon = originalHorizon
+    addon.VignetteRadarAPI.Refresh(false)
+    assert(not panel.routeToggle.trackingIcon:IsShown() and panel.routeToggle.art:IsShown()
+        and not cornerRoute.trackingIcon:IsShown() and cornerRoute.art:IsShown(),
+        "the ordinary Auto Route mark should return when no stop is tracked")
 end
 
 -- Exploration overlays stay inside the field and crowded detections remain selectable.

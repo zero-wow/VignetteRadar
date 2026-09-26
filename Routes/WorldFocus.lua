@@ -19,6 +19,12 @@ local function Number(value)
         and value ~= math.huge and value ~= -math.huge and value or nil
 end
 
+local function Call(owner, name, ...)
+    if type(owner) ~= "table" or type(owner[name]) ~= "function" then return nil end
+    local ok, value = pcall(owner[name], ...)
+    if ok and not (issecretvalue and issecretvalue(value)) then return value end
+end
+
 local function Position(item)
     local mapID, x, y = Number(item and item.mapID), Number(item and item.mapX), Number(item and item.mapY)
     if not (mapID and x and y and x >= 0 and x <= 1 and y >= 0 and y <= 1) then return nil end
@@ -118,7 +124,8 @@ local function RouteID(item)
     local kind = RouteKind(item)
     if not kind then return nil end
     if kind == "quest" then
-        return "quest:" .. item.questID .. ":" .. math.floor(item.mapX * 10000 + .5)
+        return "quest:" .. item.questID .. (item.availableStart and ":start:" or ":objective:")
+            .. math.floor(item.mapX * 10000 + .5)
             .. ":" .. math.floor(item.mapY * 10000 + .5)
     end
     return kind .. ":" .. tostring(item.key or item.name or "location")
@@ -129,6 +136,15 @@ local function QuestRouteItem(quest)
         colorSlot = quest.colorSlot, nextStep = quest.nextStep,
         mapID = quest.mapID or player.mapID, mapX = quest.mapX, mapY = quest.mapY,
         worldX = quest.worldX, worldY = quest.worldY, instanceID = quest.instanceID }
+end
+
+local function StartRouteItem(start)
+    return { kind = "quest", availableStart = true, questID = start.questID,
+        questLineID = start.questLineID,
+        name = start.questName or start.questLineName or "Available Quest",
+        mapID = start.mapID, mapX = start.x, mapY = start.y,
+        worldX = start.worldX, worldY = start.worldY,
+        instanceID = start.instanceID }
 end
 
 local function Distance(ax, ay, bx, by)
@@ -201,6 +217,7 @@ local function Visited(item)
         local dx, dy = prior.x - item.worldX, prior.y - item.worldY
         if prior.kind == kind and prior.mapID == item.mapID
             and (kind ~= "quest" or prior.questID == item.questID)
+            and (kind ~= "quest" or prior.availableStart == (item.availableStart == true))
             and dx * dx + dy * dy <= limit * limit then return true end
     end
     return false
@@ -214,6 +231,7 @@ local function MarkVisited(item)
     if #route.visitedPlaces < ROUTE_LIMIT and Number(item.worldX) and Number(item.worldY) then
         route.visitedPlaces[#route.visitedPlaces + 1] = {
             kind = RouteKind(item), questID = item.questID, mapID = item.mapID,
+            availableStart = item.availableStart == true,
             live = item.live == true,
             x = item.worldX, y = item.worldY,
         }
@@ -301,35 +319,43 @@ local function NextRouteStop()
     local kind = route.kind
     local best, bestCost, bestRank
     local inspected = 0
-    local limit = kind == "closest" and ROUTE_LIMIT * 3 or ROUTE_LIMIT
+    local limit = (kind == "closest" or kind == "quest")
+        and ROUTE_LIMIT * 3 or ROUTE_LIMIT
     local travelMode = TravelMode()
+    local settings = addon.GetSettings()
     local questDone = {}
     local function Consider(item)
         if inspected >= limit then return end
         inspected = inspected + 1
         local itemKind = RouteKind(item)
         if not itemKind or (kind ~= "closest" and itemKind ~= kind)
-            or not Valid(item) or item.mapID ~= player.mapID
+            or not Valid(item)
+            or (item.mapID ~= player.mapID and itemKind == "quest"
+                and settings.vignetteRadarAutoRouteNearbyZones == false)
             or Visited(item) or (itemKind == "quest" and (
                 route.skippedQuests and route.skippedQuests[item.questID]
-                or kind == "quest" and route.questID and item.questID ~= route.questID)) then return end
+                or kind == "quest" and settings.vignetteRadarAutoRouteQuestNearest == false
+                    and route.questID and item.questID ~= route.questID)) then return end
         if itemKind == "quest" then
             local complete = questDone[item.questID]
             if complete == nil then
                 complete = QuestComplete(item.questID)
                 questDone[item.questID] = complete
             end
-            if complete then return end
+            if complete and not item.availableStart then return end
         end
         if itemKind == "quest" and C_QuestLog and type(C_QuestLog.IsOnQuest) == "function" then
             local ok, onQuest = pcall(C_QuestLog.IsOnQuest, item.questID)
-            if ok and not (issecretvalue and issecretvalue(onQuest)) and onQuest == false then return end
+            if ok and not (issecretvalue and issecretvalue(onQuest))
+                and ((item.availableStart and onQuest == true)
+                    or (not item.availableStart and onQuest == false)) then return end
         end
         local recent = addon.VignetteRadarRecent
         if itemKind ~= "quest" and recent and type(recent.IsHidden) == "function"
             and recent.IsHidden(item) then return end
         local cost = RouteCost(item, travelMode, kind == "closest")
-        local rank = itemKind == "rare" and 1 or itemKind == "treasure" and 2 or 3
+        local rank = itemKind == "rare" and 1 or itemKind == "treasure" and 2
+            or item.availableStart and 3.1 or 3
         local tied = bestCost and math.abs(cost - bestCost) <= (kind == "closest" and .5 or 0)
         if not best or (not tied and cost < bestCost)
             or (tied and (rank < bestRank or (rank == bestRank
@@ -341,6 +367,15 @@ local function NextRouteStop()
     if kind == "quest" or kind == "closest" then
         for _, quest in ipairs(quests) do
             Consider(QuestRouteItem(quest))
+        end
+        if settings.vignetteRadarAutoRouteQuestStarts ~= false then
+            for _, start in ipairs(addon.VignetteRadarAvailableStarts or {}) do
+                Consider(StartRouteItem(start))
+            end
+        end
+        local pool = addon.VignetteRadarRouteQuests
+        if pool and settings.vignetteRadarAutoRouteNearbyZones ~= false then
+            for _, quest in ipairs(pool.Candidates()) do Consider(quest) end
         end
     end
     if kind ~= "quest" then
@@ -428,9 +463,10 @@ local function Activate(item)
     active = { key = item.key or item.questID or item.name, name = item.name or "Location",
         kind = item.kind, questID = item.questID, item = item, steps = steps, index = 1,
         wasOutside = false }
-    if route and route.kind == "closest" then
+    if route and (route.kind == "closest" or route.kind == "quest") then
         route.questID = item.kind == "quest" and item.questID or nil
-        if route.questID then route.progress, route.finished = QuestProgress(route.questID)
+        if route.questID and not item.availableStart then
+            route.progress, route.finished = QuestProgress(route.questID)
         else route.progress, route.finished = nil, nil end
     end
     ArmArrival()
@@ -455,7 +491,6 @@ local function AdvanceRoute(force)
     MarkVisited(active.item)
     local nextItem = NextRouteStop()
     if nextItem then
-        if route.kind == "quest" and not route.questID then route.questID = nextItem.questID end
         route.waiting = false
         local ok, reason = Activate(nextItem)
         if not ok then route = nil end
@@ -466,9 +501,11 @@ local function AdvanceRoute(force)
         RouteNote("AUTO ROUTE", "Closest is waiting for a nearby point")
         return true, "Waiting for a nearby point"
     end
-    route.waiting = route.kind == "quest" and route.questID ~= nil
+    route.waiting = route.kind == "quest" and (route.questID ~= nil
+        or addon.GetSettings().vignetteRadarAutoRouteNearbyZones ~= false
+        or addon.GetSettings().vignetteRadarAutoRouteQuestStarts ~= false)
     if route.waiting then
-        RouteNote("AUTO ROUTE", "Waiting for the next quest objective")
+        RouteNote("AUTO ROUTE", "Waiting for the next quest location")
     else
         route = nil
         if API.Clear then API.Clear(true) else active = nil end
@@ -550,6 +587,9 @@ function API.ToggleRouteLock()
     return true, current.locked
 end
 function API.IsQuestRoute() return route and route.kind == "quest" or false end
+function API.WantsQuestPool()
+    return route and (route.kind == "quest" or route.kind == "closest") or false
+end
 function API.GetRouteChoice()
     if route then return route.kind, "active" end
     if pausedRoute then return pausedRoute.kind, "paused" end
@@ -569,6 +609,11 @@ function API.GetRoutePoint()
         and RouteKind(active.item) or route.kind, active.name,
         active.index, #active.steps
 end
+function API.GetTrackedRouteKind()
+    local current = route or pausedRoute
+    if not active or current and current.waiting then return nil end
+    return active.kind == "guide" and "zygor" or RouteKind(active.item)
+end
 
 function API.ExplainActive()
     if not (active and active.item) then return "No active destination" end
@@ -577,7 +622,8 @@ function API.ExplainActive()
         or item.kind == "guide" and "Zygor guide"
         or item.live and (item.source == "worldMap" and "Blizzard world map" or "Live vignette")
         or item.source and ("Saved map note · " .. item.source) or "Selected location"
-    local rule = item.kind == "quest" and "advances on objective progress"
+    local rule = item.availableStart and "advances when the quest is accepted"
+        or item.kind == "quest" and "advances on objective progress"
         or item.kind == "treasure" and "advances at 3 yd or on matching loot"
         or item.kind == "rare" and "advances when cleared or skipped"
         or "follows its guide step"
@@ -654,45 +700,43 @@ function API.StartNearest(kind)
         and kind ~= "closest" then
         return false, "Choose Closest, Rare, Treasure, or Quest"
     end
-    if kind == "closest" then
+    if kind == "closest" or kind == "quest" or kind == "rare"
+        or kind == "treasure" then
         if not addon.GetSettings().vignetteRadarWorldFocusEnabled or not player then
             return false, "World Focus is unavailable"
         end
         if not (Number(player.worldX) and Number(player.worldY)) then
             return false, "Player location is unavailable"
         end
+        local pool = addon.VignetteRadarRouteQuests
+        if (kind == "closest" or kind == "quest") and pool and pool.Tick then
+            pool.Tick(true)
+        end
         local previous = route
-        route = { kind = "closest", visited = {}, visitedPlaces = {}, waiting = false }
+        route = { kind = kind, visited = {}, visitedPlaces = {}, waiting = false }
         local nearest = NextRouteStop()
         route = previous
-        if not nearest then return false, "No rare, treasure, or quest point on this map" end
+        if not nearest then return false,
+            kind == "quest" and "No Quest Objective or Available Start Found Yet"
+            or kind == "treasure" and "No Eligible Treasure in Live or Selected Map Data"
+            or kind == "rare" and "No Eligible Rare in Live or Selected Map Data"
+            or "No Rare, Treasure, or Quest Point Found Yet" end
         route = nil
         local ok, reason = Select(nearest)
         if not ok then route = previous; return false, reason end
-        route = { kind = "closest", visited = {}, visitedPlaces = {}, waiting = false }
+        route = { kind = kind, visited = {}, visitedPlaces = {}, waiting = false }
         if nearest.kind == "quest" then
             route.questID = nearest.questID
-            route.progress, route.finished = QuestProgress(nearest.questID)
+            if not nearest.availableStart then
+                route.progress, route.finished = QuestProgress(nearest.questID)
+            end
         end
         ArmArrival()
-        RouteNote("AUTO ROUTE", "Closest · " .. (active and active.name or nearest.name or "Point"))
+        RouteNote("AUTO ROUTE", (kind == "quest" and "Quest" or kind == "rare" and "Rare"
+            or kind == "treasure" and "Treasure" or "Closest")
+            .. " · " .. (active and active.name or nearest.name or "Point"))
         return true, nearest
     end
-    local nearest
-    for _, candidate in ipairs(candidates) do
-        if RouteKind(candidate) == kind and player and candidate.mapID == player.mapID
-            and (not nearest or candidate.focusDistance < nearest.focusDistance) then
-            nearest = candidate
-        end
-    end
-    if not nearest then return false, "No " .. kind .. " point on this map" end
-    local ok, reason = Select(nearest)
-    if not ok then return false, reason end
-    if not route then
-        ok, reason = API.ToggleRoute()
-        if not ok then return false, reason end
-    end
-    return true, nearest
 end
 
 function API.SkipRouteStop()
@@ -928,6 +972,15 @@ function API.Sync(mapID, snapshot, liveTargets, questPoints, mapNotes)
     end
     if route and active.kind == "quest"
         and (route.kind == "quest" or route.kind == "closest") then
+        if active.item.availableStart then
+            local onQuest = Call(C_QuestLog, "IsOnQuest", active.item.questID)
+            if onQuest == true and not route.waiting then AdvanceRoute(); return end
+            if route.waiting then
+                local nextItem = NextRouteStop()
+                if nextItem then route.waiting = false; Activate(nextItem) end
+            end
+            return
+        end
         if QuestComplete(route.questID) then
             route.questID, route.progress, route.finished = nil, nil, nil
             AdvanceRoute()
@@ -936,7 +989,10 @@ function API.Sync(mapID, snapshot, liveTargets, questPoints, mapNotes)
         local progress, finished = QuestProgress(route.questID)
         if NewlyFinishedObjective(route.finished, finished) then
             route.progress, route.finished = progress, finished
-            if route.kind == "closest" then AdvanceRoute(); return end
+            if route.kind == "closest"
+                or addon.GetSettings().vignetteRadarAutoRouteQuestNearest ~= false then
+                AdvanceRoute(); return
+            end
             RecordQuestAdvance()
             MarkVisited(active.item)
             route.waiting = true
@@ -1009,7 +1065,7 @@ function API.Status()
             and "Treasure" or route.kind == "closest" and "Closest" or "Quest"
         return prefix .. "Auto Route · " .. kind .. (route.locked and " · Locked" or "") .. " · " .. (route.waiting
             and (route.kind == "closest" and "Waiting for Nearby Points"
-                or "Waiting for Next Objective")
+                or "Waiting for Next Quest")
             or active and active.name or "Choosing Next Stop")
     end
     if pausedRoute then return prefix .. "Auto Route paused · " .. (active and active.name or "Waypoint kept") end

@@ -68,6 +68,14 @@ assert(defaults.vignetteRadarAutoRouteArrivalRadius == 20,
     "an existing larger arrival distance should stay selected")
 assert(defaults.vignetteRadarRouteArrow == true,
     "new and migrated settings should show the mini route arrow by default")
+assert(defaults.vignetteRadarAutoRouteNearbyZones == true
+    and defaults.vignetteRadarAutoRouteQuestStarts == true
+    and defaults.vignetteRadarAutoRouteQuestNearest == true,
+    "nearby zones, available starts, and closest quest continuation should default on")
+defaults.vignetteRadarAutoRouteNearbyZones = false
+fresh.GetSettings()
+assert(defaults.vignetteRadarAutoRouteNearbyZones == false,
+    "an explicit choice to stop at the current zone should persist")
 assert(defaults.vignetteRadarBeaconsEnabled == false
     and defaults.vignetteRadarPerformance == "standard"
     and defaults.vignetteRadarBeaconRares == true

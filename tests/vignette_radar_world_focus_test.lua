@@ -148,6 +148,9 @@ focus.Sync(123, player, { rareA, rareB }, {}, { rareNote })
 assert(not focus.IsRouteActive(), "a manually replaced waypoint must stop Auto Route")
 
 local questA, questNext, questB = Step(350), Step(500), Step(700)
+settings.vignetteRadarAutoRouteQuestNearest = false -- Preserve the legacy same-quest route scenario below.
+settings.vignetteRadarAutoRouteNearbyZones = false
+settings.vignetteRadarAutoRouteQuestStarts = false
 questA.questID, questNext.questID, questB.questID = 11, 11, 22
 questA.name, questNext.name, questB.name = "First quest", "First quest", "Second quest"
 local questDone = {}
@@ -331,6 +334,7 @@ do
     rare.key, rare.name, rare.category = "nearest-rare", "Nearby rare", "rare"
     chest.key, chest.name, chest.kind = "nearest-chest", "Nearby chest", "treasure"
     quest.questID, quest.name = 77, "Nearby quest"
+    questActive[77] = true
     player.worldX = 300
     focus.Sync(123, player, { rare }, { quest }, { chest })
     assert(focus.StartNearest("rare") and waypoint.position.x == .32 and focus.IsRouteActive(),
@@ -343,7 +347,7 @@ do
     settings.vignetteRadarAutoRouteOnSelect = false
     focus.Sync(123, player, {}, {}, {})
     local ok, reason = focus.StartNearest("rare")
-    assert(not ok and reason:find("No rare point", 1, true),
+    assert(not ok and reason:find("No Eligible Rare", 1, true),
         "the chooser should explain when a route category has no point here")
 end
 
@@ -577,5 +581,77 @@ do
     assert(focus.SkipRouteStop() and select(2, focus.GetRoutePoint()) == "treasure",
         "skipping the rare must resume the mixed route")
     assert(focus.Clear())
+end
+do
+    focus.Clear()
+    settings.vignetteRadarAutoRouteQuestNearest = true
+    settings.vignetteRadarAutoRouteQuestStarts = true
+    settings.vignetteRadarAutoRouteNearbyZones = true
+    local first, other = Step(320), Step(400)
+    first.questID, first.name = 301, "First objective"
+    other.questID, other.name = 303, "Other objective"
+    local remote = { kind = "quest", questID = 304, name = "Next zone objective",
+        mapID = 124, mapX = .5, mapY = .5,
+        worldX = 500, worldY = 500, instanceID = 42 }
+    local progress = { [301] = { finished = false },
+        [302] = { finished = false }, [303] = { finished = false },
+        [304] = { finished = false } }
+    questActive[301], questActive[303], questActive[304] = true, true, true
+    questActive[302] = false
+    C_QuestLog.GetQuestObjectives = function(id) return { progress[id] } end
+    addon.VignetteRadarAvailableStarts = { {
+        questID = 302, questName = "Available quest", mapID = 123,
+        x = .33, y = .5, worldX = 330, worldY = 500, instanceID = 42,
+    } }
+    addon.VignetteRadarRouteQuests = {
+        Tick = function() end,
+        Candidates = function() return { remote } end,
+    }
+    player.worldX = 300
+    focus.Sync(123, player, {}, { first, other }, {})
+    assert(focus.StartNearest("quest") and waypoint.position.x == .32,
+        "quest routing should begin with the nearest objective")
+    assert(focus.GetTrackedRouteKind() == "quest",
+        "the route button should identify its current quest stop")
+    progress[301].finished = true
+    focus.Sync(123, player, {}, { first, other }, {})
+    assert(waypoint.position.x == .33
+        and focus.GetRoutePoint().availableStart == true,
+        "after progress, a closer available quest should beat another objective")
+    questActive[302] = true
+    focus.Sync(123, player, {}, { first, other }, {})
+    assert(waypoint.position.x == .4 and focus.GetRoutePoint().questID == 303,
+        "accepting the quest should advance to the next closest objective")
+    settings.vignetteRadarAutoRouteNearbyZones = false
+    progress[303].finished = true
+    focus.Sync(123, player, {}, { first, other }, {})
+    assert(focus.IsRouteActive() and focus.GetRoutePoint() == nil,
+        "disabling nearby zones should keep the quest route waiting locally")
+    settings.vignetteRadarAutoRouteNearbyZones = true
+    focus.Sync(123, player, {}, { first, other }, {})
+    assert(waypoint.uiMapID == 124 and focus.GetRoutePoint().questID == 304,
+        "the waiting quest route should pin a known objective in the next zone")
+    assert(focus.Clear())
+end
+do
+    focus.Clear()
+    settings.vignetteRadarWorldFocusSavedNotes = false
+    settings.vignetteRadarAutoRouteMapNotes = true
+    player.worldX = 300
+    local packChest = Step(340)
+    packChest.kind, packChest.key, packChest.name = "treasure", "pack:nearby", "Mapped Cache"
+    focus.Sync(123, player, {}, {}, { packChest })
+    assert(focus.StartNearest("treasure") and waypoint.position.x == .34,
+        "Nearest Treasure should use selected map data even if manual focus notes are hidden")
+    focus.Clear()
+    local parentChest = Step(330)
+    parentChest.mapID, parentChest.category, parentChest.key = 124, "treasure", "parent:chest"
+    parentChest.name = "Blizzard Map Cache"
+    focus.Sync(123, player, { parentChest }, {}, {})
+    assert(focus.StartNearest("treasure") and waypoint.uiMapID == 124
+        and waypoint.position.x == .33 and focus.GetTrackedRouteKind() == "treasure",
+        "a parent-map treasure pin should be routeable from the child zone")
+    focus.Clear()
+    settings.vignetteRadarWorldFocusSavedNotes = true
 end
 io.write("vignette radar World Focus tests passed\n")

@@ -7,8 +7,9 @@ local API = {}
 addon.VignetteRadarQuestData = API
 
 local stepCache, stepCacheCount, stepCacheMap = {}, 0, nil
-local startsCache, requestedMap = nil, nil
+local startsCache, requestedMaps, startsCacheCount = {}, {}, 0
 local STEP_AGE, STARTS_AGE, MAX_STEPS, MAX_STARTS = 2, 5, 64, 80
+local MAX_CACHED_MAPS = 64
 
 local function IsSecret(value)
     if not issecretvalue then return false end
@@ -69,8 +70,8 @@ end
 
 function API.Invalidate(reason)
     stepCache, stepCacheCount, stepCacheMap = {}, 0, nil
-    startsCache = nil
-    if reason ~= "quest" then requestedMap = nil end
+    startsCache, startsCacheCount = {}, 0
+    if reason ~= "quest" then requestedMaps = {} end
 end
 
 -- Returns a map point when Blizzard provides one and its separate instruction
@@ -154,17 +155,20 @@ function API.GetAvailableQuestStarts(mapID)
     mapID = ID(mapID)
     if not mapID then return {} end
     local now = Now()
-    if startsCache and startsCache.mapID == mapID and now - startsCache.at < STARTS_AGE then
+    local cached = startsCache[mapID]
+    if cached and now - cached.at < STARTS_AGE then
         local copy = {}
-        for index, entry in ipairs(startsCache.value) do copy[index] = Copy(entry) end
+        for index, entry in ipairs(cached.value) do copy[index] = Copy(entry) end
         return copy
     end
-    if requestedMap ~= mapID then
+    if not requestedMaps[mapID] then
         Call(C_QuestLine, "RequestQuestLinesForMap", mapID)
-        requestedMap = mapID
+        requestedMaps[mapID] = true
     end
     local result = ReadStarts(mapID)
-    startsCache = { mapID = mapID, at = now, value = result }
+    if startsCacheCount >= MAX_CACHED_MAPS then startsCache, startsCacheCount = {}, 0 end
+    if not startsCache[mapID] then startsCacheCount = startsCacheCount + 1 end
+    startsCache[mapID] = { at = now, value = result }
     local copy = {}
     for index, entry in ipairs(result) do copy[index] = Copy(entry) end
     return copy

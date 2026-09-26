@@ -59,6 +59,28 @@ local radarPeekActive, radarPeekPreviousManual, radarPeekPreviousPosition
 local EndLauncherPeek
 local trailPopup, HideTrailPopup, ToggleTrailPopup, RefreshTrailPopup
 local routeMenu = {}
+function routeMenu.SetTrackedRouteTexture(texture, kind)
+    if kind == "rare" then
+        texture:SetTexture(SKULL_TEXTURE)
+        texture:SetTexCoord(0, 1, 0, 1)
+    elseif kind == "treasure" then
+        texture:SetAtlas("VignetteLoot")
+    elseif kind == "quest" then
+        texture:SetTexture(addon.VignetteRadarQuestHollowTexture)
+        texture:SetTexCoord(0, 1, 0, 1)
+    elseif kind == "zygor" then
+        texture:SetTexture("Interface\\AddOns\\VignetteRadar\\Media\\radar-corner-controls.tga")
+        texture:SetTexCoord((10 * 64 + 1) / 1024,
+            (10 * 64 + 63) / 1024, 1 / 256, 63 / 256)
+    end
+end
+function routeMenu.TrackedRouteColor(kind)
+    local style = addon.VignetteRadarStyle
+    if style and style.Color then
+        return style.Color(kind == "zygor" and "accent" or kind)
+    end
+    return ACCENT[1], ACCENT[2], ACCENT[3]
+end
 local preview = false
 local manualPanelState
 local activeTargets = {}
@@ -461,6 +483,8 @@ local function CollectVignettes(mapID)
     local vignetteGUIDs = Call(C_VignetteInfo.GetVignettes)
     if IsSecret(vignetteGUIDs) or type(vignetteGUIDs) ~= "table" then return targets end
     local includeWorldMap = Settings().vignetteRadarWorldMap ~= false
+    local parentMapID = C_Map and C_Map.GetMapInfo and SafeNumber(SafeField(
+        Call(C_Map.GetMapInfo, mapID), "parentMapID"))
     -- Honor maps where Blizzard explicitly suppresses world-map vignette pins.
     if includeWorldMap and C_Map.GetMapInfo and FlagsUtil and FlagsUtil.IsSet and Enum and Enum.UIMapFlag then
         local flags = SafeNumber(SafeField(Call(C_Map.GetMapInfo, mapID), "flags"))
@@ -482,7 +506,18 @@ local function CollectVignettes(mapID)
             if DisplayableVignetteInfo(info, includeWorldMap) then
                 local mapPosition = Call(C_VignetteInfo.GetVignettePosition, guid, mapID)
                 local mapX, mapY = ReadXY(mapPosition)
-                local worldX, worldY, instanceID = MapToWorld(mapID, mapPosition)
+                local positionMapID = mapID
+                if not (mapX and mapY) and parentMapID then
+                    -- Some Blizzard world-map pins are positioned only on a
+                    -- parent zone map, even while the player is in its child.
+                    mapPosition = Call(C_VignetteInfo.GetVignettePosition, guid, parentMapID)
+                    mapX, mapY = ReadXY(mapPosition)
+                    positionMapID = parentMapID
+                end
+                local worldX, worldY, instanceID
+                if mapX and mapY then
+                    worldX, worldY, instanceID = MapToWorld(positionMapID, mapPosition)
+                end
                 if mapX and mapY and worldX and worldY then
                     local worldBoss = Features() and Features().IsWorldBoss(info) or false
                     local groupMin, groupMax
@@ -496,7 +531,7 @@ local function CollectVignettes(mapID)
                         objectGUID = SafeString(SafeField(info, "objectGUID")),
                         rewardQuestID = SafeNumber(SafeField(info, "rewardQuestID")),
                         isDead = SafeBoolean(SafeField(info, "isDead")),
-                        mapID = mapID,
+                        mapID = positionMapID,
                         mapX = mapX,
                         mapY = mapY,
                         name = SafeString(SafeField(info, "name")) or "Detected vignette",
@@ -1535,7 +1570,9 @@ addon.RenderVignetteRadarQuestStarts = function(player, mapID, range)
                             dot:SetScript("OnClick", function(self)
                                 local focus = addon.VignetteRadarWorldFocus
                                 if focus and self.entry then
-                                    focus.SelectPoint({ kind = "quest", name = self.entry.questName
+                                    focus.SelectPoint({ kind = "quest", availableStart = true,
+                                        questID = self.entry.questID,
+                                        name = self.entry.questName
                                         or self.entry.questLineName or "Quest start",
                                         mapID = activeMapID, mapX = self.entry.x, mapY = self.entry.y,
                                         worldX = self.entry.worldX, worldY = self.entry.worldY,
@@ -3661,6 +3698,31 @@ function routeMenu.SetupButtons(panel, ToolbarIcon)
     UpdateTrailToggle()
 
     panel.routeToggle = ToolbarIcon("route", 22)
+    panel.routeToggle.trackingIcon = panel.routeToggle:CreateTexture(nil, "OVERLAY")
+    panel.routeToggle.trackingIcon:SetSize(16, 16)
+    panel.routeToggle.trackingIcon:SetPoint("CENTER")
+    panel.routeToggle.trackingIcon:Hide()
+    local routeBaseRefresh = panel.routeToggle.RefreshAppearance
+    function panel.routeToggle:RefreshAppearance()
+        routeBaseRefresh(self)
+        local kind = self._trackingKind
+        self.art:SetShown(kind == nil)
+        if not kind then self.trackingIcon:Hide(); return end
+        local r, g, b = routeMenu.TrackedRouteColor(kind)
+        self.trackingIcon:SetVertexColor(r, g, b,
+            self._enabled and (self._selected and 1 or .75) or .38)
+        self.trackingIcon:Show()
+    end
+    function panel.routeToggle:SetTrackingKind(kind)
+        if self._trackingKind == kind then return end
+        self._trackingKind = kind
+        if kind == "rare" or kind == "treasure" or kind == "quest" or kind == "zygor" then
+            routeMenu.SetTrackedRouteTexture(self.trackingIcon, kind)
+        else
+            self._trackingKind = nil
+        end
+        self:RefreshAppearance()
+    end
     panel.routeToggle:RegisterForClicks("LeftButtonUp", "RightButtonUp")
     panel.routeToggle:SetScript("OnClick", function(self, button)
         if button == "RightButton" then
@@ -3899,6 +3961,15 @@ Render = function()
     if panel.routeToggle and panel.routeToggle._selected ~= routing then
         panel.routeToggle._selected = routing
         panel.routeToggle:RefreshAppearance()
+    end
+    if panel.routeToggle then
+        local focus = addon.VignetteRadarWorldFocus
+        local previousKind = panel.routeToggle._trackingKind
+        panel.routeToggle:SetTrackingKind(focus and focus.GetTrackedRouteKind
+            and focus.GetTrackedRouteKind() or nil)
+        if previousKind ~= panel.routeToggle._trackingKind and panel.RefreshCornerTools then
+            panel.RefreshCornerTools()
+        end
     end
     if panel.arrowToggle and panel.arrowToggle._selected ~= Settings().vignetteRadarRouteArrow then
         panel.arrowToggle._selected = Settings().vignetteRadarRouteArrow == true
@@ -5665,6 +5736,7 @@ local function EnsurePanel()
         local quick = addon.VignetteRadarQuickConfig
         local legend = LegendAPI()
         local focused = FocusedTargetKey()
+        local trackedKind = panel.routeToggle and panel.routeToggle._trackingKind
         for _, tool in ipairs(panel.hoverTools) do
             local id = tool.toolID
             local active = id == "north" and settings.vignetteRadarNorthUp == true
@@ -5689,6 +5761,18 @@ local function EnsurePanel()
             if id == "arrow" then
                 tool.art:SetVertexColor(ACCENT[1], ACCENT[2], ACCENT[3],
                     active and 1 or tool._hovered and .9 or .42)
+            elseif id == "route" and tool.trackingIcon then
+                if tool._trackingKind ~= trackedKind then
+                    tool._trackingKind = trackedKind
+                    if trackedKind then routeMenu.SetTrackedRouteTexture(tool.trackingIcon, trackedKind) end
+                end
+                tool.art:SetShown(trackedKind == nil)
+                tool.art:SetVertexColor(ACCENT[1], ACCENT[2], ACCENT[3], 1)
+                tool.trackingIcon:SetShown(trackedKind ~= nil)
+                if trackedKind then
+                    local r, g, b = routeMenu.TrackedRouteColor(trackedKind)
+                    tool.trackingIcon:SetVertexColor(r, g, b, active and 1 or .75)
+                end
             elseif tool._artRed ~= ACCENT[1] or tool._artGreen ~= ACCENT[2]
                 or tool._artBlue ~= ACCENT[3] then
                 tool.art:SetVertexColor(ACCENT[1], ACCENT[2], ACCENT[3], 1)
@@ -5713,6 +5797,12 @@ local function EnsurePanel()
             or "Interface\\AddOns\\VignetteRadar\\Media\\radar-corner-controls.tga")
         tool.art:SetSize(id == "arrow" and 12 or 18, id == "arrow" and 12 or 18)
         tool.art:SetPoint("CENTER")
+        if id == "route" then
+            tool.trackingIcon = tool:CreateTexture(nil, "OVERLAY")
+            tool.trackingIcon:SetSize(14, 14)
+            tool.trackingIcon:SetPoint("CENTER")
+            tool.trackingIcon:Hide()
+        end
         tool:SetScript("OnEnter", function(self)
             panel._hoverToolsShown = true
             self._hovered = true
@@ -5972,14 +6062,17 @@ ScanVignettes = function(mapID)
             options = questOptions, at = now }
     end
     local startsEnabled = Settings().vignetteRadarQuestStartBadges == true
+        or Settings().vignetteRadarAutoRouteQuestStarts == true
     local startsNow = Now()
     if addon.VignetteRadarStartsMapID ~= mapID
         or addon.VignetteRadarStartsEnabled ~= startsEnabled
+        or addon.VignetteRadarStartsBadges ~= Settings().vignetteRadarQuestStartBadges
         or not addon.VignetteRadarStartsNextAt
         or startsNow >= addon.VignetteRadarStartsNextAt then
         addon.VignetteRadarAvailableStarts = {}
         addon.VignetteRadarStartsMapID = mapID
         addon.VignetteRadarStartsEnabled = startsEnabled
+        addon.VignetteRadarStartsBadges = Settings().vignetteRadarQuestStartBadges
         addon.VignetteRadarStartsNextAt = startsNow + 5
         if mapID and startsEnabled and addon.VignetteRadarQuestData then
             local starts = addon.VignetteRadarQuestData.GetAvailableQuestStarts(mapID)
@@ -6101,7 +6194,13 @@ ScanVignettes = function(mapID)
             activeTargets, activeQuests, activeMapNotes, TargetVisible)
     end
     if worldFocus and not preview then
-        worldFocus.Sync(mapID, PlayerSnapshot(mapID), SelectableTargets(), activeQuests, activeMapNotes)
+        local routePlayer = PlayerSnapshot(mapID)
+        local routeQuests = addon.VignetteRadarRouteQuests
+        if routeQuests then
+            routeQuests.Bind(mapID, routePlayer, MapToWorld, MapVector, db)
+            routeQuests.Tick()
+        end
+        worldFocus.Sync(mapID, routePlayer, activeTargets, activeQuests, activeMapNotes)
     end
 end
 
@@ -6731,6 +6830,9 @@ events:SetScript("OnEvent", function(_, event)
         or event == "ZONE_CHANGED" or event == "ZONE_CHANGED_INDOORS"
     if addon.VignetteRadarQuestData and (mapChanged or questUpdated) then
         addon.VignetteRadarQuestData.Invalidate(mapChanged and "map" or "quest")
+        if addon.VignetteRadarRouteQuests then
+            addon.VignetteRadarRouteQuests.Invalidate(mapChanged and "map" or "quest")
+        end
         addon.VignetteRadarStartsNextAt = nil
         addon._focusQuestCache = nil
     end

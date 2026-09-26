@@ -690,12 +690,38 @@ local function Build()
         if focusAPI then focusAPI.SkipQuest() end
         API.Refresh()
     end)
-    Button(autoRoute, "Back to World Focus", 14, -235, 260, function()
+    Button(autoRoute, "Quest Routing", 14, -235, 124, function()
+        SelectPage("Quest Routing")
+    end)
+    Button(autoRoute, "Back", 150, -235, 124, function()
         SelectPage("World Focus")
     end)
     autoRoute.status = Label(autoRoute, "", 14, -265, 9, 260)
     autoRoute.status:SetHeight(18)
     autoRoute.status:SetWordWrap(true)
+
+    local questRouting = CreateFrame("Frame", nil, quick)
+    questRouting:SetSize(WIDTH, HEIGHT - 137)
+    questRouting:SetPoint("TOPLEFT", quick, "TOPLEFT", 0, -137)
+    questRouting.searchPage = "Quest Routing"
+    questRouting:Hide()
+    quick.pages["Quest Routing"] = questRouting
+    Section(questRouting, "QUEST ROUTING", -3)
+    Check(questRouting, "vignetteRadarAutoRouteQuestNearest",
+        "Choose Closest After Each Objective", 14, -22)
+    Check(questRouting, "vignetteRadarAutoRouteQuestStarts",
+        "Include Available Quest Starts", 14, -58)
+    Check(questRouting, "vignetteRadarAutoRouteNearbyZones",
+        "Continue Into Nearby Zones", 14, -94)
+    Section(questRouting, "HOW IT WORKS", -139)
+    local questRoutingInfo = Label(questRouting,
+        "The current stop stays pinned until an objective finishes or a quest is accepted. Nearby zones are checked gradually to keep the radar responsive.",
+        14, -160, 10, 260)
+    questRoutingInfo:SetHeight(55)
+    questRoutingInfo:SetWordWrap(true)
+    Button(questRouting, "Back to Auto Route", 14, -242, 260, function()
+        SelectPage("Auto Route")
+    end)
 
     local beacons = CreateFrame("Frame", nil, quick)
     beacons:SetSize(WIDTH, HEIGHT - 137)

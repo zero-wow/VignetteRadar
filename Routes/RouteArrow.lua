@@ -277,6 +277,7 @@ function API.Refresh()
         frame.node.name:SetText(name)
     end
     local kindTitle = KIND_TITLE[kind] or "Route"
+    if kind == "quest" and step.availableStart then kindTitle = "Quest Start" end
     if kind == "treasure" and Number(routeCount) and routeCount > 1 then
         kindTitle = routeIndex == 1 and "Entrance"
             or routeIndex < routeCount and "Approach" or "Treasure"
