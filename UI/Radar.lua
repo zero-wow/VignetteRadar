@@ -4136,7 +4136,7 @@ Render = function()
     UpdatePanelChrome()
 
     if preview then
-        if panel.activeCue then panel.activeCue:Hide() end
+        if panel.activeCue then panel.activeCue:Hide(); panel.activeCueHit:Hide() end
         HideEdgeCues()
         panel.emptyReason = nil
         if panel.emptyHelp then panel.emptyHelp:Hide() end
@@ -4165,7 +4165,7 @@ Render = function()
     end
 
     if not player then
-        if panel.activeCue then panel.activeCue:Hide() end
+        if panel.activeCue then panel.activeCue:Hide(); panel.activeCueHit:Hide() end
         HideEdgeCues()
         panel.emptyReason = EmptyExplanation(nil, 0, 0, 0, false)
         if panel.emptyHelp then panel.emptyHelp:SetShown(not CircleOnly() and panel.emptyReason ~= nil) end
@@ -4204,12 +4204,15 @@ Render = function()
         if blobToken then layerBudget.Finish(blobToken) end
     end
     local focusAPI = addon.VignetteRadarWorldFocus
-    local activeStep, activeKind = focusAPI and focusAPI.GetRoutePoint and focusAPI.GetRoutePoint()
+    local activeStep, activeKind, activeRouteName, activeIndex, activeCount
+    if focusAPI and focusAPI.GetRoutePoint then
+        activeStep, activeKind, activeRouteName, activeIndex, activeCount = focusAPI.GetRoutePoint()
+    end
     if not activeStep and focusAPI and focusAPI.GetFocusedStep then
         activeStep = focusAPI.GetFocusedStep()
         activeKind = activeStep and activeStep.kind
     end
-    local cueX, cueY
+    local cueX, cueY, cueDistance
     if Settings().vignetteRadarActiveCue ~= false and activeStep
         and activeKind ~= "quest" and not activeStep.questID
         and SafeNumber(activeStep.worldX) and SafeNumber(activeStep.worldY)
@@ -4218,6 +4221,7 @@ Render = function()
         local distance = math.sqrt(dx * dx + dy * dy)
         if distance <= range then
             cueX, cueY = Project(dx, dy, distance, ViewFacing(player.facing), panel.plotRadius, range)
+            cueDistance = distance
         end
     end
     if cueX and cueY then
@@ -4227,8 +4231,17 @@ Render = function()
         addon.VignetteRadarTurn.TrackPoint(panel.activeCue, cueX, cueY, ViewFacing(player.facing))
         panel.activeCue:SetVertexColor(r, g, b, .16)
         panel.activeCue:Show()
+        panel.activeCueHit.name = SafeString(activeStep.name)
+            or SafeString(activeRouteName) or "Active Destination"
+        panel.activeCueHit.kind = SafeString(activeKind) or "Destination"
+        panel.activeCueHit.distance = cueDistance
+        panel.activeCueHit.routeName = SafeString(activeRouteName)
+        panel.activeCueHit.routeIndex = SafeNumber(activeIndex)
+        panel.activeCueHit.routeCount = SafeNumber(activeCount)
+        panel.activeCueHit:Show()
     else
         panel.activeCue:Hide()
+        panel.activeCueHit:Hide()
     end
     local questsInRange = RenderQuestDots(player, range)
     local startsInRange = addon.RenderVignetteRadarQuestStarts(player, mapID, range)
@@ -5519,6 +5532,38 @@ local function EnsurePanel()
     panel.activeCue:SetTexture(CIRCLE_TEXTURE)
     panel.activeCue:SetSize(30, 30)
     panel.activeCue:Hide()
+    -- A texture cannot own mouse scripts. Its matching hit frame follows the
+    -- smoothed cue position while the real quest and vignette buttons stay above it.
+    panel.activeCueHit = CreateFrame("Frame", nil, panel.field)
+    panel.activeCueHit:SetSize(30, 30)
+    panel.activeCueHit:SetPoint("CENTER", panel.activeCue, "CENTER")
+    panel.activeCueHit:SetFrameLevel(panel.field:GetFrameLevel() + 2)
+    panel.activeCueHit:EnableMouse(true)
+    panel.activeCueHit:SetScript("OnEnter", function(self)
+        if not GameTooltip then return end
+        GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+        GameTooltip:SetText(self.name or "Active Destination", 1, .86, .59)
+        local kind = addon.VignetteRadarControls and addon.VignetteRadarControls.TitleCase
+            and addon.VignetteRadarControls.TitleCase(self.kind or "Destination")
+            or self.kind or "Destination"
+        GameTooltip:AddLine(kind .. " · " .. math.floor((self.distance or 0) + .5) .. " yd",
+            .68, .84, .81)
+        if self.routeName then
+            local step = self.routeIndex and self.routeCount
+                and (" · Step " .. self.routeIndex .. "/" .. self.routeCount) or ""
+            GameTooltip:AddLine(self.routeName .. step, .57, .73, .72)
+        end
+        GameTooltip:Show()
+    end)
+    panel.activeCueHit:SetScript("OnLeave", function()
+        if GameTooltip then GameTooltip:Hide() end
+    end)
+    panel.activeCueHit:SetScript("OnHide", function(self)
+        if GameTooltip and GameTooltip.GetOwner and GameTooltip:GetOwner() == self then
+            GameTooltip:Hide()
+        end
+    end)
+    panel.activeCueHit:Hide()
     panel.sweepLines = {}
     for index = 1, 2 do
         local line = panel.field:CreateLine(nil, "BORDER")
@@ -6491,7 +6536,11 @@ RefreshRadar = function(rescan)
     if addon.VignetteRadarRouteArrow then addon.VignetteRadarRouteArrow.Refresh() end
 end
 
-addon.RefreshVignetteRadar = function(rescan) RefreshRadar(rescan ~= false) end
+addon.RefreshVignetteRadar = function(rescan)
+    RefreshRadar(rescan ~= false)
+    local tracker = addon.VignetteRadarQuestTracker
+    if tracker and tracker.SyncFocus then tracker.SyncFocus() end
+end
 addon.ToggleVignetteRadarQuestKey = function()
     local legend = LegendAPI()
     if not (legend and legend.ToggleQuest) then return false end
@@ -6510,7 +6559,26 @@ addon.ToggleVignetteRadarQuestKey = function()
     return opened
 end
 addon.VignetteRadarAPI = {
+    GetPanel = function() return panel end,
     GetTargets = function() return activeTargets end,
+    GetQuests = function() return activeQuests end,
+    GetQuestColorSlot = function(questID)
+        return (questColorMapID == CurrentMapID() and questColorByID[questID])
+            or (type(questID) == "number"
+            and (questID % #QUEST_COLORS) + 1) or 1
+    end,
+    HighlightQuest = function(questID)
+        if not (panel and panel.questDots) then return end
+        local exploration = addon.VignetteRadarExploration
+        local focused = exploration and exploration.GetFocusedQuest and exploration.GetFocusedQuest()
+        for _, dot in ipairs(panel.questDots) do
+            if dot.quest and dot:IsShown() then
+                local selected = (questID or focused) == dot.quest.questID
+                dot.selection:SetShown(selected)
+                dot:SetAlpha(questID and not selected and .48 or 1)
+            end
+        end
+    end,
     GetRawTargets = function() return addon._rawVignetteTargets or {} end,
     GetRawMapNotes = function() return addon._rawMapNotes or {} end,
     GetCurrentMapID = CurrentMapID,

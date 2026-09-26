@@ -217,6 +217,19 @@ function addon.GetSettings()
     if type(db.vignetteRadarIndependentViews) ~= "boolean" then db.vignetteRadarIndependentViews = false end
     if type(db.vignetteRadarViewProfiles) ~= "table" then db.vignetteRadarViewProfiles = {} end
     if type(db.vignetteRadarQuestKeyProgress) ~= "boolean" then db.vignetteRadarQuestKeyProgress = true end
+    if type(db.vignetteRadarQuestTrackerVisible) ~= "boolean" then db.vignetteRadarQuestTrackerVisible = true end
+    if db.vignetteRadarQuestTrackerView ~= "tray" and db.vignetteRadarQuestTrackerView ~= "floating" then
+        db.vignetteRadarQuestTrackerView = "floating"
+    end
+    if db.vignetteRadarQuestTrackerSide ~= "left" and db.vignetteRadarQuestTrackerSide ~= "right"
+        and db.vignetteRadarQuestTrackerSide ~= "top" and db.vignetteRadarQuestTrackerSide ~= "bottom" then
+        db.vignetteRadarQuestTrackerSide = "right"
+    end
+    if db.vignetteRadarQuestTrackerScope ~= "local" and db.vignetteRadarQuestTrackerScope ~= "watched"
+        and db.vignetteRadarQuestTrackerScope ~= "all" then db.vignetteRadarQuestTrackerScope = "local" end
+    if type(db.vignetteRadarQuestTrackerCollapsed) ~= "table" then
+        db.vignetteRadarQuestTrackerCollapsed = {}
+    end
     if type(db.vignetteRadarGuideSeen) ~= "boolean" then db.vignetteRadarGuideSeen = false end
     if type(db.vignetteRadarRouteAutoAdvance) ~= "boolean" then db.vignetteRadarRouteAutoAdvance = false end
     if db.vignetteRadarRouteArrivalRadius ~= 10 and db.vignetteRadarRouteArrivalRadius ~= 20

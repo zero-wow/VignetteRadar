@@ -2630,6 +2630,22 @@ do
         instanceID = snapshot.instanceID }
     focus.GetRoutePoint = function() return routeStep, "treasure", "Treasure Route", 2, 3 end
     focus.GetTrackedRouteKind = function() return "treasure" end
+    routeStep.mapID = snapshot.mapID
+    local routeX = routeStep.worldX
+    routeStep.worldX = snapshot.worldX + 20
+    addon.VignetteRadarAPI.Refresh(false)
+    assert(panel.activeCue:IsShown() and panel.activeCueHit:IsShown()
+        and panel.activeCueHit.name == "Crystal Cache",
+        "the active destination cue needs a matching mouse hit target")
+    panel.activeCueHit.scripts.OnEnter(panel.activeCueHit)
+    assert(GameTooltip:IsShown() and GameTooltip:GetOwner() == panel.activeCueHit
+        and GameTooltip.text == "Crystal Cache"
+        and GameTooltip.lines[1]:find("Treasure", 1, true),
+        "hovering the active destination should explain the point and distance: "
+            .. tostring(GameTooltip.text) .. " / " .. tostring(GameTooltip.lines[1]))
+    panel.activeCueHit.scripts.OnLeave(panel.activeCueHit)
+    assert(not GameTooltip:IsShown(), "the destination tooltip must dismiss on leave")
+    routeStep.worldX = routeX
     focus.GetHorizon = function()
         return { { name = "Crystal Cache" }, { name = "Silvermaw" } }
     end
@@ -2754,7 +2770,8 @@ do
     routeStep.instanceID = snapshot.instanceID
     focus.GetRoutePoint = function() return nil end
     addon.VignetteRadarAPI.Refresh(false)
-    assert(not widget:IsShown(), "paused routes must hide the standalone arrow")
+    assert(not widget:IsShown() and not panel.activeCueHit:IsShown(),
+        "paused routes must hide their arrow and radar cue hit target")
     addon.VignetteRadarRouteArrow.ResetPosition()
     assert(settings.vignetteRadarRouteArrowPosition == nil and widget.point[1] == "CENTER",
         "reset positions must recenter the independently movable arrow")

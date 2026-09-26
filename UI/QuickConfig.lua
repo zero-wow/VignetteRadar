@@ -116,6 +116,7 @@ local function Changed(key, value, subkey)
         if runtime and runtime.Configure then runtime.Configure() end
     end
     if addon.RefreshVignetteRadarOptions then addon.RefreshVignetteRadarOptions() end
+    if addon.VignetteRadarQuestTracker then addon.VignetteRadarQuestTracker.Refresh() end
     API.Refresh()
 end
 
@@ -1093,12 +1094,14 @@ local function Build()
     Check(quests, "vignetteRadarQuestAreaColors", "Color estimated quest circles", 14, -199)
     Stepper(quests, "vignetteRadarQuestHaloRadius", "Circle radius", -230,
         { 10, 20, 40, 80 }, function(value) return value .. " yd" end)
-    Button(quests, "Quest key", 14, -258, 124, function()
+    Button(quests, "Quest Key", 14, -258, 124, function()
         if addon.VignetteRadarAPI and addon.VignetteRadarAPI.ToggleQuestKey then
             addon.VignetteRadarAPI.ToggleQuestKey()
         end
     end)
-    Check(quests, "vignetteRadarQuestKeyProgress", "Progress", 147, -257, nil, 95)
+    Button(quests, "Quest Tracker", 150, -258, 124, function()
+        if addon.VignetteRadarQuestTracker then addon.VignetteRadarQuestTracker.Toggle() end
+    end)
 
     local wayfinding = quick.pages.Wayfinding
     Check(wayfinding, "vignetteRadarNextQuestStep", "Use Blizzard's next quest step", 14, -3)

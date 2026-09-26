@@ -47,6 +47,7 @@ addon.RefreshVignetteRadarOptions = Refresh
 
 local function Changed()
     addon.VignetteRadarAPI.Refresh(true)
+    if addon.VignetteRadarQuestTracker then addon.VignetteRadarQuestTracker.Refresh() end
     Refresh()
 end
 
@@ -347,10 +348,8 @@ local function BuildPanel()
             addon.VignetteRadarAPI.ToggleQuestKey()
         end
     end)
-    AddButton(quests, "Wayfinding options", 258, -313, 203, function()
-        if addon.VignetteRadarQuickConfig and addon.VignetteRadarQuickConfig.OpenPage then
-            addon.VignetteRadarQuickConfig.OpenPage("Wayfinding")
-        end
+    AddButton(quests, "Toggle Quest Tracker", 258, -313, 203, function()
+        if addon.VignetteRadarQuestTracker then addon.VignetteRadarQuestTracker.Toggle() end
     end)
     local questFooter = AddFooter(quests, "Exact blobs need north-up; estimated circles stay behind markers.")
     questFooter:ClearAllPoints()
