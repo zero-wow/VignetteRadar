@@ -308,7 +308,8 @@ function API.BuildCandidates(mapID, player, targets, quests, notes, visible, db)
             Add(list, "quest", quests[index], quests[index], "quest", player, mapID, range)
         end
     end
-    if type(notes) == "table" and db.vignetteRadarPOISource ~= "none" then
+    if type(notes) == "table" and db.vignetteRadarMapNotesVisible == true
+        and db.vignetteRadarPOISource ~= "none" then
         for index = 1, math.min(#notes, 64) do
             local note = notes[index]
             local kind = note.kind == "mob" and db.vignetteRadarBeaconRares

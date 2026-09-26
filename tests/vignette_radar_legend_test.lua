@@ -78,7 +78,7 @@ GameTooltip = {
     Show = function() end, Hide = function() end,
 }
 
-local settings = {}
+local settings = { vignetteRadarPOISource = "auto", vignetteRadarMapNotesVisible = true }
 local refreshes = 0
 local addon = {
     GetSettings = function() return settings end,
@@ -147,9 +147,12 @@ assert(panel.title.font[1] == EllesmereUI.EXPRESSWAY and panel.title.text == "RA
     "legend must use native EllesmereUI typography")
 assert(panel.liveHint.text == "CLICK LIVE TYPE TO SPOTLIGHT"
     and panel.showHint.text == "SHOW" and panel.all.label.text == "CLEAR"
-    and panel.mapHeading.text == "MAP NOTES · REFERENCE ONLY"
+    and panel.mapHeading.text == "MAP NOTES" and panel.mapToggle.label.text == "ON"
     and panel.otherHeading.text == "OTHER MARKS · REFERENCE ONLY",
     "the legend must identify spotlightable rows, visibility switches, and reference-only symbols")
+assert(panel.mapHeading.point[4] + panel.mapHeading.width < panel.width - 9 - panel.mapToggle.width
+    and -panel.mapToggle.point[3] + panel.mapToggle.height < 189,
+    "the map-note switch must have visible gutters beside its heading and above the first row")
 assert(panel.rows.rare and panel.rows.treasure and panel.rows.event and panel.rows.other,
     "legend must render one independent row for every supported filter")
 for _, kind in ipairs({ "treasure", "mob", "item", "note", "entrance", "guide" }) do
@@ -161,6 +164,20 @@ for _, kind in ipairs({ "treasure", "mob", "item", "note", "entrance", "guide" }
         and -note.point[5] + note.height < panel.height - 20,
         "map note entries must stay within the legend's visible gutters")
 end
+panel.mapToggle.scripts.OnClick(panel.mapToggle)
+assert(settings.vignetteRadarMapNotesVisible == false and panel.mapToggle.label.text == "OFF"
+    and settings.vignetteRadarPOISource == "auto",
+    "the legend switch should hide map-pack marks without losing the selected source")
+panel.mapToggle.scripts.OnClick(panel.mapToggle)
+assert(settings.vignetteRadarMapNotesVisible == true and panel.mapToggle.label.text == "ON",
+    "the same switch should restore saved map-pack marks")
+panel.mapNotes.treasure.scripts.OnClick(panel.mapNotes.treasure)
+assert(settings.vignetteRadarPOITypes.treasure == false
+    and panel.mapNotes.treasure.label.text == "Treasure off",
+    "clicking a map-note row should hide only that type")
+panel.mapNotes.treasure.scripts.OnClick(panel.mapNotes.treasure)
+assert(settings.vignetteRadarPOITypes.treasure == true,
+    "clicking the row again should restore that note type")
 assert(panel.mapCaption.text:find("saved, not live", 1, true)
     and panel.guides.quest.fill.width == 8
     and panel.guides.quest.fill.texture == "Interface\\AddOns\\VignetteRadar\\Media\\quest-diamond.tga"
@@ -194,15 +211,22 @@ assert(panel.rows.event.scripts.OnMouseDown and panel.rows.event.scripts.OnMouse
 assert(panel.rows.rare.toggle.label.text == "OFF", "the UI must reflect persisted filter state")
 
 settings.vignetteRadarPOISource = "none"
+settings.vignetteRadarMapNotesVisible = false
 settings.vignetteRadarQuestDots = false
 settings.vignetteRadarBreadcrumbs = false
 legend.Refresh()
 assert(panel.mapNotes.mob.alpha == .6 and panel.mapNotes.mob.label.text == "Mob off"
-    and panel.mapCaption.text:find("Map notes off", 1, true)
+    and panel.mapCaption.text:find("Map Notes Off", 1, true)
     and panel.guides.quest.label.text == "Quest off"
     and panel.guides.trail.label.text == "Trail off",
     "the guide must visibly identify optional features that are switched off")
+panel.mapNotes.mob.scripts.OnClick(panel.mapNotes.mob)
+assert(settings.vignetteRadarMapNotesVisible == true
+    and settings.vignetteRadarPOISource == "auto"
+    and settings.vignetteRadarPOITypes.mob == true,
+    "clicking a map-note type while notes are off should enable that type and the map pack")
 settings.vignetteRadarPOISource = "auto"
+settings.vignetteRadarMapNotesVisible = true
 settings.vignetteRadarPOITypes = { treasure = true, mob = false, item = true, note = true }
 settings.vignetteRadarQuestDots = true
 settings.vignetteRadarQuestAreas = true

@@ -1203,8 +1203,8 @@ local function MapNoteMinimumDistance(range)
 end
 local function RenderMapNotes(player, range, targets)
     local settings = Settings()
-    if not (player and (settings.vignetteRadarPOISource ~= "none"
-        or settings.vignetteRadarSourceFusion
+    if not (player and (settings.vignetteRadarMapNotesVisible == true
+        and (settings.vignetteRadarPOISource ~= "none" or settings.vignetteRadarSourceFusion)
         or settings.vignetteRadarWorldFocusZygor)) then HideMapNotes(); return 0 end
     -- A 60-yard grid bounds duplicate checks even when the selected pack
     -- contains hundreds of notes and the radar redraws frequently.
@@ -3886,7 +3886,8 @@ local function EmptyExplanation(player, shown, quests, notes, areas, starts)
         return "Quest locations are available, but quest dots and areas are turned off."
     end
     if #activeMapNotes > 0 then return "This map pack has locations, but none are inside this range." end
-    if Settings().vignetteRadarPOISource == "none" then
+    if Settings().vignetteRadarMapNotesVisible ~= true
+        or Settings().vignetteRadarPOISource == "none" then
         return "No live detections here. Map-data packs are turned off."
     end
     return "No live detections or quest locations are available for this spot."
@@ -3917,8 +3918,9 @@ function addon.GetVignetteRadarStatusLines()
     elseif #activeQuests > 0 then
         lines[#lines + 1] = "Quest areas render only where Blizzard supplies shape data."
     end
-    if settings.vignetteRadarPOISource == "none" then
-        lines[#lines + 1] = "Map-data pack is off; choose one in Map Data settings."
+    if settings.vignetteRadarMapNotesVisible ~= true
+        or settings.vignetteRadarPOISource == "none" then
+        lines[#lines + 1] = "Map notes are off; turn them on in the Radar Legend."
     elseif #activeMapNotes == 0 then
         lines[#lines + 1] = "Selected map-data pack has no usable notes for this map."
     end
@@ -3931,7 +3933,8 @@ end
 
 function addon.GetVignetteRadarDiagnostics()
     local settings = Settings()
-    local source = addon.VignetteRadarPOIs and activeMapID
+    local source = settings.vignetteRadarMapNotesVisible == true
+        and addon.VignetteRadarPOIs and activeMapID
         and addon.VignetteRadarPOIs.ResolveSource(activeMapID, settings.vignetteRadarPOISource)
     local paused = addon.VignetteRadarBudget.paused
     local pausedNames = {}
@@ -3940,7 +3943,8 @@ function addon.GetVignetteRadarDiagnostics()
     end
     local lines = {
         "Map: " .. tostring(activeMapID or "unavailable"),
-        "Map pack: " .. tostring(source or (settings.vignetteRadarPOISource == "none" and "off" or "none here")),
+        "Map pack: " .. tostring(source or (settings.vignetteRadarMapNotesVisible ~= true
+            or settings.vignetteRadarPOISource == "none") and "off" or "none here"),
         "Live detections: " .. #activeTargets .. "  ·  quest points: " .. #activeQuests,
         "Map notes: " .. #activeMapNotes,
         "Treasure loot observations: " .. (addon.VignetteRadarTreasureLearning
@@ -6267,9 +6271,11 @@ ScanVignettes = function(mapID)
             end
         end
     end
-    local source = db.vignetteRadarPOISource
+    local source = db.vignetteRadarMapNotesVisible == true
+        and db.vignetteRadarPOISource or "none"
     local fusionSources, fusionKey
-    if db.vignetteRadarSourceFusion and type(db.vignetteRadarFusionSources) == "table" then
+    if db.vignetteRadarMapNotesVisible == true and db.vignetteRadarSourceFusion
+        and type(db.vignetteRadarFusionSources) == "table" then
         fusionSources = {}
         for index = 1, math.min(#db.vignetteRadarFusionSources, 8) do
             local id = db.vignetteRadarFusionSources[index]
@@ -6427,8 +6433,8 @@ RefreshRadar = function(rescan)
     if settings.vignetteRadarLauncherVisible ~= false or launcherPeekActive then EnsureLauncher() end
     if rescan then ScanVignettes(CurrentMapID()) end
     local hasMapNotes = false
-    if #activeMapNotes > 0 and (settings.vignetteRadarPOISource ~= "none"
-        or settings.vignetteRadarSourceFusion
+    if #activeMapNotes > 0 and (settings.vignetteRadarMapNotesVisible == true
+        and (settings.vignetteRadarPOISource ~= "none" or settings.vignetteRadarSourceFusion)
         or settings.vignetteRadarWorldFocusZygor) then
         local player = PlayerSnapshot(mapID)
         local range = exploration and exploration.Range(player, nil) or settings.vignetteRadarRange

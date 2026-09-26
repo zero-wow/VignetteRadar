@@ -2066,12 +2066,13 @@ assert(quick.pages.Markers:IsShown() and beaconRail:IsShown()
     "leaving preview must restore real beacon data without a stuck sample: "
         .. tostring(beaconRail.summary.text))
 do
-    local oldSource, oldTreasure = settings.vignetteRadarPOISource,
-        settings.vignetteRadarBeaconTreasures
+    local oldSource, oldTreasure, oldMapVisible = settings.vignetteRadarPOISource,
+        settings.vignetteRadarBeaconTreasures, settings.vignetteRadarMapNotesVisible
     local oldSelect = addon.VignetteRadarWorldFocus.SelectNote
     local oldFocused = addon.VignetteRadarWorldFocus.GetFocusedStep
     local selected
     settings.vignetteRadarPOISource = "auto"
+    settings.vignetteRadarMapNotesVisible = true
     settings.vignetteRadarBeaconTreasures = true
     settings.vignetteRadarPOITypes.treasure = true
     addon.VignetteRadarWorldFocus.SelectNote = function(note) selected = note; return true end
@@ -2101,6 +2102,7 @@ do
     addon.VignetteRadarWorldFocus.SelectNote = oldSelect
     addon.VignetteRadarWorldFocus.GetFocusedStep = oldFocused
     settings.vignetteRadarPOISource, settings.vignetteRadarBeaconTreasures = oldSource, oldTreasure
+    settings.vignetteRadarMapNotesVisible = oldMapVisible
 end
 addon.VignetteRadarBeacons.Sync(1, { worldX = 0, worldY = 0 }, {}, {}, {})
 assert(beaconRail:IsShown() and beaconRail.height == 64 and beaconRail.empty:IsShown()
@@ -3119,7 +3121,8 @@ assert(quick.pages["Map Data"]:IsShown() and testPackRow,
 assert(testPackRow.point[4] + testPackRow.width + 8 <= quick.poiTrack.point[4],
     "the map-data scrollbar must keep a visible gutter from pack buttons")
 testPackRow.scripts.OnClick(testPackRow)
-assert(settings.vignetteRadarPOISource == "TestPack" and otherPackCalls > 0,
+assert(settings.vignetteRadarPOISource == "TestPack"
+    and settings.vignetteRadarMapNotesVisible and otherPackCalls > 0,
     "the picker may probe other packs but must save only the chosen source")
 for index = 1, 6 do
     HandyNotes.plugins["ZPack" .. index] = { GetNodes2 = function(_, requestedMap)
@@ -3159,6 +3162,20 @@ addon.VignetteRadarAPI.Refresh(true)
 assert(panel:IsShown() and panel.mapNotes[1] and panel.mapNotes[1]:IsShown()
     and panel.mapNotes[1].note.kind == "note" and panel.mapNotes[1].note.source == "TestPack",
     "the chosen pack must draw its map note")
+legendPanel.mapToggle.scripts.OnClick(legendPanel.mapToggle)
+assert(settings.vignetteRadarMapNotesVisible == false
+    and settings.vignetteRadarPOISource == "TestPack"
+    and not panel.mapNotes[1]:IsShown(),
+    "the Radar Legend should hide map-pack dots without forgetting the chosen pack")
+legendPanel.mapToggle.scripts.OnClick(legendPanel.mapToggle)
+assert(settings.vignetteRadarMapNotesVisible == true and panel.mapNotes[1]:IsShown(),
+    "the Radar Legend should restore dots when map notes are turned back on")
+legendPanel.mapNotes.note.scripts.OnClick(legendPanel.mapNotes.note)
+assert(settings.vignetteRadarPOITypes.note == false and not panel.mapNotes[1]:IsShown(),
+    "a legend note row should filter only its matching marker type")
+legendPanel.mapNotes.note.scripts.OnClick(legendPanel.mapNotes.note)
+assert(settings.vignetteRadarPOITypes.note == true and panel.mapNotes[1]:IsShown(),
+    "the legend note row should restore its marker type")
 local closeNote = panel.mapNotes[1].note
 local previousTreasurePosition = livePositions.treasure
 closeNote.kind = "treasure"

@@ -98,6 +98,9 @@ local function Changed(key, value, subkey)
         else
             db[key] = value
         end
+        if key == "vignetteRadarPOISource" then
+            db.vignetteRadarMapNotesVisible = value ~= "none"
+        end
         addon.VignetteRadarAPI.Refresh(true)
     end
     if key == "vignetteRadarIndependentViews" and value == true then
@@ -291,7 +294,9 @@ local function RefreshPOISources()
     quick.poiThumb:SetPoint("TOP", quick.poiTrack, "TOP", 0,
         maxOffset > 0 and -((track - quick.poiThumb:GetHeight()) * quick.poiOffset / maxOffset) or 0)
     quick.poiTrack:SetShown(maxOffset > 0)
-    if selected == "none" then
+    if Settings().vignetteRadarMapNotesVisible ~= true then
+        quick.poiStatus:SetText("Map Notes Hidden · Toggle In Radar Legend")
+    elseif selected == "none" then
         quick.poiStatus:SetText("Map notes are off. Choose Auto or a pack above.")
     elseif selected == "auto" then
         local chosen = poi and poi.ResolveSource(mapID, selected)
@@ -306,7 +311,8 @@ local function RefreshPOISources()
         quick.poiStatus:SetText(Settings().vignetteRadarPOIIcons
             and "Pack icons · dots where unavailable." or "One pack here · hollow dots are saved notes.")
     end
-    if Settings().vignetteRadarSourceFusion then
+    if Settings().vignetteRadarMapNotesVisible == true
+        and Settings().vignetteRadarSourceFusion then
         quick.poiStatus:SetText("Source Fusion is on. Choose packs on its page.")
     end
 end

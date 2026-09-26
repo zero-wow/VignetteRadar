@@ -127,7 +127,7 @@ function addon.GetSettings()
     if type(db.vignetteRadarActiveCue) ~= "boolean" then db.vignetteRadarActiveCue = true end
     if type(db.vignetteRadarRouteHorizonExpanded) ~= "boolean" then db.vignetteRadarRouteHorizonExpanded = false end
     if type(db.vignetteRadarSourceBadges) ~= "boolean" then db.vignetteRadarSourceBadges = true end
-    if type(db.vignetteRadarAutoRouteMapNotes) ~= "boolean" then db.vignetteRadarAutoRouteMapNotes = true end
+    if type(db.vignetteRadarAutoRouteMapNotes) ~= "boolean" then db.vignetteRadarAutoRouteMapNotes = false end
     if type(db.vignetteRadarAutoRouteNearbyZones) ~= "boolean" then db.vignetteRadarAutoRouteNearbyZones = true end
     if type(db.vignetteRadarAutoRouteQuestStarts) ~= "boolean" then db.vignetteRadarAutoRouteQuestStarts = true end
     if type(db.vignetteRadarAutoRouteQuestNearest) ~= "boolean" then db.vignetteRadarAutoRouteQuestNearest = true end
@@ -221,7 +221,17 @@ function addon.GetSettings()
     if type(db.vignetteRadarRouteAutoAdvance) ~= "boolean" then db.vignetteRadarRouteAutoAdvance = false end
     if db.vignetteRadarRouteArrivalRadius ~= 10 and db.vignetteRadarRouteArrivalRadius ~= 20
         and db.vignetteRadarRouteArrivalRadius ~= 40 then db.vignetteRadarRouteArrivalRadius = 20 end
+    local savedPOISource = db.vignetteRadarPOISource
     if type(db.vignetteRadarPOISource) ~= "string" then db.vignetteRadarPOISource = "auto" end
+    if type(db.vignetteRadarMapNotesVisible) ~= "boolean" then
+        -- Auto was the old implicit default. Hide it once on existing installs,
+        -- while keeping an explicitly selected pack, zone, or fusion visible.
+        db.vignetteRadarMapNotesVisible = type(savedPOISource) == "string"
+            and savedPOISource ~= "auto" and savedPOISource ~= "none"
+            or type(db.vignetteRadarPOIZoneSources) == "table"
+                and next(db.vignetteRadarPOIZoneSources) ~= nil
+            or db.vignetteRadarSourceFusion == true
+    end
     if type(db.vignetteRadarSourceFusion) ~= "boolean" then db.vignetteRadarSourceFusion = false end
     if type(db.vignetteRadarFusionSources) ~= "table" then db.vignetteRadarFusionSources = {} end
     if type(db.vignetteRadarFusionPreferred) ~= "table" then db.vignetteRadarFusionPreferred = {} end

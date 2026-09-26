@@ -234,6 +234,51 @@ function API.SetHighlight(category)
     return true
 end
 
+function API.SetMapNotesVisible(enabled)
+    local settings = Settings()
+    enabled = enabled == true
+    if settings.vignetteRadarMapNotesVisible == enabled then return false end
+    if enabled and settings.vignetteRadarPOISource == "none" then
+        settings.vignetteRadarPOISource = "auto"
+    end
+    settings.vignetteRadarMapNotesVisible = enabled
+    NotifyChanged()
+    if addon.VignetteRadarAPI and addon.VignetteRadarAPI.Refresh then
+        addon.VignetteRadarAPI.Refresh(true)
+    end
+    return true
+end
+
+function API.SetMapNoteTypeEnabled(kind, enabled)
+    local valid = false
+    for _, definition in ipairs(MAP_NOTES) do
+        if definition.kind == kind then valid = true; break end
+    end
+    if not valid then return false end
+    local settings = Settings()
+    if type(settings.vignetteRadarPOITypes) ~= "table" then
+        settings.vignetteRadarPOITypes = {}
+    end
+    enabled = enabled == true
+    local wasVisible = settings.vignetteRadarMapNotesVisible == true
+    local wasEnabled = settings.vignetteRadarPOITypes[kind] ~= false
+    if enabled and not wasVisible then
+        settings.vignetteRadarMapNotesVisible = true
+        if settings.vignetteRadarPOISource == "none" then
+            settings.vignetteRadarPOISource = "auto"
+        end
+    end
+    if wasEnabled == enabled and wasVisible == (settings.vignetteRadarMapNotesVisible == true) then
+        return false
+    end
+    settings.vignetteRadarPOITypes[kind] = enabled
+    NotifyChanged()
+    if addon.VignetteRadarAPI and addon.VignetteRadarAPI.Refresh then
+        addon.VignetteRadarAPI.Refresh(true)
+    end
+    return true
+end
+
 local function CreateCategoryRow(parent, category, index)
     local definition = CATEGORIES[category]
     local row = CreateFrame("Button", nil, parent, "BackdropTemplate")
@@ -358,7 +403,10 @@ end
 local function CreateMapNote(parent, definition, index)
     local x = index % 2 == 1 and 10 or 120
     local y = 189 + math.floor((index - 1) / 2) * 22
-    local row = GuideRow(parent, definition.label, x, y)
+    local row = CreateFrame("Button", nil, parent)
+    row:SetSize(103, 18)
+    row:SetPoint("TOPLEFT", parent, "TOPLEFT", x, -y)
+    row.label = GuideLabel(row, definition.label, 20, 1, 82, 9)
     row.kind, row.colorSlot = definition.kind, definition.color
     row.rim = Circle(row, 9)
     row.core = row:CreateTexture(nil, "OVERLAY")
@@ -366,9 +414,17 @@ local function CreateMapNote(parent, definition, index)
     row.core:SetPoint("CENTER", row.rim, "CENTER")
     row.core:SetTexture(CIRCLE_TEXTURE)
     row.core:SetVertexColor(.02, .03, .035, .95)
-    row:EnableMouse(true)
+    AddPressState(row)
+    row:SetScript("OnClick", function()
+        local settings = Settings()
+        local enabled = settings.vignetteRadarMapNotesVisible ~= true
+            or type(settings.vignetteRadarPOITypes) == "table"
+                and settings.vignetteRadarPOITypes[definition.kind] == false
+        API.SetMapNoteTypeEnabled(definition.kind, enabled)
+    end)
     row:SetScript("OnEnter", function(self)
-        Tooltip(self, definition.label .. " Map Note", API.SourceDescription("saved"))
+        Tooltip(self, definition.label .. " Map Note",
+            "Click to show or hide this map-note type. " .. API.SourceDescription("saved"))
     end)
     row:SetScript("OnLeave", function() if GameTooltip then GameTooltip:Hide() end end)
     return row
@@ -545,9 +601,24 @@ local function EnsurePanel()
     end
 
     panel.mapRule = SectionRule(panel, 165)
-    panel.mapHeading = GuideLabel(panel, "MAP NOTES · REFERENCE ONLY", 10, 168, PANEL_W - 20, 9)
+    panel.mapHeading = GuideLabel(panel, "MAP NOTES", 10, 168, PANEL_W - 72, 9)
     panel.mapHeading:SetHeight(12)
     panel.mapHeading:SetTextColor(.68, .75, .77, 1)
+    panel.mapToggle = CreateFrame("Button", nil, panel, "BackdropTemplate")
+    panel.mapToggle:SetSize(42, 18)
+    panel.mapToggle:SetPoint("TOPRIGHT", -9, -168)
+    Surface(panel.mapToggle, 0.03, 0.038, 0.043, 0.96, 0.16)
+    panel.mapToggle.label = Text(panel.mapToggle, 8, "OFF")
+    panel.mapToggle.label:SetAllPoints()
+    panel.mapToggle.label:SetJustifyH("CENTER")
+    AddPressState(panel.mapToggle)
+    panel.mapToggle:SetScript("OnClick", function()
+        API.SetMapNotesVisible(Settings().vignetteRadarMapNotesVisible ~= true)
+    end)
+    panel.mapToggle:SetScript("OnEnter", function(self)
+        Tooltip(self, "Map Notes", "Show or hide saved map-pack markers. Click a note type below to filter it.")
+    end)
+    panel.mapToggle:SetScript("OnLeave", function() if GameTooltip then GameTooltip:Hide() end end)
     panel.mapNotes = {}
     for index, definition in ipairs(MAP_NOTES) do
         panel.mapNotes[definition.kind] = CreateMapNote(panel, definition, index)
@@ -906,7 +977,11 @@ function API.Refresh()
         if style then return style.Color(slot) end
         return fallback[1], fallback[2], fallback[3]
     end
-    local mapEnabled = settings.vignetteRadarPOISource ~= "none"
+    local mapEnabled = settings.vignetteRadarMapNotesVisible == true
+        and (settings.vignetteRadarPOISource ~= "none" or settings.vignetteRadarSourceFusion)
+    panel.mapToggle.label:SetText(mapEnabled and "ON" or "OFF")
+    panel.mapToggle.label:SetTextColor(mapEnabled and accentRed or .58,
+        mapEnabled and accentGreen or .60, mapEnabled and accentBlue or .62, 1)
     for _, definition in ipairs(MAP_NOTES) do
         local row = panel.mapNotes[definition.kind]
         row.rim:SetVertexColor(Color(definition.color, CATEGORIES[definition.color].color))
@@ -918,7 +993,7 @@ function API.Refresh()
         row.label:SetText(definition.label .. (enabled and "" or " off"))
     end
     panel.mapCaption:SetText(not mapEnabled and not settings.vignetteRadarWorldFocusZygor
-        and "Map notes off · enable in Map Data"
+        and "Map Notes Off · Toggle Above"
         or settings.vignetteRadarPOIIcons and "Pack icons = saved, not live"
         or "Hollow notes = saved, not live")
     local questRed, questGreen, questBlue = Color("quest", { 1, .74, .27 })

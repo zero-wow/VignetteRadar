@@ -120,8 +120,10 @@ assert(defaults.vignetteRadarEnabled == true and defaults.vignetteRadarHideWhenE
     and defaults.vignetteRadarWorldMap == true and defaults.vignetteRadarLayout == "classic"
     and defaults.vignetteRadarNorthUp == false and defaults.vignetteRadarScale == 1,
     "the radar must work without either optional addon installed")
-assert(defaults.vignetteRadarPOISource == "auto",
-    "new installations should follow the current zone when a data pack is available")
+assert(defaults.vignetteRadarPOISource == "auto"
+    and defaults.vignetteRadarMapNotesVisible == false
+    and defaults.vignetteRadarAutoRouteMapNotes == false,
+    "new installations should keep map-pack marks and routing off until selected")
 assert(defaults.vignetteRadarPOIIcons == false,
     "existing map notes should remain dots until pack icons are enabled")
 defaults.vignetteRadarPOIIcons = true
@@ -180,6 +182,10 @@ assert(defaults.vignetteRadarTrailSize == .1 and defaults.vignetteRadarTrailTail
 defaults.vignetteRadarPOISource = "none"
 fresh.GetSettings()
 assert(defaults.vignetteRadarPOISource == "none", "an existing Off choice must remain Off")
+defaults.vignetteRadarMapNotesVisible = true
+fresh.GetSettings()
+assert(defaults.vignetteRadarMapNotesVisible == true,
+    "a later choice to show map notes must survive settings validation")
 local expectedRanges = { 10, 25, 50, 100, 150, 300, 450, 600, 1200, 2400, 4800 }
 assert(#fresh.VignetteRadarRanges == #expectedRanges, "all selectable ranges must be published")
 for index, range in ipairs(expectedRanges) do
@@ -304,5 +310,22 @@ assert(VignetteRadarDB.vignetteRadarCircleOnly == true
     and VignetteRadarDB.vignetteRadarCirclePosition.x == 17
     and VignetteRadarDB.vignetteRadarCirclePosition.y == -34,
     "existing full-frame users must migrate once to the rounded main view at their saved position")
+
+VignetteRadarDB = { vignetteRadarPOISource = "auto" }
+local oldAuto = {}
+assert(loadfile(sourcePath))("VignetteRadar", oldAuto)
+assert(oldAuto.GetSettings().vignetteRadarMapNotesVisible == false,
+    "the old automatic pack default should become hidden on existing installs")
+VignetteRadarDB = { vignetteRadarPOISource = "ChosenPack" }
+local chosenPack = {}
+assert(loadfile(sourcePath))("VignetteRadar", chosenPack)
+assert(chosenPack.GetSettings().vignetteRadarMapNotesVisible == true,
+    "an explicitly selected map pack should stay visible")
+VignetteRadarDB = { vignetteRadarPOISource = "auto",
+    vignetteRadarPOIZoneSources = { [123] = "ChosenPack" } }
+local chosenZone = {}
+assert(loadfile(sourcePath))("VignetteRadar", chosenZone)
+assert(chosenZone.GetSettings().vignetteRadarMapNotesVisible == true,
+    "a zone-specific map-pack choice should stay visible")
 
 io.write("vignette radar settings migration tests passed\n")

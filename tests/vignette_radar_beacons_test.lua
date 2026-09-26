@@ -4,7 +4,8 @@ local settings = {
     vignetteRadarBeaconRares = true, vignetteRadarBeaconTreasures = false,
     vignetteRadarBeaconQuests = true,
     vignetteRadarBeaconRange = 450, vignetteRadarBeaconMax = 8,
-    vignetteRadarPOISource = "auto", vignetteRadarPOITypes = { mob = true, treasure = true },
+    vignetteRadarPOISource = "auto", vignetteRadarMapNotesVisible = true,
+    vignetteRadarPOITypes = { mob = true, treasure = true },
     vignetteRadarQuestColors = true,
 }
 local addon = {
@@ -49,6 +50,12 @@ assert(result[2].name == "Live rare" and result[3].name == "Other rare",
     "a live rare should suppress the nearby data-pack copy")
 assert(result[4].kind == "quest" and result[4].r == .3,
     "quest diamonds should use their radar quest color")
+settings.vignetteRadarMapNotesVisible = false
+local liveOnly = beacons.BuildCandidates(1, player, { rare, boss }, { quest }, notes,
+    function() return true end, settings)
+assert(#liveOnly == 3 and liveOnly[1].name == "World boss",
+    "hiding map-pack notes should leave live and quest bearings alone")
+settings.vignetteRadarMapNotesVisible = true
 local favorite = { key = "favorite", name = "Favorite rare", category = "rare",
     favorite = true, mapX = .1, mapY = .1, worldX = 400, worldY = 0, instanceID = 8 }
 assert(beacons.BuildCandidates(1, player, { boss, favorite }, {}, {}, nil, settings)[1].favorite,
