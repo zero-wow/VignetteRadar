@@ -1368,16 +1368,16 @@ function API.ShowGuide(anchorFrame)
         if type(UISpecialFrames) == "table" then
             UISpecialFrames[#UISpecialFrames + 1] = "VignetteRadarGuidePanel"
         end
-        local title = Label(guide, "READING YOUR RADAR", 14, -12, 11, 194)
+        local title = Label(guide, "Reading Your Radar", 14, -12, 11, 194)
         guide.title = title
         title:SetTextColor(addon.VignetteRadarStyle.Color("accent"))
         local items = {
-            { "boss", "World boss", "boss" },
+            { "boss", "World Boss", "boss" },
             { "rare", "Rare", "rare" },
-            { "treasure", "Treasure or chest", "treasure" },
-            { "quest", "Quest (solid when complete)", "quest" },
-            { "note", "Saved map note", "other" },
-            { "area", "Shaded area: quest search zone", "quest" },
+            { "treasure", "Treasure or Chest", "treasure" },
+            { "quest", "Quest (Solid When Complete)", "quest" },
+            { "note", "Saved Map Note", "other" },
+            { "area", "Shaded Area: Quest Search Zone", "quest" },
         }
         guide.symbols = {}
         for index, item in ipairs(items) do
@@ -1413,10 +1413,49 @@ function API.ShowGuide(anchorFrame)
                 AddTexture("Interface\\CharacterFrame\\TempPortraitAlphaMask", 16, -2, 1, .22)
                 AddTexture("Interface\\CharacterFrame\\TempPortraitAlphaMask", 12, 3, -2, .18)
             end
-            guide.symbols[index] = { frame = symbol, slot = item[3], parts = parts }
-            Label(guide, item[2], 43, -39 - (index - 1) * 23, 10, 184)
+            guide.symbols[index] = { frame = symbol, slot = item[3], parts = parts,
+                label = Label(guide, item[2], 43, -39 - (index - 1) * 23, 10, 184) }
         end
-        Label(guide, "Click a marker to focus. Show All clears it.", 15, -184, 9, 211)
+        local controls = {
+            "Click — Focus / Show All",
+            "Shift-Click — Navigate",
+            "Alt-Click — Favorite",
+            "Right-Click — Ignore This Session",
+            "Shift-Right-Click — Remember Ignore",
+            "Ctrl-Click — Add Route Stop",
+            "Ctrl-Alt-Click — Watch Approach",
+        }
+        guide.controlLines = {}
+        for index, line in ipairs(controls) do
+            local label = Label(guide, line, 15, -38 - (index - 1) * 20, 9, 210)
+            label:Hide()
+            guide.controlLines[index] = label
+        end
+        local function SelectGuidePage(name)
+            local symbols = name == "Symbols"
+            for _, row in ipairs(guide.symbols) do
+                row.frame:SetShown(symbols)
+                row.label:SetShown(symbols)
+            end
+            for _, label in ipairs(guide.controlLines) do label:SetShown(not symbols) end
+            if guide.symbolTab and guide.controlTab then
+                if symbols then
+                    guide.symbolTab:LockHighlight()
+                    guide.controlTab:UnlockHighlight()
+                else
+                    guide.controlTab:LockHighlight()
+                    guide.symbolTab:UnlockHighlight()
+                end
+            end
+            guide.page = name
+        end
+        guide.symbolTab = addon.VignetteRadarControls.Button(guide, "Symbols", 100, 20)
+        guide.symbolTab:SetPoint("TOPLEFT", guide, "TOPLEFT", 15, -182)
+        guide.symbolTab:SetScript("OnClick", function() SelectGuidePage("Symbols") end)
+        guide.controlTab = addon.VignetteRadarControls.Button(guide, "Controls", 100, 20)
+        guide.controlTab:SetPoint("TOPLEFT", guide, "TOPLEFT", 123, -182)
+        guide.controlTab:SetScript("OnClick", function() SelectGuidePage("Controls") end)
+        SelectGuidePage("Symbols")
         local close = addon.VignetteRadarControls.Button(guide, "×", 20, 20)
         close:SetPoint("TOPRIGHT", -8, -7)
         close:SetScript("OnClick", function() guide:Hide() end)

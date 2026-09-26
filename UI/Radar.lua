@@ -816,11 +816,11 @@ local function TargetColor(target)
 end
 
 local function TargetKind(target)
-    if target.isWorldBoss then return "World boss" end
-    if target.category == "rare" then return "Rare enemy" end
+    if target.isWorldBoss then return "World Boss" end
+    if target.category == "rare" then return "Rare" end
     if target.category == "treasure" then return "Treasure" end
     if target.category == "event" then return "Event" end
-    return "Other detection"
+    return "Other Detection"
 end
 
 local function HighlightCategory()
@@ -965,45 +965,38 @@ local function Tooltip(owner)
     local target = owner.target
     if not (target and GameTooltip) then return end
     GameTooltip:SetOwner(owner, "ANCHOR_RIGHT")
-    GameTooltip:SetText(target.name or "Detected vignette", 1, 1, 1)
+    GameTooltip:SetText(target.name or "Detected Vignette", 1, 1, 1)
     if owner.cluster and #owner.cluster > 1 then
         clusterHoverKey, clusterHoverUntil = owner.cluster[1].key, Now() + 2.5
-        GameTooltip:AddLine(#owner.cluster .. " detections here; hover to spread them.", .52, .91, .77)
-        for index = 2, math.min(#owner.cluster, 6) do
-            GameTooltip:AddLine(owner.cluster[index].name or "Detected vignette", .7, .8, .77)
-        end
+        GameTooltip:AddLine(#owner.cluster .. " Nearby Detections", .52, .91, .77)
     elseif owner.clusterKey then
         clusterHoverKey, clusterHoverUntil = owner.clusterKey, Now() + 2.5
     end
     local r, g, b = TargetColor(target)
-    GameTooltip:AddLine(TargetKind(target), r, g, b)
+    local typeAndRange = TargetKind(target)
     if target.distance then
-        GameTooltip:AddLine(math.floor(target.distance + 0.5) .. " yd from you", 0.72, 0.76, 0.78)
+        typeAndRange = typeAndRange .. " · " .. math.floor(target.distance + 0.5) .. " yd"
     end
+    GameTooltip:AddLine(typeAndRange, r, g, b)
     if target.groupMin and target.groupMin > 0 then
         local group = target.groupMax and target.groupMax > target.groupMin
             and (target.groupMin .. "–" .. target.groupMax) or tostring(target.groupMin)
-        GameTooltip:AddLine("Suggested group: " .. group, 0.85, 0.76, 0.53)
+        GameTooltip:AddLine("Suggested Group: " .. group, 0.85, 0.76, 0.53)
     end
-    if FocusedTargetKey() == target.key then
-        GameTooltip:AddLine("Specific vignette focus is active.", ACCENT[1], ACCENT[2], ACCENT[3])
-    end
-    if Favorite(target) then GameTooltip:AddLine("Favorite", 1, 0.82, 0.30) end
     local legend = LegendAPI()
     local source = legend and legend.VignetteSource and legend.VignetteSource(target)
-    if target.stale then
-        GameTooltip:AddLine("Last seen " .. math.floor(math.max(0, Now() - target.lastSeenAt)) .. " seconds ago; not a live detection.", 0.75, 0.75, 0.75, true)
-    end
-    if legend and legend.SourceDescription and source then
-        GameTooltip:AddLine(legend.SourceDescription(source), 0.55, 0.86, 0.76, true)
-    end
-    GameTooltip:AddLine("Click: focus; click again to show all.", 0.65, 0.80, 0.77, true)
-    if not target.sample then
-        if not target.stale then GameTooltip:AddLine("Shift-click: navigate.", 0.65, 0.80, 0.77, true) end
-        GameTooltip:AddLine("Alt-click: favorite. Right-click: ignore this session.", 0.65, 0.80, 0.77, true)
-        GameTooltip:AddLine("Shift-right-click: remember ignore.", 0.65, 0.80, 0.77, true)
-        GameTooltip:AddLine("Ctrl-click: route stop. Ctrl-Alt-click: watch approach.", 0.65, 0.80, 0.77, true)
-    end
+        or (target.stale and "lastSeen" or target.sample and "preview"
+            or target.source == "worldMap" and "worldMap" or "minimap")
+    local status = source == "worldMap" and "Map Location · Unconfirmed"
+        or source == "preview" and "Preview"
+        or source == "lastSeen" and ("Last Seen · "
+            .. math.floor(math.max(0, Now() - (SafeNumber(target.lastSeenAt) or Now()))) .. "s Ago")
+        or "Live Detection"
+    if Favorite(target) then status = status .. " · Favorite" end
+    local focused = FocusedTargetKey() == target.key
+    if focused then status = status .. " · Focused" end
+    GameTooltip:AddLine(status, .55, .86, .76)
+    GameTooltip:AddLine(focused and "Click to Show All" or "Click to Focus", .65, .80, .77)
     GameTooltip:Show()
 end
 
@@ -2421,10 +2414,12 @@ local function UpdateFocusReadout(target, player, selected)
     local r, g, b = TargetColor(target)
     if CircleOnly() and selected then
         panel.focusCard.name:SetText(target.name or "Detected vignette")
-        panel.focusCard.detail:SetText(kind .. "  ·  " .. (target.distance
-            and (math.floor(target.distance + .5) .. " yd") or "distance unknown"))
-        panel.focusCard.name:SetTextColor(r, g, b, 1)
-        panel.focusCard.accent:SetColorTexture(r, g, b, .9)
+        panel.focusCard.detail:SetText(TargetKind(target) .. " · " .. (target.distance
+            and (math.floor(target.distance + .5) .. " yd") or "Distance Unknown"))
+        local style = addon.VignetteRadarStyle
+        local nr, ng, nb = r, g, b
+        if style then nr, ng, nb = style.Color("accent") end
+        panel.focusCard.name:SetTextColor(nr, ng, nb, 1)
     end
     if squat then panel.focusName:SetTextColor(r, g, b, 1)
     else panel.focusName:SetTextColor(0.88, 0.90, 0.92, 1) end
@@ -2596,6 +2591,9 @@ ApplyAppearance = function()
             if button and button.RefreshAppearance then button:RefreshAppearance() end
         end
         if panel.RefreshCornerTools then panel.RefreshCornerTools() end
+        if addon.VignetteRadarControls and addon.VignetteRadarControls.RefreshRoundedStatusSurface then
+            addon.VignetteRadarControls.RefreshRoundedStatusSurface(panel.focusCard)
+        end
         if RefreshTrailPopup then RefreshTrailPopup() end
         if routeMenu.Refresh then routeMenu.Refresh() end
         if panel.legend and panel.legend.dots then
@@ -5590,49 +5588,25 @@ local function EnsurePanel()
     panel.focusMeta:SetSize(172, 12)
     panel.focusReadout:Hide()
     panel.focusCard = CreateFrame("Frame", "VignetteRadarFocusCard", panel)
-    panel.focusCard:SetSize(185, 68)
+    panel.focusCard:SetSize(185, 76)
     panel.focusCard:SetFrameLevel(panel:GetFrameLevel() + 20)
     panel.focusCard:SetClampedToScreen(true)
     panel.focusCard:EnableMouse(true)
     panel.focusCard:SetPoint("TOPLEFT", panel.field, "TOPRIGHT", 8, -16)
-    panel.focusCard.background = panel.focusCard:CreateTexture(nil, "BACKGROUND")
-    panel.focusCard.background:SetAllPoints()
-    panel.focusCard.background:SetTexture(ROUNDED_SQUARE_TEXTURE)
-    panel.focusCard.background:SetVertexColor(.025, .032, .037, .98)
-    panel.focusCard.outline = panel.focusCard:CreateTexture(nil, "BORDER")
-    panel.focusCard.outline:SetAllPoints()
-    panel.focusCard.outline:SetTexture(ROUNDED_BORDER_TEXTURE)
-    panel.focusCard.outline:SetVertexColor(.55, .67, .68, .5)
-    panel.focusCard.accent = panel.focusCard:CreateTexture(nil, "ARTWORK")
-    panel.focusCard.accent:SetSize(3, 40)
-    panel.focusCard.accent:SetPoint("LEFT", 7, 0)
+    addon.VignetteRadarControls.RoundedStatusSurface(panel.focusCard)
     panel.focusCard.name = Text(panel.focusCard, 10, "")
-    panel.focusCard.name:SetPoint("TOPLEFT", 17, -10)
-    panel.focusCard.name:SetWidth(141)
+    panel.focusCard.name:SetPoint("TOPLEFT", 12, -11)
+    panel.focusCard.name:SetWidth(161)
     panel.focusCard.detail = Text(panel.focusCard, 9, "")
-    panel.focusCard.detail:SetPoint("TOPLEFT", 17, -29)
-    panel.focusCard.detail:SetWidth(151)
-    panel.focusCard.clear = CreateFrame("Button", nil, panel.focusCard)
-    panel.focusCard.clear:SetSize(25, 24)
-    panel.focusCard.clear:SetPoint("TOPRIGHT", -2, -2)
-    panel.focusCard.clear:SetScript("OnClick", function()
-        local picker = TargetPickerAPI()
-        if picker and picker.ClearFocus then picker.ClearFocus() end
-    end)
-    local clearText = Text(panel.focusCard.clear, 15, "×")
-    clearText:SetAllPoints()
-    clearText:SetJustifyH("CENTER")
-    panel.focusCard.showAll = CreateFrame("Button", nil, panel.focusCard)
-    panel.focusCard.showAll:SetSize(65, 16)
-    panel.focusCard.showAll:SetPoint("BOTTOMRIGHT", -9, 5)
+    panel.focusCard.detail:SetPoint("TOPLEFT", 12, -32)
+    panel.focusCard.detail:SetWidth(161)
+    panel.focusCard.showAll = addon.VignetteRadarControls.Button(panel.focusCard,
+        "Show All", 76, 20)
+    panel.focusCard.showAll:SetPoint("BOTTOMRIGHT", -9, 6)
     panel.focusCard.showAll:SetScript("OnClick", function()
         local picker = TargetPickerAPI()
         if picker and picker.ClearFocus then picker.ClearFocus() end
     end)
-    local showAllText = Text(panel.focusCard.showAll, 8, "SHOW ALL")
-    showAllText:SetAllPoints()
-    showAllText:SetJustifyH("RIGHT")
-    showAllText:SetTextColor(.65, .81, .80, 1)
     panel.focusCard:Hide()
     panel.edgeArrow = CreateFrame("Button", nil, panel.field)
     panel.edgeArrow:SetSize(14, 14)

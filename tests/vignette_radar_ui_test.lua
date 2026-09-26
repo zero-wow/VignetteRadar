@@ -448,6 +448,14 @@ local rareBlip = assert(panel.blipByKey.rare)
 assert(#sounds == 0 and rareBlip.target.newUntil > now, "default detection alerts must pulse silently")
 assert(rareBlip.dot.texture:find("Skull", 1, true) and panel.blipByKey.treasure.dot.atlas == "VignetteLoot",
     "live rares and treasures must use familiar skull and chest imagery")
+rareBlip.scripts.OnEnter(rareBlip)
+assert(GameTooltip.text == liveInfo.rare.name and #GameTooltip.lines <= 4
+    and GameTooltip.lines[1]:find("Rare ·", 1, true)
+    and GameTooltip.lines[#GameTooltip.lines] == "Click to Focus"
+    and not table.concat(GameTooltip.lines, " | "):find("Shift-click", 1, true)
+    and not table.concat(GameTooltip.lines, " | "):find("Blizzard minimap", 1, true),
+    "marker hover must show concise, titled status and move modifier help into the Radar Guide")
+rareBlip.scripts.OnLeave(rareBlip)
 rareBlip.scripts.OnClick(rareBlip, "LeftButton")
 assert(panel.focusReadout:IsShown() and panel.height == 324 and panel.field.point[3] == 81,
     "focusing must reserve exactly the footer space without moving the radar into its header")
@@ -459,6 +467,13 @@ addon.SetVignetteRadarCircleOnly(true)
 assert(panel.focusCard:IsShown() and panel.focusCard.name.text == liveInfo.rare.name
     and panel.focusCard.showAll and not panel.focusReadout:IsShown(),
     "radar-only focus needs a readable external card and a Show All control")
+assert(panel.focusCard.statusSurface and #panel.focusCard.statusSurface.face == 9
+    and #panel.focusCard.statusSurface.edge == 9 and not panel.focusCard.accent
+    and not panel.focusCard.clear and panel.focusCard.showAll.face
+    and panel.focusCard.detail.text:find("Rare ·", 1, true)
+    and panel.focusCard.showAll.point[1] == "BOTTOMRIGHT"
+    and panel.focusCard.width - 9 - panel.focusCard.showAll.width >= 8,
+    "the focus card must use the themed popup treatment and one inset Show All action")
 addon.SetVignetteRadarCircleOnly(false)
 -- Field bottom is 81; divider y72 leaves 9px. Focus ends y66, above the zoom row.
 assert(panel.focusReadout.point[3] + panel.focusReadout.height <= 66
@@ -3356,6 +3371,19 @@ assert(#guidePanel.symbols == 6 and guidePanel.symbols[1].frame.kind == "Frame"
     and guidePanel.symbols[4].parts[1].texture.texture:find("quest%-diamond%-hollow%.tga$")
     and guidePanel.symbols[6].parts[1].opacity < 1,
     "the guide must draw real rare, quest, and area markers instead of unsupported font glyphs")
+guidePanel.controlTab.scripts.OnClick(guidePanel.controlTab)
+assert(guidePanel.page == "Controls" and not guidePanel.symbols[1].frame:IsShown()
+    and #guidePanel.controlLines == 7 and guidePanel.controlLines[2]:IsShown()
+    and guidePanel.controlLines[2].text == "Shift-Click — Navigate"
+    and guidePanel.controlTab.point[4] + guidePanel.controlTab.width <= guidePanel.width - 8,
+    "the Radar Guide must present modifier controls separately inside its popup")
+assert(-guidePanel.controlLines[7].point[5] + 12 <= -guidePanel.controlTab.point[5] - 8
+    and -guidePanel.controlTab.point[5] + guidePanel.controlTab.height <= guidePanel.height - 8,
+    "guide controls and tabs must leave a visible gutter without touching the popup border")
+guidePanel.symbolTab.scripts.OnClick(guidePanel.symbolTab)
+assert(guidePanel.page == "Symbols" and guidePanel.symbols[1].frame:IsShown()
+    and not guidePanel.controlLines[1]:IsShown(),
+    "the guide must return to its visual marker key")
 for _, symbol in ipairs(guidePanel.symbols) do
     assert(symbol.frame.width == 21 and symbol.frame.height == 21
         and symbol.frame.point[4] >= 12 and symbol.frame.point[4] + 21 < guidePanel.width - 12,
