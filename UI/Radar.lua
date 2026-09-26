@@ -847,9 +847,43 @@ local function FocusedTargetKey()
     return ok and SafeString(key) or nil
 end
 
+function addon.FocusedQuestID()
+    local exploration = addon.VignetteRadarExploration
+    if not (exploration and type(exploration.GetFocusedQuest) == "function") then return nil end
+    local ok, id = pcall(exploration.GetFocusedQuest)
+    return ok and SafeNumber(id) or nil
+end
+
+-- The clear center is a screen-space region. Its yard radius follows the
+-- displayed range, so zooming changes the cutoff exactly as it changes the
+-- distance represented by every radar pixel.
+function addon.KeepCenterMarker(kind, key, distance, range)
+    if Settings().vignetteRadarKeepCenterClear ~= true then return true end
+    local questID, targetKey = addon.FocusedQuestID(), FocusedTargetKey()
+    if questID then return kind == "quest" and key == questID end
+    if targetKey then return kind == "target" and key == targetKey end
+    local focus = addon.VignetteRadarWorldFocus
+    if focus and type(focus.GetFocusedStep) == "function" then
+        local ok, step = pcall(focus.GetFocusedStep)
+        if ok and type(step) == "table" then
+            local stepQuestID = SafeNumber(step.questID)
+            if stepQuestID then return kind == "quest" and key == stepQuestID end
+            local stepKey = SafeString(step.key)
+            if stepKey then
+                return (kind == "target" or kind == "note") and key == stepKey
+            end
+        end
+    end
+    if not (panel and SafeNumber(panel.plotRadius) and panel.plotRadius > 0
+        and SafeNumber(distance) and SafeNumber(range) and range > 0) then return true end
+    local clearPixels = math.min(32, panel.plotRadius * .38)
+    return distance > range * clearPixels / panel.plotRadius
+end
+
 local function TargetVisible(target)
     if not (target and CategoryEnabled(target.category)) or Ignored(target) or TargetAlpha(target) <= 0 then return false end
     if addon.VignetteRadarLensActive and target.category ~= addon.VignetteRadarLensActive then return false end
+    if Settings().vignetteRadarKeepCenterClear and addon.FocusedQuestID() then return false end
     local focusedKey = FocusedTargetKey()
     return not focusedKey or focusedKey == target.key
 end
@@ -1226,6 +1260,7 @@ local function RenderMapNotes(player, range, targets)
         local dx, dy = note.worldX - player.worldX, note.worldY - player.worldY
         local distanceSquared = dx * dx + dy * dy
         if distanceSquared >= minimumDistanceSquared and distanceSquared <= rangeSquared
+            and addon.KeepCenterMarker("note", note.key, math.sqrt(distanceSquared), range)
             and settings.vignetteRadarPOITypes[note.kind] ~= false
             and (not addon.VignetteRadarLensActive
                 or (addon.VignetteRadarLensActive == "quest" and note.kind == "guide")
@@ -1394,7 +1429,8 @@ local function RenderQuestDots(player, range)
         if not (player.instanceID and quest.instanceID and player.instanceID ~= quest.instanceID) then
             local dx, dy = quest.worldX - player.worldX, quest.worldY - player.worldY
             local distance = math.sqrt(dx * dx + dy * dy)
-            if distance <= range and count < MAX_QUEST_DOTS then
+            if distance <= range and count < MAX_QUEST_DOTS
+                and addon.KeepCenterMarker("quest", quest.questID, distance, range) then
                 local x, y = Project(dx, dy, distance, ViewFacing(player.facing), panel.plotRadius, range)
                 if x and y then
                     if not visibleQuestIDs[quest.questID] then
@@ -1423,7 +1459,10 @@ local function RenderQuestDots(player, range)
                         dot.selection:SetVertexColor(.96, .97, 1, .92)
                         dot.number = Text(dot, 8, "")
                         dot.number:SetPoint("CENTER", dot, "CENTER")
-                        dot.number:SetTextColor(.03, .04, .05, 1)
+                        dot.number:SetFont(EllesmereUI and (EllesmereUI.EXPRESSWAY or EllesmereUI._font)
+                            or STANDARD_TEXT_FONT or "Fonts\\FRIZQT__.TTF", 9, "OUTLINE")
+                        dot.number:SetJustifyH("CENTER")
+                        dot.number:SetTextColor(1, 1, 1, 1)
                         dot:EnableMouseWheel(true)
                         dot:SetScript("OnMouseWheel", OnZoomWheel)
                         dot:SetScript("OnEnter", function(self)
@@ -1473,15 +1512,16 @@ local function RenderQuestDots(player, range)
                         dot.rim:SetVertexColor(tracked and .95 or .04,
                             tracked and .97 or .05, tracked and .93 or .06, .98)
                         dot.fill:Show()
-                        dot.number:SetTextColor(.03, .04, .05, 1)
+                        dot.number:SetTextColor(1, 1, 1, 1)
                     else
                         dot.rim:SetTexture(addon.VignetteRadarQuestHollowTexture)
                         -- Match the visible 26px solid silhouette to the hollow file's 30px one.
                         dot.rim:SetSize(13 * 26 / 30, 13 * 26 / 30)
                         dot.rim:SetVertexColor(tracked and .95 or red,
                             tracked and .97 or green, tracked and .93 or blue, 1)
-                        dot.fill:Hide()
-                        dot.number:SetTextColor(red, green, blue, 1)
+                        dot.fill:SetVertexColor(red * .18, green * .18, blue * .18, .94)
+                        dot.fill:Show()
+                        dot.number:SetTextColor(1, 1, 1, 1)
                     end
                     dot.number:SetText(Settings().vignetteRadarQuestNumbers
                         and tostring(quest.colorSlot or 1) or "")
@@ -1582,7 +1622,8 @@ addon.RenderVignetteRadarQuestStarts = function(player, mapID, range)
                 and player.instanceID ~= instanceID) then
                 local dx, dy = worldX - player.worldX, worldY - player.worldY
                 local distance = math.sqrt(dx * dx + dy * dy)
-                if distance <= range then
+                if distance <= range
+                    and addon.KeepCenterMarker("quest", entry.questID, distance, range) then
                     local x, y = Project(dx, dy, distance, ViewFacing(player.facing),
                         panel.plotRadius - 9, range)
                     if x and y then
@@ -1823,14 +1864,21 @@ local function RenderQuestAreas(player, mapID, range)
     local canvasScale = math.max(1, width / MAX_QUEST_BLOB_CANVAS,
         height / MAX_QUEST_BLOB_CANVAS)
     panel.questAreaPlayerMapX, panel.questAreaPlayerMapY = player.mapX, player.mapY
-    if blob._keyQuests ~= activeQuests or blob._keyMapID ~= mapID
-        or blob._keyWidth ~= width or blob._keyHeight ~= height then
-        local key = tostring(mapID) .. ":" .. tostring(width) .. ":" .. tostring(height)
-        for _, quest in ipairs(activeQuests) do key = key .. ":" .. tostring(quest.questID) end
-        blob._questDrawKey, blob._keyQuests, blob._keyMapID = key, activeQuests, mapID
-        blob._keyWidth, blob._keyHeight = width, height
+    local eligible, seen, signature = {}, {}, {}
+    for _, quest in ipairs(activeQuests) do
+        if not seen[quest.questID] then
+            seen[quest.questID] = true
+            local dx, dy = quest.worldX - player.worldX, quest.worldY - player.worldY
+            local distance = math.sqrt(dx * dx + dy * dy)
+            if addon.KeepCenterMarker("quest", quest.questID, distance, range) then
+                eligible[#eligible + 1] = quest.questID
+                signature[#signature + 1] = tostring(quest.questID)
+            end
+        end
     end
-    local key = blob._questDrawKey
+    if #eligible == 0 then HideQuestAreas(); return end
+    local key = tostring(mapID) .. ":" .. tostring(width) .. ":" .. tostring(height)
+        .. ":" .. table.concat(signature, ":")
     if not panel.questBlobSources then panel.questBlobSources = { blob } end
     if not StyleQuestBlob(blob, range) then HideQuestAreas(); return end
     if blob._radarCanvasScale ~= canvasScale then
@@ -1857,12 +1905,8 @@ local function RenderQuestAreas(player, mapID, range)
         end
         if ok then ok = pcall(blob.DrawNone, blob) end
         if ok then
-            local drawnQuests = {}
-            for _, quest in ipairs(activeQuests) do
-                if not drawnQuests[quest.questID] then
-                    if not pcall(blob.DrawBlob, blob, quest.questID, true) then ok = false; break end
-                    drawnQuests[quest.questID] = true
-                end
+            for _, questID in ipairs(eligible) do
+                if not pcall(blob.DrawBlob, blob, questID, true) then ok = false; break end
             end
         end
         if not ok then HideQuestAreas(); return end
@@ -2222,7 +2266,8 @@ local function ApplyPanelLayout(focused)
     local left, top = PanelPosition()
     panel.layout, panel.layoutFocused, panel.squarePlot = name, focused, square
     local highlightTexture = square and ROUNDED_CONTROL_TEXTURE or CIRCLE_TEXTURE
-    for _, control in ipairs({ panel.zoomOut, panel.zoomIn, panel.compass, panel.trailToggle, panel.routeToggle, panel.arrowToggle,
+    for _, control in ipairs({ panel.zoomOut, panel.zoomIn, panel.compass, panel.trailToggle,
+        panel.clearToggle, panel.routeToggle, panel.arrowToggle,
         panel.combatToggle, panel.target, panel.legend, panel.minimize, panel.close, panel.frameToggle }) do
         if control and control.glow then control.glow:SetTexture(highlightTexture) end
     end
@@ -2291,6 +2336,7 @@ local function ApplyPanelLayout(focused)
         Place(panel.combatToggle, "BOTTOMLEFT", 164, 9)
         Place(panel.compass, "BOTTOMLEFT", 185, 8)
         Place(panel.trailToggle, "BOTTOMLEFT", 211, 8)
+        Place(panel.clearToggle, "TOPLEFT", 171, -10)
         Place(panel.routeToggle, "BOTTOMLEFT", 235, 8, 22, 20)
         Place(panel.arrowToggle, "BOTTOMLEFT", 195, 34, 16, 16)
         Place(panel.target, "BOTTOMLEFT", 259, 8)
@@ -2311,12 +2357,14 @@ local function ApplyPanelLayout(focused)
             Place(panel.zoomLabel, "BOTTOM", 0, 38, 92, 12)
             Place(panel.combatToggle, "BOTTOMLEFT", 178, 32)
             Place(panel.trailToggle, "BOTTOMLEFT", 18, 30)
+            Place(panel.clearToggle, "TOPLEFT", 155, -6)
             Place(panel.routeToggle, "BOTTOMLEFT", 153, 32, 22, 18)
             Place(panel.arrowToggle, "BOTTOMLEFT", 180, 34, 16, 16)
         else
             Place(panel.zoomLabel, "BOTTOMLEFT", 118, 10, 62, 12)
             Place(panel.combatToggle, "BOTTOMLEFT", 72, 7)
             Place(panel.trailToggle, "BOTTOMLEFT", 94, 6)
+            Place(panel.clearToggle, "TOPLEFT", 119, -6)
         end
         -- Compact puts its range above a single, evenly spaced row of controls.
         panel.zoomOut:ClearAllPoints()
@@ -2496,7 +2544,8 @@ local function UpdatePanelChrome()
         control:SetShown(not circleOnly)
     end
     for _, control in ipairs({ panel.zoomOut, panel.zoomIn, panel.combatToggle,
-        panel.trailToggle, panel.routeToggle, panel.arrowToggle, panel.compass, panel.target, panel.legend, panel.minimize, panel.close }) do
+        panel.trailToggle, panel.clearToggle, panel.routeToggle, panel.arrowToggle,
+        panel.compass, panel.target, panel.legend, panel.minimize, panel.close }) do
         control:SetShown(showButtons)
     end
     if panel.emptyHelp then panel.emptyHelp:SetShown(not circleOnly and panel.emptyReason ~= nil) end
@@ -3973,6 +4022,8 @@ local function RenderEdgeCues(player, range, targets)
         if not (SafeNumber(worldX) and SafeNumber(worldY)) then return end
         local dx, dy = worldX - player.worldX, worldY - player.worldY
         local distance = math.sqrt(dx * dx + dy * dy)
+        if not addon.KeepCenterMarker(kind == "vignette" and "target" or "quest",
+            kind == "vignette" and item.key or item.questID, distance, range) then return end
         if distance <= range or distance > reach then return end
         local candidate = { item=item, kind=kind, dx=dx, dy=dy, distance=distance,
             name=name, stale=stale }
@@ -3984,7 +4035,8 @@ local function RenderEdgeCues(player, range, targets)
         if #nearest > 6 then table.remove(nearest) end
     end
     for _, target in ipairs(targets) do
-        if TargetVisible(target) and target.key ~= FocusedTargetKey()
+        if TargetVisible(target) and (Settings().vignetteRadarKeepCenterClear
+            or target.key ~= FocusedTargetKey())
             and not (player.instanceID and target.instanceID and player.instanceID ~= target.instanceID) then
             Consider(target, "vignette", target.worldX, target.worldY, target.name, target.stale)
         end
@@ -4158,7 +4210,10 @@ Render = function()
             target.distance = range * target.distanceFactor
             local scale = panel.plotRadius / PLOT_RADIUS
             local x, y = PreviewPosition(target.x, target.y)
-            if TargetVisible(target) then PlaceBlip(target.key, x * scale, y * scale, target) end
+            if TargetVisible(target) and addon.KeepCenterMarker("target", target.key,
+                target.distance, range) then
+                PlaceBlip(target.key, x * scale, y * scale, target)
+            end
         end
         EndBlips()
         return
@@ -4224,6 +4279,9 @@ Render = function()
             cueDistance = distance
         end
     end
+    if Settings().vignetteRadarKeepCenterClear and (addon.FocusedQuestID() or FocusedTargetKey()) then
+        cueX, cueY = nil, nil
+    end
     if cueX and cueY then
         local r, g, b = addon.VignetteRadarStyle.Color(activeKind or "quest")
         panel.activeCue:ClearAllPoints()
@@ -4288,7 +4346,7 @@ Render = function()
             and not (player.instanceID and target.instanceID and player.instanceID ~= target.instanceID) then
             local dx, dy = target.worldX - player.worldX, target.worldY - player.worldY
             local distance = math.sqrt((dx * dx) + (dy * dy))
-            if distance <= range then
+            if distance <= range and addon.KeepCenterMarker("target", target.key, distance, range) then
                 totalInRange = totalInRange + 1
                 local screenX, screenY = Project(dx, dy, distance, ViewFacing(player.facing), panel.plotRadius, range)
                 if screenX and screenY then
@@ -5682,12 +5740,12 @@ local function EnsurePanel()
         button.glow:SetPoint("CENTER")
         button.glow:SetTexture(CIRCLE_TEXTURE)
         button.strokes = {}
-        if symbol == "N" then
-            button.label = Text(button, 13, "N")
+        if symbol == "N" or symbol == "declutter" then
+            button.label = Text(button, 13, symbol == "N" and "N" or "C")
             button.label:SetAllPoints()
             button.label:SetJustifyH("CENTER")
             button:SetFontString(button.label)
-            button:SetText("N")
+            button:SetText(symbol == "N" and "N" or "C")
         elseif symbol == "route" then
             button.glow:Hide()
             button.art = button:CreateTexture(nil, "OVERLAY")
@@ -5784,6 +5842,34 @@ local function EnsurePanel()
     end
     panel.zoomOut = ZoomButton("-", false, 1, "Zoom out: show a wider area")
     panel.zoomIn = ZoomButton("+", true, -1, "Zoom in: show nearby detail")
+    panel.clearToggle = ToolbarIcon("declutter", 18)
+    panel.clearToggle._selected = Settings().vignetteRadarKeepCenterClear == true
+    panel.clearToggle:SetScript("OnClick", function(self)
+        Settings().vignetteRadarKeepCenterClear = not Settings().vignetteRadarKeepCenterClear
+        self._selected = Settings().vignetteRadarKeepCenterClear
+        self:RefreshAppearance()
+        if panel then
+            panel._layerRange = nil
+            panel._questKeyNextAt = nil
+        end
+        RefreshRadar(false)
+    end)
+    panel.clearToggle:HookScript("OnEnter", function(self)
+        if not GameTooltip then return end
+        GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+        GameTooltip:SetText("Keep Center Clear", 1, 1, 1)
+        GameTooltip:AddLine("Hide markers near your character. The cutoff follows radar zoom.",
+            .7, .8, .8, true)
+        GameTooltip:AddLine("When you focus a marker or quest, show only that focus and its quest area.",
+            .6, .84, .77, true)
+        GameTooltip:AddLine(Settings().vignetteRadarKeepCenterClear and "On" or "Off",
+            .85, .9, .9)
+        GameTooltip:Show()
+    end)
+    panel.clearToggle:HookScript("OnLeave", function()
+        if GameTooltip then GameTooltip:Hide() end
+    end)
+    panel.clearToggle:RefreshAppearance()
     panel.compass = ToolbarIcon("N", 24)
     panel.compass:SetScript("OnClick", function()
         addon.SetVignetteRadarNorthUp(Settings().vignetteRadarNorthUp ~= true)
@@ -5885,6 +5971,7 @@ local function EnsurePanel()
                 or id == "route" and addon.VignetteRadarWorldFocus
                     and addon.VignetteRadarWorldFocus.IsRouteActive()
                 or id == "arrow" and settings.vignetteRadarRouteArrow == true
+                or id == "clear" and settings.vignetteRadarKeepCenterClear == true
                 or id == "eye" and settings.vignetteRadarKeepVisibleCombat == true
                 or id == "target" and focused ~= nil
                 or id == "config" and quick and quick.IsShown and quick.IsShown()
@@ -5892,14 +5979,14 @@ local function EnsurePanel()
                     ((legend.IsShown and legend.IsShown()) or (legend.IsQuestShown and legend.IsQuestShown()))
             local state = (active and 2 or 0) + (tool._hovered and 1 or 0)
             if state ~= tool._artState then
-                if id ~= "arrow" then
+                if id ~= "arrow" and id ~= "clear" then
                     local column = tool.artColumn
                     tool.art:SetTexCoord((column * 64 + 1) / 1024, (column * 64 + 63) / 1024,
                         (state * 64 + 1) / 256, (state * 64 + 63) / 256)
                 end
                 tool._artState = state
             end
-            if id == "arrow" then
+            if id == "arrow" or id == "clear" then
                 tool.art:SetVertexColor(ACCENT[1], ACCENT[2], ACCENT[3],
                     active and 1 or tool._hovered and .9 or .42)
             elseif id == "route" and tool.trackingIcon then
@@ -5924,7 +6011,8 @@ local function EnsurePanel()
     end
     local function HoverTool(id, title, reference, point, x, y)
         local tool = CreateFrame("Button", nil, panel.field)
-        tool:SetSize(id == "arrow" and 12 or 16, id == "arrow" and 12 or 16)
+        local small = id == "arrow" or id == "clear"
+        tool:SetSize(small and 12 or 16, small and 12 or 16)
         tool:SetFrameLevel(panel.field:GetFrameLevel() + 8)
         tool:SetPoint(point, panel.field, point, x, y)
         tool:RegisterForClicks("LeftButtonUp", "RightButtonUp")
@@ -5933,10 +6021,12 @@ local function EnsurePanel()
             or id == "help" and 8 or id == "minimize" and 3
             or id == "close" and 9 or #panel.hoverTools
         tool.art = tool:CreateTexture(nil, "ARTWORK")
-        tool.art:SetTexture(id == "arrow"
+        tool.art:SetTexture(id == "clear"
+            and addon.VignetteRadarQuestHollowTexture
+            or id == "arrow"
             and "Interface\\AddOns\\VignetteRadar\\Media\\route-crystal-pointer.tga"
             or "Interface\\AddOns\\VignetteRadar\\Media\\radar-corner-controls.tga")
-        tool.art:SetSize(id == "arrow" and 12 or 18, id == "arrow" and 12 or 18)
+        tool.art:SetSize(small and 12 or 18, small and 12 or 18)
         tool.art:SetPoint("CENTER")
         if id == "route" then
             tool.trackingIcon = tool:CreateTexture(nil, "OVERLAY")
@@ -6019,6 +6109,7 @@ local function EnsurePanel()
     end
     HoverTool("eye", "Stay fully visible", panel.combatToggle, "BOTTOMLEFT", 30, 10)
     HoverTool("help", "Radar status", nil, "BOTTOMLEFT", 10, 30)
+    HoverTool("clear", "Keep Center Clear", panel.clearToggle, "BOTTOMLEFT", 68, 9)
     HoverTool("minimize", "Minimize to launcher", panel.minimize, "BOTTOMRIGHT", -30, 10)
     HoverTool("close", "Turn radar off", panel.close, "BOTTOMRIGHT", -10, 10)
     panel.RefreshCornerTools()

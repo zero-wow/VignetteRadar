@@ -1377,7 +1377,8 @@ assert(questDot.halo and questDot.halo:IsShown() and questDot.halo.parent == pan
     and questDot.halo.level < questDot.level and questDot.halo:GetWidth() == 20
     and questDot.rim.texture == "Interface\\AddOns\\VignetteRadar\\Media\\quest-diamond-hollow.tga"
     and math.abs(questDot.rim.width - 13 * 26 / 30) < .001
-    and not questDot.fill:IsShown(),
+    and questDot.fill:IsShown()
+    and questDot.fill.vertexColor[1] < .25,
     "quest dots should get a subtle clipped location circle behind the dot")
 completedQuestIDs[12345] = true
 for _, object in ipairs(objects) do
@@ -1397,7 +1398,8 @@ for _, object in ipairs(objects) do
         break
     end
 end
-assert(not questDot.quest.completed and not questDot.fill:IsShown(),
+assert(not questDot.quest.completed and questDot.fill:IsShown()
+    and questDot.fill.vertexColor[1] < .25,
     "an unfinished quest must return to a hollow diamond")
 questDot.scripts.OnEnter(questDot)
 assert(GameTooltip.text == "Nearby quest"
@@ -1527,6 +1529,29 @@ assert(secondQuestDot:IsShown() and secondQuestDot.fill.vertexColor[1] ~= questD
     and panel.questBlob.fillTexture == "Interface\\WorldMap\\UI-QuestBlob-Inside"
     and panel.questBlob.borderAlpha == 0,
     "distinct quest diamonds must share the original blue quest-area renderer")
+assert(panel.clearToggle and panel.clearToggle.label:GetText() == "C",
+    "the radar must expose the center-clear mode with a matching toolbar control")
+panel.clearToggle.scripts.OnClick(panel.clearToggle)
+assert(settings.vignetteRadarKeepCenterClear and panel.clearToggle._selected,
+    "the center-clear control must retain its selected setting")
+clearRange = settings.vignetteRadarRange
+clearRadius = clearRange * math.min(32, panel.plotRadius * .38) / panel.plotRadius
+assert(not addon.KeepCenterMarker("quest", 12345, clearRadius - 1, clearRange)
+    and addon.KeepCenterMarker("quest", 12345, clearRadius + 1, clearRange)
+    and not addon.KeepCenterMarker("quest", 12345, clearRadius * 2 - 1, clearRange * 2),
+    "the near-marker yard cutoff must scale with radar zoom")
+addon.VignetteRadarExploration.SetQuestFocus(12345)
+addon.VignetteRadarAPI.Refresh(false)
+assert(panel.questDots[1]:IsShown() and panel.questDots[1].quest.questID == 12345
+    and (not panel.questDots[2] or not panel.questDots[2]:IsShown())
+    and panel.questBlob.drawnQuests[1] == 12345
+    and not panel.questBlob.drawnQuests[2],
+    "a focused quest must keep only its diamond and native area visible")
+addon.VignetteRadarExploration.SetQuestFocus(nil)
+panel.clearToggle.scripts.OnClick(panel.clearToggle)
+assert(not settings.vignetteRadarKeepCenterClear
+    and panel.questDots[2]:IsShown() and panel.questBlob.drawnQuests[2] == 12346,
+    "turning center-clear off must restore the other quests immediately")
 local regularQuestFill = panel.questBlob.fillAlpha
 local regularQuestRange = settings.vignetteRadarRange
 settings.vignetteRadarRange = 50
@@ -1704,9 +1729,10 @@ assert(addon.VignetteRadarQuestColors[1][3] > addon.VignetteRadarQuestColors[1][
     and addon.VignetteRadarQuestColors[6][3] > addon.VignetteRadarQuestColors[6][2],
     "quest colors should not turn estimated circles green")
 for _, dot in ipairs({ questDot, secondQuestDot }) do
-    assert(dot.halo.fill.vertexColor[1] == dot.fill.vertexColor[1]
-        and dot.halo.fill.vertexColor[2] == dot.fill.vertexColor[2]
-        and dot.halo.fill.vertexColor[3] == dot.fill.vertexColor[3],
+    local color = addon.VignetteRadarQuestColors[dot.quest.colorSlot]
+    assert(dot.halo.fill.vertexColor[1] == color[1]
+        and dot.halo.fill.vertexColor[2] == color[2]
+        and dot.halo.fill.vertexColor[3] == color[3],
         "only estimated circles should take their quest diamond's color")
 end
 settings.vignetteRadarQuestAreaColors = false
@@ -1737,10 +1763,13 @@ for _, layoutName in ipairs({ "classic", "compact", "squat" }) do
     addon.SetVignetteRadarCircleOnly(true)
     panel.field.hovered = true
     panel.field.scripts.OnEnter(panel.field)
-    assert(#panel.hoverTools == 13 and panel.hoverTools[8].toolID == "route"
+    assert(#panel.hoverTools >= 13 and panel.hoverTools[8].toolID == "route"
         and panel.hoverTools[9].toolID == "arrow"
-        and panel.hoverTools[12].toolID == "minimize"
-        and panel.hoverTools[12].artColumn == 3 and panel.hoverTools[13].toolID == "close"
+        and panel.hoverTools[#panel.hoverTools - 2].toolID == "clear"
+        and panel.hoverTools[#panel.hoverTools - 2].reference == panel.clearToggle
+        and panel.hoverTools[#panel.hoverTools - 1].toolID == "minimize"
+        and panel.hoverTools[#panel.hoverTools - 1].artColumn == 3
+        and panel.hoverTools[#panel.hoverTools].toolID == "close"
         and panel.hoverTools[1]:IsShown()
         and not panel.settingsDot:IsShown(),
         "square radar-only view must reveal its corner controls on hover")

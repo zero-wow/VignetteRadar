@@ -36,6 +36,9 @@ function methods:IsShown() return self.shown == true end
 function methods:Show() self.shown = true end
 function methods:Hide() self.shown = false end
 function methods:SetShown(value) self.shown = value == true end
+function methods:IsMouseOver() return self.mouseOver == true end
+function methods:LockHighlight() self.selected = true end
+function methods:UnlockHighlight() self.selected = false end
 function methods:CreateTexture()
     return setmetatable({ shown = true }, { __index = methods })
 end
@@ -140,63 +143,77 @@ eventFrame.scripts.OnEvent(eventFrame, "PLAYER_LOGIN")
 local panel = assert(_G.VignetteRadarQuestTrackerPanel)
 assert(panel:IsShown() and panel.clamped and panel.movable and panel.mouseWheel,
     "the tracker must be visible, movable, and scrollable by default")
-assert(not panel.accent and panel.statusSurface and panel.count.text == "3 QUESTS",
+assert(not panel.accent and panel.statusSurface and panel.count.text == "LOCAL  ·  3 QUESTS",
     "the tracker should use the shared surface without a left accent bar")
+assert(panel.height == 211 and panel.rows[1].height == 20 and panel.rows[2].height == 32,
+    "header and quest rows must use compact, content-sized layout")
 assert(panel.rows[2].entry.questID == 11 and panel.rows[2].name.textColor[2] == .6
     and panel.rows[2].diamond.vertex[2] == .7,
     "difficulty title and radar diamond must use independent colors")
+assert(panel.rows[2].center.shown and panel.rows[2].slot.text == "2"
+    and panel.rows[2].slot.font[3] == "OUTLINE"
+    and panel.rows[2].slot.point[2] == panel.rows[2].diamond,
+    "the outlined quest number must sit inside a dark-tinted incomplete diamond")
 panel.rows[2].scripts.OnEnter(panel.rows[2])
 assert(highlights[#highlights] == 11, "hover should highlight matching radar diamonds")
 panel.rows[2].scripts.OnLeave(panel.rows[2])
 assert(highlights[#highlights] == "clear", "leaving should restore radar selection")
 panel.rows[2].scripts.OnClick(panel.rows[2])
 assert(focused == 11, "clicking a tracker quest should focus that quest")
-panel.dots.scripts.OnClick(panel.dots)
+panel.options.scripts.OnClick(panel.options)
+local menu = assert(_G.VignetteRadarQuestTrackerOptions)
+assert(menu:IsShown() and #menu.choices == 15,
+    "a skinned options dropdown must expose explicit values instead of cycling settings")
+local function Choose(key, value)
+    for _, choice in ipairs(menu.choices) do
+        if choice.key == key and choice.value == value then
+            choice.button.scripts.OnClick(choice.button)
+            return
+        end
+    end
+    error("missing tracker menu choice: " .. key .. " = " .. tostring(value))
+end
+Choose("vignetteRadarQuestDots", false)
 assert(settings.vignetteRadarQuestDots == false and refreshes == 1)
-panel.numbers.scripts.OnClick(panel.numbers)
+Choose("vignetteRadarQuestNumbers", true)
 assert(settings.vignetteRadarQuestNumbers == true and refreshes == 2)
-panel.mode.scripts.OnClick(panel.mode)
+Choose("vignetteRadarQuestTrackerView", "tray")
 assert(settings.vignetteRadarQuestTrackerView == "tray"
-    and panel.mode.text == "Tray" and panel.side.text == "Right"
-    and panel.point[1] == "TOPLEFT" and panel.point[3] == "TOPRIGHT"
-    and panel.connector.shown,
-    "Tray view should dock beside the radar and show a themed join")
-settings.vignetteRadarQuestTrackerSide = "top"
-tracker.Refresh()
-assert(panel.point[1] == "BOTTOMLEFT" and panel.point[3] == "TOPLEFT"
-    and panel.connector.width == 2 and panel.connector.height == 6,
-    "the upper tray should emerge vertically from the radar")
+    and panel.point[1] == "LEFT" and panel.point[3] == "RIGHT"
+    and panel.point[4] == 0 and not panel.trayBorders.left.shown
+    and panel.trayBorders.right.shown,
+    "Tray must meet the radar flush with its attached border open")
+Choose("vignetteRadarQuestTrackerSide", "top")
+assert(panel.point[1] == "BOTTOM" and panel.point[3] == "TOP"
+    and not panel.trayBorders.bottom.shown and panel.trayBorders.top.shown,
+    "the upper tray should attach directly above the radar")
 settings.vignetteRadarQuestTrackerCollapsed = {
     ["Dragon Isles"] = true, ["Old World"] = true, ["World Quests"] = true,
 }
 radarPanel.left, radarPanel.top = 700, 540
-settings.vignetteRadarQuestTrackerSide = "bottom"
-tracker.Refresh()
-assert(panel.height == 236 and panel.point[1] == "TOPLEFT"
-    and panel.point[3] == "BOTTOMLEFT" and panel.connector.height == 6,
+Choose("vignetteRadarQuestTrackerSide", "bottom")
+assert(panel.height == 115 and panel.point[1] == "TOP"
+    and panel.point[3] == "BOTTOM" and not panel.trayBorders.top.shown,
     "the lower tray should fit below the radar with folded quest headers")
-settings.vignetteRadarQuestTrackerSide = "left"
-tracker.Refresh()
-assert(panel.point[1] == "TOPRIGHT" and panel.point[3] == "TOPLEFT"
-    and panel.connector.width == 6,
+Choose("vignetteRadarQuestTrackerSide", "left")
+assert(panel.point[1] == "RIGHT" and panel.point[3] == "LEFT"
+    and not panel.trayBorders.right.shown,
     "the left tray should emerge horizontally from the radar")
 radarPanel.left = 1300
-settings.vignetteRadarQuestTrackerSide = "right"
-tracker.Refresh()
-assert(panel.actualSide == "left" and panel.side.text == "Left"
-    and panel.point[1] == "TOPRIGHT",
+Choose("vignetteRadarQuestTrackerSide", "right")
+assert(panel.actualSide == "left" and panel.point[1] == "RIGHT",
     "Tray must switch to an edge that fits rather than cover the radar")
 radarPanel:Hide()
 panel.scripts.OnUpdate(panel, 1)
-assert(panel.point[2] == UIParent and not panel.connector.shown,
+assert(panel.point[2] == UIParent and not panel.trayBorders.left.shown,
     "Tray should use the saved floating position while the radar is hidden")
 radarPanel:Show()
 panel.scripts.OnUpdate(panel, 1)
-assert(panel.point[2] == radarPanel and panel.connector.shown,
+assert(panel.point[2] == radarPanel and panel.trayBorders.left.shown,
     "Tray should redock as soon as the radar is visible again")
-panel.mode.scripts.OnClick(panel.mode)
+Choose("vignetteRadarQuestTrackerView", "floating")
 assert(settings.vignetteRadarQuestTrackerView == "floating"
-    and panel.mode.text == "Floating" and panel.point[2] == UIParent,
+    and panel.point[2] == UIParent and not panel.trayBorders.top.shown,
     "Floating view should restore its independent saved placement")
 panel.close.scripts.OnClick(panel.close)
 assert(not panel:IsShown() and settings.vignetteRadarQuestTrackerVisible == false)

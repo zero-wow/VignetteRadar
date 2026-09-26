@@ -4,12 +4,14 @@ if type(addon) ~= "table" then return end
 local API = {}
 addon.VignetteRadarQuestTracker = API
 
-local WIDTH, HEADER_HEIGHT, ROW_HEIGHT, VISIBLE_ROWS = 306, 84, 42, 8
+local WIDTH, HEADER_HEIGHT, HEADER_ROW_HEIGHT, QUEST_ROW_HEIGHT = 306, 47, 20, 32
+local VISIBLE_ROWS, FOOTER_HEIGHT = 8, 17
 local DIAMOND = "Interface\\AddOns\\VignetteRadar\\Media\\quest-diamond.tga"
 local HOLLOW = "Interface\\AddOns\\VignetteRadar\\Media\\quest-diamond-hollow.tga"
 local WHITE = "Interface\\Buttons\\WHITE8X8"
-local frame, entries, offset, pending = nil, {}, 0, false
+local frame, menu, entries, offset, pending = nil, nil, {}, 0, false
 local lastThemeRevision = -1
+local RefreshMenu
 
 local function Secret(value)
     if type(issecretvalue) ~= "function" then return false end
@@ -213,6 +215,12 @@ local function Button(parent, value, width)
     return controls.Button(parent, value, width, 22)
 end
 
+local function Select(button, selected)
+    if selected then
+        if button.LockHighlight then button:LockHighlight() end
+    elseif button.UnlockHighlight then button:UnlockHighlight() end
+end
+
 local function Hint(button, title, details)
     if not button.HookScript then return end
     button:HookScript("OnEnter", function(self)
@@ -252,10 +260,10 @@ local function Place()
             and Number(top) and Number(bottom)) then dock = false end
         if dock then
             local fits = {
-                right = right + 6 + WIDTH <= screenW - 8,
-                left = left - 6 - WIDTH >= 8,
-                top = top + 6 + frame:GetHeight() <= screenH - 8,
-                bottom = bottom - 6 - frame:GetHeight() >= 8,
+                right = right + WIDTH <= screenW - 8,
+                left = left - WIDTH >= 8,
+                top = top + frame:GetHeight() <= screenH - 8,
+                bottom = bottom - frame:GetHeight() >= 8,
             }
             if not fits[side] then
                 local opposite = { right = "left", left = "right", top = "bottom", bottom = "top" }
@@ -268,38 +276,31 @@ local function Place()
             end
             if not fits[side] then dock = false end
             if dock then
-                -- Shift along the chosen edge if a tall tracker would clip.
+                -- Center the compact tray on the mating edge; it shares that edge
+                -- with the radar instead of floating beside a decorative connector.
                 local xOffset, yOffset = 0, 0
                 if side == "right" or side == "left" then
-                    local wantedTop = math.max(frame:GetHeight() + 8,
-                        math.min(screenH - 8, top))
-                    yOffset = wantedTop - top
+                    local center = math.max(frame:GetHeight() / 2 + 8,
+                        math.min(screenH - frame:GetHeight() / 2 - 8, (top + bottom) / 2))
+                    yOffset = center - (top + bottom) / 2
                 else
-                    local wantedLeft = math.max(8, math.min(screenW - WIDTH - 8, left))
-                    xOffset = wantedLeft - left
+                    local center = math.max(WIDTH / 2 + 8,
+                        math.min(screenW - WIDTH / 2 - 8, (left + right) / 2))
+                    xOffset = center - (left + right) / 2
                 end
                 local key = table.concat({ "tray", side, math.floor(left), math.floor(right),
                     math.floor(top), math.floor(bottom), frame:GetHeight(), xOffset, yOffset }, ":")
                 if frame._placementKey ~= key then
                     frame._placementKey = key
                     frame:ClearAllPoints()
-                    frame.connector:ClearAllPoints()
                     if side == "right" then
-                        frame:SetPoint("TOPLEFT", anchor, "TOPRIGHT", 6, yOffset)
-                        frame.connector:SetSize(6, 2)
-                        frame.connector:SetPoint("LEFT", frame, "TOPLEFT", -6, -yOffset - 18)
+                        frame:SetPoint("LEFT", anchor, "RIGHT", 0, yOffset)
                     elseif side == "left" then
-                        frame:SetPoint("TOPRIGHT", anchor, "TOPLEFT", -6, yOffset)
-                        frame.connector:SetSize(6, 2)
-                        frame.connector:SetPoint("LEFT", frame, "TOPRIGHT", 0, -yOffset - 18)
+                        frame:SetPoint("RIGHT", anchor, "LEFT", 0, yOffset)
                     elseif side == "top" then
-                        frame:SetPoint("BOTTOMLEFT", anchor, "TOPLEFT", xOffset, 6)
-                        frame.connector:SetSize(2, 6)
-                        frame.connector:SetPoint("TOPLEFT", frame, "BOTTOMLEFT", 20 - xOffset, 0)
+                        frame:SetPoint("BOTTOM", anchor, "TOP", xOffset, 0)
                     else
-                        frame:SetPoint("TOPLEFT", anchor, "BOTTOMLEFT", xOffset, -6)
-                        frame.connector:SetSize(2, 6)
-                        frame.connector:SetPoint("BOTTOMLEFT", frame, "TOPLEFT", 20 - xOffset, 0)
+                        frame:SetPoint("TOP", anchor, "BOTTOM", xOffset, 0)
                     end
                 end
             end
@@ -316,12 +317,15 @@ local function Place()
         end
     end
     frame.actualSide = dock and side or nil
-    frame.connector:SetShown(dock == true)
-    frame.side:SetShown(db.vignetteRadarQuestTrackerView == "tray")
-    local titleCase = addon.VignetteRadarControls.TitleCase
-        or function(value) return value:sub(1, 1):upper() .. value:sub(2) end
-    frame.mode:SetText(db.vignetteRadarQuestTrackerView == "tray" and "Tray" or "Floating")
-    frame.side:SetText(titleCase(frame.actualSide or db.vignetteRadarQuestTrackerSide or "right"))
+    if type(frame.statusSurface) == "table" then
+        for _, texture in ipairs(frame.statusSurface.edge or {}) do
+            texture:SetShown(not dock)
+        end
+    end
+    local joinEdge = { right = "left", left = "right", top = "bottom", bottom = "top" }
+    for edge, texture in pairs(frame.trayBorders or {}) do
+        texture:SetShown(dock and edge ~= joinEdge[side])
+    end
 end
 
 local function Draw()
@@ -333,23 +337,15 @@ local function Draw()
     if style then ar, ag, ab = style.Color("accent") end
     frame.title:SetTextColor(ar, ag, ab, 1)
     frame.rule:SetColorTexture(ar, ag, ab, .2)
-    frame.connector:SetColorTexture(ar, ag, ab, .68)
+    for _, texture in pairs(frame.trayBorders or {}) do
+        texture:SetColorTexture(ar, ag, ab, .64)
+    end
     local count = 0
     for _, entry in ipairs(entries) do if entry.kind == "quest" then count = count + 1 end end
-    frame.count:SetText(count .. " QUEST" .. (count == 1 and "" or "S"))
     local scope = Settings().vignetteRadarQuestTrackerScope
-    frame.scope:SetText(scope == "watched" and "Watched" or scope == "all" and "All" or "Local")
-    frame.dots:SetText(Settings().vignetteRadarQuestDots and "Dots On" or "Dots Off")
-    frame.numbers:SetText(Settings().vignetteRadarQuestNumbers and "# On" or "# Off")
+    local scopeName = scope == "watched" and "WATCHED" or scope == "all" and "ALL" or "LOCAL"
+    frame.count:SetText(scopeName .. "  ·  " .. count .. " QUEST" .. (count == 1 and "" or "S"))
     local collapsed = Settings().vignetteRadarQuestTrackerCollapsed
-    local hasOpenHeader = false
-    for _, entry in ipairs(entries) do
-        if entry.kind == "header" and not collapsed[entry.title] then
-            hasOpenHeader = true
-            break
-        end
-    end
-    frame.collapse:SetText(hasOpenHeader and "Fold" or "Expand")
     local visible = {}
     local hiddenHeader
     for _, entry in ipairs(entries) do
@@ -361,22 +357,36 @@ local function Draw()
         end
     end
     frame.visibleEntries = visible
-    offset = math.max(0, math.min(offset, math.max(0, #visible - VISIBLE_ROWS)))
-    local shown = math.min(#visible, VISIBLE_ROWS)
-    frame:SetHeight(HEADER_HEIGHT + math.max(1, shown) * ROW_HEIGHT + 26)
+    local capacity = Settings().vignetteRadarQuestTrackerView == "tray" and 6 or VISIBLE_ROWS
+    offset = math.max(0, math.min(offset, math.max(0, #visible - capacity)))
+    local shown = math.min(#visible - offset, capacity)
+    local contentHeight = 0
+    for index = 1, shown do
+        local entry = visible[offset + index]
+        contentHeight = contentHeight + (entry.kind == "header" and HEADER_ROW_HEIGHT
+            or QUEST_ROW_HEIGHT)
+    end
+    local overflow = #visible > capacity
+    frame:SetHeight(HEADER_HEIGHT + math.max(24, contentHeight)
+        + (overflow and FOOTER_HEIGHT or 8))
     frame.empty:SetShown(#visible == 0)
     frame.empty:SetText(scope == "local" and "No Local Quests On This Map"
         or scope == "watched" and "No Watched Quests" or "No Quests In Your Log")
-    frame.footer:SetText(#visible > VISIBLE_ROWS
-        and ((offset + 1) .. "–" .. math.min(#visible, offset + VISIBLE_ROWS)
-            .. " Of " .. #visible .. " · Scroll")
-        or "Diamond = Radar Color  ·  Title = Difficulty")
+    frame.footer:SetShown(overflow)
+    frame.footer:SetText(overflow and ((offset + 1) .. "–"
+        .. math.min(#visible, offset + capacity) .. " Of " .. #visible .. " · Scroll") or "")
+    local rowY = -HEADER_HEIGHT
     for index, row in ipairs(frame.rows) do
-        local entry = visible[offset + index]
+        local entry = index <= capacity and visible[offset + index] or nil
         row.entry = entry
         row:SetShown(entry ~= nil)
         if entry then
             local isHeader = entry.kind == "header"
+            local height = isHeader and HEADER_ROW_HEIGHT or QUEST_ROW_HEIGHT
+            row:ClearAllPoints()
+            row:SetPoint("TOPLEFT", frame, "TOPLEFT", 12, rowY)
+            row:SetSize(WIDTH - 24, height)
+            rowY = rowY - height
             row.header:SetShown(isHeader)
             row.quest:SetShown(not isHeader)
             if isHeader then
@@ -389,7 +399,9 @@ local function Draw()
                 row.diamond:SetTexture(entry.complete and DIAMOND or HOLLOW)
                 row.diamond:SetVertexColor(r, g, b, 1)
                 row.slot:SetText(tostring(entry.colorSlot))
-                row.slot:SetTextColor(r, g, b, 1)
+                row.slot:SetTextColor(1, 1, 1, 1)
+                row.center:SetVertexColor(r * .18, g * .18, b * .18, .96)
+                row.center:SetShown(not entry.complete)
                 local dr, dg, db = DifficultyColor(entry.level)
                 row.name:SetText(entry.title)
                 row.name:SetTextColor(dr, dg, db, 1)
@@ -408,107 +420,166 @@ local function Draw()
     end
     lastThemeRevision = style and style.revision or 0
     Place()
+    if menu and menu:IsShown() and RefreshMenu then RefreshMenu() end
+end
+
+local function EnsureMenu()
+    if menu then return menu end
+    menu = CreateFrame("Frame", "VignetteRadarQuestTrackerOptions", UIParent)
+    menu:SetSize(224, 294)
+    menu:SetFrameStrata("DIALOG")
+    menu:SetClampedToScreen(true)
+    menu:EnableMouse(true)
+    addon.VignetteRadarControls.RoundedStatusSurface(menu)
+    menu.choices = {}
+    local function Heading(text, y)
+        local label = Label(menu, 9, text)
+        label:SetPoint("TOPLEFT", 12, y)
+        label:SetTextColor(.60, .77, .79, 1)
+    end
+    local function Choice(text, x, y, width, key, value, action)
+        local button = Button(menu, text, width)
+        button:SetPoint("TOPLEFT", x, y)
+        button:SetScript("OnClick", function()
+            if action then
+                action()
+            else
+                local db = Settings()
+                if key == "vignetteRadarQuestTrackerView" and value == "tray"
+                    and db[key] == "floating" then SavePosition() end
+                db[key] = value
+                if key == "vignetteRadarQuestDots" and addon.RefreshVignetteRadar then
+                    addon.RefreshVignetteRadar(true)
+                elseif key == "vignetteRadarQuestNumbers" and addon.RefreshVignetteRadar then
+                    addon.RefreshVignetteRadar(false)
+                end
+                offset = 0
+                API.Refresh()
+            end
+            RefreshMenu()
+        end)
+        menu.choices[#menu.choices + 1] = { button = button, key = key, value = value }
+        return button
+    end
+    Heading("Tracker View", -10)
+    Choice("Floating", 12, -27, 97, "vignetteRadarQuestTrackerView", "floating")
+    Choice("Tray", 115, -27, 97, "vignetteRadarQuestTrackerView", "tray")
+    Heading("Tray Side", -57)
+    for index, spec in ipairs({ { "Left", "left" }, { "Right", "right" },
+        { "Top", "top" }, { "Bottom", "bottom" } }) do
+        Choice(spec[1], 12 + (index - 1) * 51, -74, 46,
+            "vignetteRadarQuestTrackerSide", spec[2])
+    end
+    Heading("Quest Scope", -104)
+    for index, spec in ipairs({ { "Local", "local" }, { "Watched", "watched" },
+        { "All", "all" } }) do
+        Choice(spec[1], 12 + (index - 1) * 69, -121, 64,
+            "vignetteRadarQuestTrackerScope", spec[2])
+    end
+    Heading("Radar Quest Diamonds", -151)
+    Choice("Off", 12, -168, 97, "vignetteRadarQuestDots", false)
+    Choice("On", 115, -168, 97, "vignetteRadarQuestDots", true)
+    Heading("Quest Number Labels", -198)
+    Choice("Off", 12, -215, 97, "vignetteRadarQuestNumbers", false)
+    Choice("On", 115, -215, 97, "vignetteRadarQuestNumbers", true)
+    Heading("Visible Headers", -245)
+    local function Fold(value)
+        local saved = Settings().vignetteRadarQuestTrackerCollapsed
+        for _, entry in ipairs(entries) do
+            if entry.kind == "header" then saved[entry.title] = value or nil end
+        end
+        offset = 0
+        Draw()
+    end
+    Choice("Fold All", 12, -262, 97, nil, nil, function() Fold(true) end)
+    Choice("Expand All", 115, -262, 97, nil, nil, function() Fold(false) end)
+    menu:RegisterEvent("GLOBAL_MOUSE_DOWN")
+    menu:SetScript("OnEvent", function(self)
+        if self:IsShown() and not self:IsMouseOver()
+            and not (frame and frame.options and frame.options:IsMouseOver()) then
+            self:Hide()
+        end
+    end)
+    menu:Hide()
+    return menu
+end
+
+RefreshMenu = function()
+    if not menu then return end
+    addon.VignetteRadarControls.RefreshRoundedStatusSurface(menu)
+    for _, choice in ipairs(menu.choices) do
+        if choice.key then Select(choice.button, Settings()[choice.key] == choice.value) end
+    end
 end
 
 local function EnsureFrame()
     if frame or type(CreateFrame) ~= "function" or not UIParent then return frame end
     frame = CreateFrame("Frame", "VignetteRadarQuestTrackerPanel", UIParent)
-    frame:SetSize(WIDTH, HEADER_HEIGHT + ROW_HEIGHT + 26)
+    frame:SetSize(WIDTH, HEADER_HEIGHT + QUEST_ROW_HEIGHT + 8)
     frame:SetFrameStrata("MEDIUM")
     frame:SetClampedToScreen(true)
     frame:SetMovable(true)
     frame:EnableMouse(true)
     frame:EnableMouseWheel(true)
     addon.VignetteRadarControls.RoundedStatusSurface(frame)
-    frame.connector = frame:CreateTexture(nil, "BORDER")
-    frame.connector:SetTexture(WHITE)
+    frame.trayBorders = {}
+    for _, edge in ipairs({ "left", "right", "top", "bottom" }) do
+        local border = frame:CreateTexture(nil, "BORDER")
+        border:SetTexture(WHITE)
+        if edge == "left" then
+            border:SetPoint("TOPLEFT", 0, -1)
+            border:SetPoint("BOTTOMLEFT", 0, 1)
+            border:SetWidth(2)
+        elseif edge == "right" then
+            border:SetPoint("TOPRIGHT", 0, -1)
+            border:SetPoint("BOTTOMRIGHT", 0, 1)
+            border:SetWidth(2)
+        elseif edge == "top" then
+            border:SetPoint("TOPLEFT", 1, 0)
+            border:SetPoint("TOPRIGHT", -1, 0)
+            border:SetHeight(2)
+        else
+            border:SetPoint("BOTTOMLEFT", 1, 0)
+            border:SetPoint("BOTTOMRIGHT", -1, 0)
+            border:SetHeight(2)
+        end
+        border:Hide()
+        frame.trayBorders[edge] = border
+    end
     local position = Settings().vignetteRadarQuestTrackerPosition
     frame:SetPoint("TOPLEFT", UIParent, "TOPLEFT",
         type(position) == "table" and Number(position.x) or 290,
         type(position) == "table" and Number(position.y) or -160)
     frame.title = Label(frame, 12, "QUEST TRACKER")
-    frame.title:SetPoint("TOPLEFT", 14, -12)
+    frame.title:SetPoint("TOPLEFT", 14, -8)
+    frame.title:SetWidth(120)
+    frame.title:SetJustifyH("LEFT")
     frame.count = Label(frame, 9, "0 QUESTS")
-    frame.count:SetPoint("TOPLEFT", 14, -29)
+    frame.count:SetPoint("TOPLEFT", 14, -25)
     frame.rule = frame:CreateTexture(nil, "ARTWORK")
-    frame.rule:SetPoint("TOPLEFT", 12, -43)
-    frame.rule:SetPoint("TOPRIGHT", -12, -43)
+    frame.rule:SetPoint("TOPLEFT", 12, -40)
+    frame.rule:SetPoint("TOPRIGHT", -12, -40)
     frame.rule:SetHeight(1)
-    frame.mode = Button(frame, "Floating", 72)
-    frame.mode:SetPoint("TOPRIGHT", -96, -8)
-    frame.mode:SetScript("OnClick", function()
-        local db = Settings()
-        if db.vignetteRadarQuestTrackerView == "floating" then SavePosition() end
-        db.vignetteRadarQuestTrackerView = db.vignetteRadarQuestTrackerView == "tray"
-            and "floating" or "tray"
-        Place()
-    end)
-    frame.side = Button(frame, "Right", 54)
-    frame.side:SetPoint("TOPRIGHT", -38, -8)
-    frame.side:SetScript("OnClick", function()
-        local sides = { "left", "right", "top", "bottom" }
-        local current = frame.actualSide or Settings().vignetteRadarQuestTrackerSide
-        for index, candidate in ipairs(sides) do
-            if candidate == current then
-                for advance = 1, #sides do
-                    Settings().vignetteRadarQuestTrackerSide = sides[(index + advance - 1) % #sides + 1]
-                    Place()
-                    if frame.actualSide ~= current then break end
-                end
-                break
-            end
+    frame.options = Button(frame, "Options", 62)
+    frame.options:SetPoint("TOPRIGHT", -39, -8)
+    frame.options:SetScript("OnClick", function()
+        local dropdown = EnsureMenu()
+        dropdown:ClearAllPoints()
+        if Number(frame:GetBottom()) and frame:GetBottom() < dropdown:GetHeight() + 8 then
+            dropdown:SetPoint("BOTTOMRIGHT", frame.options, "TOPRIGHT", 0, 3)
+        else
+            dropdown:SetPoint("TOPRIGHT", frame.options, "BOTTOMRIGHT", 0, -3)
         end
+        RefreshMenu()
+        dropdown:SetShown(not dropdown:IsShown())
     end)
-    Hint(frame.mode, "Tracker View", "Floating can be moved freely. Tray joins the radar frame.")
-    Hint(frame.side, "Tray Side", "Choose Left, Right, Top, or Bottom. The tray uses another edge when needed to fit on screen.")
-    frame.scope = Button(frame, "Local", 66)
-    frame.scope:SetPoint("TOPLEFT", 12, -52)
-    frame.scope:SetScript("OnClick", function()
-        local setting = Settings()
-        local current = setting.vignetteRadarQuestTrackerScope
-        setting.vignetteRadarQuestTrackerScope = current == "local" and "watched"
-            or current == "watched" and "all" or "local"
-        offset = 0
-        API.Refresh()
-    end)
-    Hint(frame.scope, "Quest Scope", "Cycle Local, Watched, and All quests.")
-    frame.dots = Button(frame, "Dots Off", 68)
-    frame.dots:SetPoint("LEFT", frame.scope, "RIGHT", 5, 0)
-    frame.dots:SetScript("OnClick", function()
-        Settings().vignetteRadarQuestDots = not Settings().vignetteRadarQuestDots
-        if addon.RefreshVignetteRadar then addon.RefreshVignetteRadar(true) end
-        API.Refresh()
-    end)
-    Hint(frame.dots, "Radar Quest Diamonds", "Show or hide matching quest points on the radar.")
-    frame.numbers = Button(frame, "# Off", 54)
-    frame.numbers:SetPoint("LEFT", frame.dots, "RIGHT", 5, 0)
-    frame.numbers:SetScript("OnClick", function()
-        Settings().vignetteRadarQuestNumbers = not Settings().vignetteRadarQuestNumbers
-        if addon.RefreshVignetteRadar then addon.RefreshVignetteRadar(false) end
-        Draw()
-    end)
-    Hint(frame.numbers, "Quest Labels", "Show each quest color number inside its radar diamond.")
-    frame.collapse = Button(frame, "Fold", 50)
-    frame.collapse:SetPoint("LEFT", frame.numbers, "RIGHT", 5, 0)
-    frame.collapse:SetScript("OnClick", function()
-        local saved = Settings().vignetteRadarQuestTrackerCollapsed
-        local fold = false
-        for _, entry in ipairs(entries) do
-            if entry.kind == "header" and not saved[entry.title] then fold = true; break end
-        end
-        for _, entry in ipairs(entries) do
-            if entry.kind == "header" then saved[entry.title] = fold or nil end
-        end
-        offset = 0
-        Draw()
-    end)
-    Hint(frame.collapse, "Fold Headers", "Collapse or expand all visible quest headers.")
+    Hint(frame.options, "Tracker Options", "Choose the view, tray side, quest scope, and radar labels.")
     frame.close = Button(frame, "×", 22)
     frame.close:SetPoint("TOPRIGHT", -9, -8)
     frame.close:SetScript("OnClick", function() API.Hide() end)
     frame.drag = CreateFrame("Button", nil, frame)
-    frame.drag:SetPoint("TOPLEFT", 8, -6)
-    frame.drag:SetPoint("BOTTOMRIGHT", frame, "TOPRIGHT", -170, -42)
+    frame.drag:SetPoint("TOPLEFT", 8, -5)
+    frame.drag:SetPoint("BOTTOMRIGHT", frame, "TOPRIGHT", -110, -37)
     frame.drag:RegisterForDrag("LeftButton")
     frame.drag:SetScript("OnDragStart", function()
         if Settings().vignetteRadarQuestTrackerView == "floating" then frame:StartMoving() end
@@ -519,35 +590,55 @@ local function EnsureFrame()
             SavePosition()
         end
     end)
+    frame.drag:SetScript("OnEnter", function(self)
+        if not GameTooltip then return end
+        GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+        GameTooltip:SetText("Quest Tracker", 1, .87, .66)
+        GameTooltip:AddLine("Diamond: Radar Color · Title: Difficulty Color", .66, .8, .78)
+        GameTooltip:Show()
+    end)
+    frame.drag:SetScript("OnLeave", function()
+        if GameTooltip then GameTooltip:Hide() end
+    end)
     frame.rows = {}
     for index = 1, VISIBLE_ROWS do
         local row = CreateFrame("Button", nil, frame)
-        row:SetPoint("TOPLEFT", 12, -HEADER_HEIGHT - (index - 1) * ROW_HEIGHT)
-        row:SetSize(WIDTH - 24, ROW_HEIGHT - 2)
+        row:SetPoint("TOPLEFT", 12, -HEADER_HEIGHT)
+        row:SetSize(WIDTH - 24, QUEST_ROW_HEIGHT)
         row.hover = row:CreateTexture(nil, "BACKGROUND")
         row.hover:SetAllPoints(row)
         row.hover:SetTexture(WHITE)
         row.hover:Hide()
         row.header = Label(row, 10)
-        row.header:SetPoint("LEFT", 7, 0)
+        row.header:SetPoint("TOPLEFT", 7, -2)
         row.header:SetWidth(WIDTH - 45)
+        row.header:SetJustifyH("LEFT")
         row.quest = CreateFrame("Frame", nil, row)
         row.quest:SetAllPoints(row)
         row.diamond = row.quest:CreateTexture(nil, "ARTWORK")
-        row.diamond:SetSize(16, 16)
-        row.diamond:SetPoint("TOPLEFT", 5, -9)
-        row.slot = Label(row.quest, 8)
-        row.slot:SetPoint("TOPLEFT", 27, -5)
-        row.slot:SetSize(16, 12)
+        row.diamond:SetSize(14, 14)
+        row.diamond:SetPoint("TOPLEFT", 6, -7)
+        row.center = row.quest:CreateTexture(nil, "ARTWORK")
+        row.center:SetTexture(DIAMOND)
+        row.center:SetSize(9, 9)
+        row.center:SetPoint("CENTER", row.diamond, "CENTER")
+        row.slot = Label(row.quest, 9)
+        row.slot:SetFont(EllesmereUI and (EllesmereUI.EXPRESSWAY or EllesmereUI._font)
+            or STANDARD_TEXT_FONT or "Fonts\\FRIZQT__.TTF", 9, "OUTLINE")
+        row.slot:SetPoint("CENTER", row.diamond, "CENTER", 0, 0)
+        row.slot:SetSize(14, 14)
+        row.slot:SetJustifyH("CENTER")
         row.name = Label(row.quest, 11)
-        row.name:SetPoint("TOPLEFT", 46, -4)
-        row.name:SetWidth(WIDTH - 67)
+        row.name:SetPoint("TOPLEFT", 28, -2)
+        row.name:SetWidth(WIDTH - 48)
+        row.name:SetJustifyH("LEFT")
         row.progress = Label(row.quest, 9)
-        row.progress:SetPoint("TOPLEFT", 46, -21)
-        row.progress:SetWidth(WIDTH - 67)
+        row.progress:SetPoint("TOPLEFT", 28, -17)
+        row.progress:SetWidth(WIDTH - 48)
+        row.progress:SetJustifyH("LEFT")
         row.focus = row.quest:CreateTexture(nil, "ARTWORK")
-        row.focus:SetPoint("TOPLEFT", 43, -2)
-        row.focus:SetSize(2, 32)
+        row.focus:SetPoint("TOPLEFT", 25, -2)
+        row.focus:SetSize(2, 27)
         row:SetScript("OnEnter", function(self)
             self.hover:Show()
             local radar = addon.VignetteRadarAPI
@@ -578,13 +669,14 @@ local function EnsureFrame()
         frame.rows[index] = row
     end
     frame.empty = Label(frame, 10)
-    frame.empty:SetPoint("TOPLEFT", 21, -HEADER_HEIGHT - 14)
+    frame.empty:SetPoint("TOPLEFT", 21, -HEADER_HEIGHT - 7)
     frame.empty:SetTextColor(.67, .76, .77, 1)
     frame.footer = Label(frame, 9)
-    frame.footer:SetPoint("BOTTOMLEFT", 14, 10)
+    frame.footer:SetPoint("BOTTOMLEFT", 14, 5)
     frame.footer:SetTextColor(.60, .73, .73, 1)
     frame:SetScript("OnMouseWheel", function(_, delta)
-        local maxOffset = math.max(0, #(frame.visibleEntries or {}) - VISIBLE_ROWS)
+        local capacity = Settings().vignetteRadarQuestTrackerView == "tray" and 6 or VISIBLE_ROWS
+        local maxOffset = math.max(0, #(frame.visibleEntries or {}) - capacity)
         offset = math.max(0, math.min(maxOffset, offset - delta))
         Draw()
     end)
@@ -603,7 +695,11 @@ end
 function API.Refresh()
     local panel = EnsureFrame()
     if not panel then return end
-    if Settings().vignetteRadarQuestTrackerVisible ~= true then panel:Hide(); return end
+    if Settings().vignetteRadarQuestTrackerVisible ~= true then
+        panel:Hide()
+        if menu then menu:Hide() end
+        return
+    end
     entries = API.BuildEntries(MapID(), Settings().vignetteRadarQuestTrackerScope)
     Draw()
     panel:Show()
@@ -612,6 +708,7 @@ end
 function API.Hide()
     Settings().vignetteRadarQuestTrackerVisible = false
     if frame then frame:Hide() end
+    if menu then menu:Hide() end
 end
 
 function API.Toggle()

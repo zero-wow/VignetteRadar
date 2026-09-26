@@ -444,13 +444,15 @@ local questPanel = assert(legend.Testing.GetQuestPanel(), "quest key must have a
 assert(questPanel.point[1] == "TOPRIGHT" and questPanel.point[3] == "TOPLEFT"
     and questPanel.point[4] == -8 and questPanel.width == 224 and not questPanel.accent,
     "quest key must sit left of the radar without a colored edge rail")
-assert(questPanel.rows[1].name.text == "Quest 1" and questPanel.rows[1].fill.vertexColor[1] == 1
-    and questPanel.rows[1].fill.vertexColor[2] == 179/255
-    and questPanel.rows[1].fill.vertexColor[3] == 87/255,
-    "quest names and diamonds must use the exact quest marker palette")
+assert(questPanel.rows[1].name.text == "Quest 1"
+    and questPanel.rows[1].fill.vertexColor[1] == .18
+    and questPanel.rows[1].fill.vertexColor[2] == 179/255 * .18
+    and questPanel.rows[1].fill.vertexColor[3] == 87/255 * .18,
+    "unfinished quest diamonds need a tinted center matching the radar palette")
 assert(questPanel.rows[1].rim.texture == "Interface\\AddOns\\VignetteRadar\\Media\\quest-diamond-hollow.tga"
     and math.abs(questPanel.rows[1].rim.width - 13 * 26 / 30) < .001
-    and not questPanel.rows[1].fill:IsShown(),
+    and questPanel.rows[1].fill:IsShown()
+    and questPanel.rows[1].number.font[3] == "OUTLINE",
     "the quest key must show an unfinished quest with a hollow diamond")
 entries[1].completed = true
 legend.SetQuestEntries(entries)
@@ -465,8 +467,8 @@ assert(questPanel.rows[1].name.text == "Quest 2" and questPanel.status.text:find
     "scrolling must update visible rows and position text")
 settings.vignetteRadarQuestColors = false
 legend.SetQuestEntries(entries)
-assert(questPanel.rows[1].fill.vertexColor[1] == .7
-    and questPanel.rows[1].fill.vertexColor[2] == .6,
+assert(questPanel.rows[1].fill.vertexColor[1] == .7 * .18
+    and questPanel.rows[1].fill.vertexColor[2] == .6 * .18,
     "the quest key must follow the themed single-color mode")
 assert(legend.ToggleQuest(questAnchor) == false and not legend.IsQuestShown(),
     "quest key toggle must close an open key")
