@@ -16,6 +16,8 @@ For Zygor's active guide, open **Radar Settings → World Focus → Zygor** or r
 
 When you focus a waypoint or change an automatic route, a small themed note appears below the visible radar (or its launcher) and fades after a few seconds. It shows the selected Zygor objective, map-note text when available, route state, or the next step. If the radar is at the bottom edge of the screen, the note appears above it so it stays readable.
 
+Treasure loots now save a small, account-wide log of where you stood when a matching game-object loot slot cleared. It works for live treasure detections and the currently selected HandyNotes or Zygor POI pack, even without an active route. Radar Settings → Status shows the observation count. Each treasure keeps at most three XY observations, and the log keeps at most 256 treasures. These are player-at-loot observations, not exact treasure centers or height measurements, so they do not silently move map pins or change the world waypoint altitude.
+
 Turn on **Hide cleared** under Map Data or **Hide cleared rares + treasures** under Behavior to suppress cleared live detections and saved rare/treasure locations. Blizzard's completed reward-quest flags keep eligible locations hidden until their daily, weekly, or one-time completion state resets. A vignette that Blizzard marks as dead hides its matching rare or treasure location for one hour. Right-click a saved rare or treasure note to hide that specific location for an hour when this setting is on. Locations without an exposed completion flag or dead-vignette state remain visible; the addon does not guess loot eligibility. The filter is off by default. Midnight does not allow addons to observe combat-log kills.
 
 The rounded radar is the main view. Hovering reveals zoom, focus, legend, settings, orientation, trail, Auto Route, mini arrow, visibility, help, minimize, and close controls in the corners outside the plotting ring. Enabling Blizzard quest areas gives the surface rounded-square corners so their map shapes fit; disabling quest areas restores the circle. Distance rings remain circular. Drag the surface to move it, including down to the screen edge, and adjust **Radar Scale** under Layout. Blizzard's quest-area clip sits four pixels inside the rounded surface. Explore → Route → **Walk Paths** can record a bounded, simplified walk and save it as a reusable route.
@@ -89,7 +91,7 @@ Preview samples support focus without changing favorites, ignores, or navigation
 
 ## Development validation
 
-Current development build: `0.1.0-dev.90` (base version `0.1.0`).
+Current development build: `0.1.0-dev.91` (base version `0.1.0`).
 
 Repeating launcher, radar, and idle updates have a session-only CPU guard. A stalled update, or three consecutive slow updates, pauses that repeating work and prints a chat warning. `/reload` retries it.
 

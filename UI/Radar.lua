@@ -3828,6 +3828,8 @@ function addon.GetVignetteRadarDiagnostics()
         "Map pack: " .. tostring(source or (settings.vignetteRadarPOISource == "none" and "off" or "none here")),
         "Live detections: " .. #activeTargets .. "  ·  quest points: " .. #activeQuests,
         "Map notes: " .. #activeMapNotes,
+        "Treasure loot observations: " .. (addon.VignetteRadarTreasureLearning
+            and addon.VignetteRadarTreasureLearning.Count() or 0) .. " (XY only)",
         "CPU guard: " .. (#pausedNames > 0 and ("paused " .. table.concat(pausedNames, ", ")
             .. " (auto-retrying)") or "running"),
         "Update rate: " .. (settings.vignetteRadarPerformance or "standard"),
@@ -6201,6 +6203,8 @@ ScanVignettes = function(mapID)
             routeQuests.Tick()
         end
         worldFocus.Sync(mapID, routePlayer, activeTargets, activeQuests, activeMapNotes)
+        local learning = addon.VignetteRadarTreasureLearning
+        if learning then learning.Sync(mapID, routePlayer, activeTargets, activeMapNotes) end
     end
 end
 
@@ -6769,6 +6773,8 @@ events:SetScript("OnEvent", function(_, event)
     if event == "LOOT_OPENED" or event == "LOOT_SLOT_CLEARED"
         or event == "LOOT_CLOSED" then
         local focus = addon.VignetteRadarWorldFocus
+        local learning = addon.VignetteRadarTreasureLearning
+        if learning and learning.OnLootEvent then learning.OnLootEvent(event) end
         if focus and focus.OnLootEvent and focus.OnLootEvent(event) then RefreshRadar(false) end
         return
     end
