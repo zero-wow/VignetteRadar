@@ -84,4 +84,28 @@ service:SetSettings(settings)
 assert(not service:HandleMessage(sent[1][1], sent[1][2], "PARTY", "Friend-Realm"),
     "receive off must reject all messages")
 
+local combat, registered, unregistered = true, 0, 0
+InCombatLockdown = function() return combat end
+CreateFrame = function()
+    return { SetScript = function() end,
+        RegisterEvent = function() registered = registered + 1 end,
+        UnregisterAllEvents = function() unregistered = unregistered + 1 end }
+end
+settings.receive = "party"
+service:SetSettings(settings)
+assert(not service:Start() and registered == 0,
+    "opt-in event registration must wait until combat lockdown ends")
+combat = false
+assert(service:Start() and registered == 2,
+    "the service should start when a later safe event retries it")
+combat = true
+settings.receive = "off"
+service:SetSettings(settings)
+assert(unregistered == 0 and service.active == false,
+    "turning Party Hunt off in combat must mute it without a protected unregister")
+combat = false
+service:SetSettings(settings)
+assert(unregistered == 1 and service.frame == nil,
+    "the deferred event cleanup should finish after combat")
+
 io.write("vignette radar party hunt tests passed\n")

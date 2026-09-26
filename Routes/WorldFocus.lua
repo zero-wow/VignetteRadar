@@ -165,6 +165,7 @@ end
 
 local function AttachKnownTreasurePath(item)
     if not (item and item.kind == "treasure" and not item.route
+        and addon.GetSettings().vignetteRadarTreasurePlaybooks ~= false
         and Number(item.worldX) and Number(item.worldY)) then return end
     for _, note in ipairs(notes) do
         if note.kind == "treasure" and note.mapID == item.mapID
@@ -277,6 +278,17 @@ QuestComplete = function(questID)
     return Done(C_QuestLog.IsQuestFlaggedCompleted) or Done(C_QuestLog.IsComplete)
 end
 
+local function HiddenWarbandQuestStart(item, trackingAccountQuests, checked)
+    if not (item and item.availableStart and item.questID
+        and trackingAccountQuests == false) then return false end
+    if checked and checked[item.questID] ~= nil then return checked[item.questID] end
+    -- Accepted quests still have real objectives even when completed elsewhere.
+    local hidden = Call(C_QuestLog, "IsOnQuest", item.questID) ~= true
+        and Call(C_QuestLog, "IsQuestFlaggedCompletedOnAccount", item.questID) == true
+    if checked then checked[item.questID] = hidden end
+    return hidden
+end
+
 local function AvailableQuestStep(saved)
     if not (saved and player and route and route.kind == "quest"
         and saved.mapID == player.mapID and not QuestComplete(saved.questID)
@@ -336,6 +348,9 @@ local function NextRouteStop()
     local travelMode = TravelMode()
     local settings = addon.GetSettings()
     local questDone = {}
+    local warbandDone = {}
+    local trackingAccountQuests = kind == "closest"
+        and Call(C_Minimap, "IsTrackingAccountCompletedQuests")
     local exploration = addon.VignetteRadarExploration
     local focusedQuestID = kind == "quest" and exploration
         and type(exploration.GetFocusedQuest) == "function"
@@ -363,6 +378,10 @@ local function NextRouteStop()
                 or kind == "quest" and settings.vignetteRadarAutoRouteQuestNearest == false
                     and route.questID and item.questID ~= route.questID)) then return end
         if itemKind == "quest" then
+            if kind == "closest" and HiddenWarbandQuestStart(item, trackingAccountQuests,
+                warbandDone) then
+                return
+            end
             local complete = questDone[item.questID]
             if complete == nil then
                 complete = QuestComplete(item.questID)
@@ -498,6 +517,7 @@ local function Activate(item)
     horizonCache = nil
     local steps = { item }
     if item.kind == "treasure" and addon.GetSettings().vignetteRadarWorldFocusRoutes
+        and addon.GetSettings().vignetteRadarTreasurePlaybooks ~= false
         and type(item.route) == "table" and #item.route > 1 then steps = item.route end
     local ok, reason = Place(steps[1], item)
     if not ok then return false, reason end
@@ -1000,6 +1020,16 @@ function API.Sync(mapID, snapshot, liveTargets, questPoints, mapNotes)
         if addon.VignetteRadarWaypointStability then
             addon.VignetteRadarWaypointStability.Disable()
         end
+        return
+    end
+    if route and route.kind == "closest" and active.item
+        and HiddenWarbandQuestStart(active.item,
+            Call(C_Minimap, "IsTrackingAccountCompletedQuests")) then
+        local nextItem = NextRouteStop()
+        if nextItem then
+            local ok = Activate(nextItem)
+            if not ok then API.Clear(true) end
+        else API.Clear(true) end
         return
     end
     local stability = addon.VignetteRadarWaypointStability

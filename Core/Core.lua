@@ -221,6 +221,38 @@ function addon.GetSettings()
     if type(db.vignetteRadarFusionPreferred) ~= "table" then db.vignetteRadarFusionPreferred = {} end
     if db.vignetteRadarFusionDistance ~= .001 and db.vignetteRadarFusionDistance ~= .002
         and db.vignetteRadarFusionDistance ~= .005 then db.vignetteRadarFusionDistance = .002 end
+    if type(db.vignetteRadarSurveyData) ~= "table" then db.vignetteRadarSurveyData = {} end
+    if type(db.vignetteRadarSurveying) ~= "boolean" then db.vignetteRadarSurveying = false end
+    if type(db.vignetteRadarSurveyShared) ~= "boolean" then db.vignetteRadarSurveyShared = false end
+    if type(db.vignetteRadarReplayRecording) ~= "boolean" then db.vignetteRadarReplayRecording = false end
+    if db.vignetteRadarSurveyCellSize ~= .02 and db.vignetteRadarSurveyCellSize ~= .025
+        and db.vignetteRadarSurveyCellSize ~= .05 then db.vignetteRadarSurveyCellSize = .025 end
+    if type(db.vignetteRadarPartyHunt) ~= "table" then db.vignetteRadarPartyHunt = {} end
+    local party = db.vignetteRadarPartyHunt
+    if party.receive ~= "party" and party.receive ~= "raid" then party.receive = "off" end
+    if type(party.shareSightings) ~= "boolean" then party.shareSightings = false end
+    if type(party.shareStop) ~= "boolean" then party.shareStop = false end
+    if type(party.ignored) ~= "table" then party.ignored = {} end
+    if type(db.vignetteRadarWarbandBoardData) ~= "table" then db.vignetteRadarWarbandBoardData = {} end
+    if type(db.vignetteRadarResetPlannerData) ~= "table" then db.vignetteRadarResetPlannerData = {} end
+    if db.vignetteRadarWarbandStaleDays ~= 3 and db.vignetteRadarWarbandStaleDays ~= 7
+        and db.vignetteRadarWarbandStaleDays ~= 14 then db.vignetteRadarWarbandStaleDays = 7 end
+    if type(db.vignetteRadarContextDirectorEnabled) ~= "boolean" then
+        db.vignetteRadarContextDirectorEnabled = false
+    end
+    if type(db.vignetteRadarSoundCompassEnabled) ~= "boolean" then
+        db.vignetteRadarSoundCompassEnabled = false
+    end
+    if db.vignetteRadarSoundCompassMode ~= "text" and db.vignetteRadarSoundCompassMode ~= "tone" then
+        db.vignetteRadarSoundCompassMode = "text"
+    end
+    if db.vignetteRadarSoundCompassCooldown ~= 3 and db.vignetteRadarSoundCompassCooldown ~= 6
+        and db.vignetteRadarSoundCompassCooldown ~= 12 then
+        db.vignetteRadarSoundCompassCooldown = 6
+    end
+    if type(db.vignetteRadarTreasurePlaybooks) ~= "boolean" then
+        db.vignetteRadarTreasurePlaybooks = true
+    end
     if type(db.vignetteRadarPOIZoneSources) ~= "table" then db.vignetteRadarPOIZoneSources = {} end
     if type(db.vignetteRadarPOIIcons) ~= "boolean" then db.vignetteRadarPOIIcons = false end
     if type(db.vignetteRadarHideCleared) ~= "boolean" then db.vignetteRadarHideCleared = false end

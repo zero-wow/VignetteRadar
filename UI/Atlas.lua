@@ -165,7 +165,8 @@ Draw = function()
         end
         button.entry, button.groupCount = cell.entry, cell.count
         button.title = tostring(cell.entry.name or cell.entry.title or "Atlas Location")
-        button.description = ({
+        button.description = cell.entry.coverage and
+            "Visited ground from Survey Mode; this does not prove a target is present." or ({
             live = "Live local detection.",
             quest = "Quest objective or area.",
             observed = "Observed previously; current presence is unknown.",

@@ -1998,7 +1998,8 @@ assert(quick.tabs.Radar.backdrop == nil
     "settings buttons need quiet flat artwork and an untruncated Find control")
 assert(quick.pages.Status and quick.pages.Search and quick.pages.Beacons
     and quick.pages["World Focus"] and quick.pages["Auto Route"]
-    and quick.pages["Quest Routing"] and quick.pages.Performance and quick.find,
+    and quick.pages["Quest Routing"] and quick.pages.Performance
+    and quick.pages.Tools and quick.pages["Routes & Cues"] and quick.find,
     "diagnostics and search must be reachable from the compact settings panel")
 settings.vignetteRadarPerformance = "low"
 assert(addon.VignetteRadarRenderSeconds() == .25

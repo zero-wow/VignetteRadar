@@ -764,4 +764,45 @@ do
     addon.VignetteRadarExploration = nil
     focus.Clear()
 end
+do
+    focus.Clear()
+    settings.vignetteRadarAutoRouteQuestStarts = true
+    settings.vignetteRadarAutoRouteNearbyZones = false
+    settings.vignetteRadarAutoRouteMapNotes = false
+    addon.VignetteRadarRouteQuests = nil
+    local showWarbandCompleted = false
+    C_Minimap = {
+        IsTrackingAccountCompletedQuests = function() return showWarbandCompleted end,
+    }
+    C_QuestLog.IsQuestFlaggedCompletedOnAccount = function(id) return id == 910 end
+    questActive[910] = false
+    addon.VignetteRadarAvailableStarts = { {
+        questID = 910, questName = "Warband completed quest", mapID = 123,
+        x = .31, y = .5, worldX = 310, worldY = 500, instanceID = 42,
+    } }
+    local rare = Step(340)
+    rare.kind, rare.category, rare.key, rare.name = "rare", "rare", "warband-filter-rare", "Nearby rare"
+    player.worldX = 300
+    focus.Sync(123, player, { rare }, {}, {})
+    assert(focus.StartNearest("closest") and waypoint.position.x == .34,
+        "Closest must skip account-completed quest starts when Blizzard tracking is off")
+    focus.Clear()
+    showWarbandCompleted = true
+    focus.Sync(123, player, { rare }, {}, {})
+    assert(focus.StartNearest("closest") and waypoint.position.x == .31,
+        "Closest may include account-completed quest starts when Blizzard tracking is on")
+    showWarbandCompleted = false
+    focus.Sync(123, player, { rare }, {}, {})
+    assert(waypoint.position.x == .34 and select(2, focus.GetRoutePoint()) == "rare",
+        "turning off Warband tracking must replace an already pinned completed quest")
+    focus.Clear()
+    showWarbandCompleted = true
+    focus.Sync(123, player, {}, {}, {})
+    assert(focus.StartNearest("closest") and waypoint.position.x == .31)
+    showWarbandCompleted = false
+    focus.Sync(123, player, {}, {}, {})
+    assert(waypoint == nil and not focus.HasFocus(),
+        "when no eligible point remains, the completed quest pin must clear")
+end
+
 io.write("vignette radar World Focus tests passed\n")

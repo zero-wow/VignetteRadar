@@ -4083,6 +4083,11 @@ Render = function()
     local exploration = addon.VignetteRadarExploration
     local range = exploration and exploration.Range(player, focusedTarget)
         or tonumber(Settings().vignetteRadarRange) or 450
+    local contextOverlay = addon.VignetteRadarContextOverlay
+    if contextOverlay and type(contextOverlay.range) == "number"
+        and not preview and not focusedTarget then
+        range = contextOverlay.range
+    end
     displayedRange = range
     UpdateRingLabels(range)
     panel.zoomLabel:SetText(range .. " yd")
@@ -6368,6 +6373,9 @@ ScanVignettes = function(mapID)
         local outcomes = addon.VignetteRadarOutcomeLearning
         if outcomes then outcomes.Sync(activeTargets, activeQuests) end
     end
+    if not preview and addon.VignetteRadarFeatureRuntime then
+        addon.VignetteRadarFeatureRuntime.Observe(mapID, PlayerSnapshot(mapID), activeTargets)
+    end
     addon.UpdateAtlasSnapshot(mapID, now, changedMap)
 end
 
@@ -6464,6 +6472,11 @@ RefreshRadar = function(rescan)
     Morph.SyncLauncherVisibility()
     if launcher then UpdateLauncher(0, true) end
     UpdateTargetButton()
+    local studio = addon.VignetteRadarExpeditionStudio
+    if studio and studio.IsCardVisible and studio.IsCardVisible() then
+        studio.SetCardAnchor(panel and panel:IsShown() and panel
+            or launcher and launcher:IsShown() and launcher or nil)
+    end
     if addon.VignetteRadarRouteArrow then addon.VignetteRadarRouteArrow.Refresh() end
 end
 
@@ -6544,16 +6557,42 @@ addon.VignetteRadarAPI = {
                 instanceID = quest.instanceID, mapX = quest.mapX, mapY = quest.mapY,
             }
         end
+        local liveForNotes = {}
         for _, target in ipairs(activeTargets) do
             if #candidates >= 224 then break end
-            if target.category == "treasure" and not target.stale
-                and CategoryEnabled("treasure") and not Ignored(target)
+            if (target.category == "rare" or target.category == "treasure")
+                and not target.stale and CategoryEnabled(target.category) and not Ignored(target)
                 and TargetAlpha(target) > 0 then
                 candidates[#candidates + 1] = {
-                    kind = "treasure", key = target.key, name = target.name,
+                    kind = target.category, key = target.key, name = target.name,
                     mapID = mapID, worldX = target.worldX, worldY = target.worldY,
                     instanceID = target.instanceID, mapX = target.mapX, mapY = target.mapY,
                 }
+                liveForNotes[#liveForNotes + 1] = target
+            end
+        end
+        for _, note in ipairs(activeMapNotes) do
+            if #candidates >= 256 then break end
+            local kind = note.kind == "mob" and "rare" or note.kind
+            if (kind == "rare" or kind == "treasure")
+                and Settings().vignetteRadarPOITypes[note.kind] ~= false
+                and not (addon.VignetteRadarRecent
+                    and addon.VignetteRadarRecent.IsHidden(note, Settings())) then
+                local duplicate = false
+                for _, target in ipairs(liveForNotes) do
+                    if addon.VignetteRadarTesting.MapNoteMatchesLive(note, target) then
+                        duplicate = true
+                        break
+                    end
+                end
+                if not duplicate then
+                    candidates[#candidates + 1] = {
+                        kind = kind, key = note.key, name = note.name,
+                        mapID = note.mapID or mapID, worldX = note.worldX,
+                        worldY = note.worldY, instanceID = note.instanceID,
+                        mapX = note.mapX, mapY = note.mapY,
+                    }
+                end
             end
         end
         local exploration = addon.VignetteRadarExploration
@@ -6633,6 +6672,10 @@ function addon.SetVignetteRadarRange(range)
     for _, supported in ipairs(Ranges()) do
         if range == supported then
             if addon.VignetteRadarExploration then addon.VignetteRadarExploration.ManualZoom() end
+            if addon.VignetteRadarFeatureRuntime then
+                addon.VignetteRadarFeatureRuntime.ManualViewOverride()
+                addon.VignetteRadarContextOverlay = nil
+            end
             Settings().vignetteRadarRange = supported
             addon.VignetteRadarViewProfiles.Record(Settings())
             RefreshRadar(false)
@@ -6958,11 +7001,12 @@ function events:RefreshAfterQuestUpdate()
     end
 end
 for _, event in ipairs({
-    "PLAYER_LOGIN", "PLAYER_ENTERING_WORLD", "ZONE_CHANGED_NEW_AREA",
+    "PLAYER_LOGIN", "PLAYER_LOGOUT", "PLAYER_ENTERING_WORLD", "ZONE_CHANGED_NEW_AREA",
     "VIGNETTES_UPDATED", "VIGNETTE_MINIMAP_UPDATED",
     "QUEST_LOG_UPDATE", "QUEST_POI_UPDATE", "QUEST_WATCH_LIST_CHANGED",
     "QUEST_WATCH_UPDATE", "TASK_PROGRESS_UPDATE",
     "QUEST_ACCEPTED", "QUEST_REMOVED", "QUEST_TURNED_IN", "SUPER_TRACKING_CHANGED",
+    "MINIMAP_UPDATE_TRACKING",
     "PLAYER_REGEN_DISABLED", "PLAYER_REGEN_ENABLED", "ZONE_CHANGED", "ZONE_CHANGED_INDOORS",
     "LOOT_OPENED", "LOOT_SLOT_CLEARED", "LOOT_CLOSED",
     "GLOBAL_MOUSE_DOWN",
@@ -6970,6 +7014,14 @@ for _, event in ipairs({
     events:RegisterEvent(event)
 end
 events:SetScript("OnEvent", function(_, event)
+    if event == "PLAYER_LOGIN" and addon.VignetteRadarFeatureRuntime then
+        addon.VignetteRadarFeatureRuntime.Initialize()
+    elseif event == "PLAYER_REGEN_ENABLED" and addon.VignetteRadarFeatureRuntime then
+        addon.VignetteRadarFeatureRuntime.Configure()
+    elseif event == "PLAYER_LOGOUT" then
+        if addon.VignetteRadarFeatureRuntime then addon.VignetteRadarFeatureRuntime.Shutdown() end
+        return
+    end
     if event == "LOOT_OPENED" or event == "LOOT_SLOT_CLEARED"
         or event == "LOOT_CLOSED" then
         local focus = addon.VignetteRadarWorldFocus
@@ -7053,6 +7105,15 @@ events:SetScript("OnEvent", function(_, event)
     end
     if questUpdated then events:RefreshAfterQuestUpdate()
     else RefreshRadar(true) end
+    if event == "PLAYER_LOGIN" or mapChanged or questUpdated then
+        local studio = addon.VignetteRadarExpeditionStudio
+        if studio then
+            studio.SetPlayer(PlayerSnapshot(CurrentMapID()))
+            studio.SetCardAnchor(panel and panel:IsShown() and panel
+                or launcher and launcher:IsShown() and launcher or nil)
+            studio.RefreshCard()
+        end
+    end
     if event == "PLAYER_LOGIN" and C_Timer and C_Timer.After then
         C_Timer.After(0.5, function() RefreshRadar(true) end)
     end

@@ -253,7 +253,15 @@ end
 function PartyHunt:Start()
     local receive = Field(self.settings, "receive")
     if receive ~= "party" and receive ~= "raid" then return false end
-    if self.frame then return true end
+    if self.frame then
+        self.active, self.deferredStop = true, nil
+        return true
+    end
+    -- Retail can reject event registration while combat lockdown is active.
+    -- The radar's already registered regen event retries this opt-in start.
+    if type(InCombatLockdown) == "function" and InCombatLockdown() == true then
+        return false, "combat-lockdown"
+    end
     if type(CreateFrame) ~= "function" or not Call(self.transport, "register", PartyHunt.PREFIX) then
         return false
     end
@@ -261,16 +269,32 @@ function PartyHunt:Start()
     if not frame then return false end
     local owner = self
     frame:SetScript("OnEvent", function(_, event, ...)
+        if not owner.active then return end
         if event == "CHAT_MSG_ADDON" then owner:HandleMessage(...) 
         elseif event == "GROUP_ROSTER_UPDATE" then owner:OnGroupChanged() end
     end)
-    frame:RegisterEvent("CHAT_MSG_ADDON")
-    frame:RegisterEvent("GROUP_ROSTER_UPDATE")
+    local ok = pcall(function()
+        frame:RegisterEvent("CHAT_MSG_ADDON")
+        frame:RegisterEvent("GROUP_ROSTER_UPDATE")
+    end)
+    if not ok then
+        pcall(frame.UnregisterAllEvents, frame)
+        return false, "event-unavailable"
+    end
+    self.active = true
     self.frame = frame
     return true
 end
 
 function PartyHunt:Stop()
-    if self.frame then self.frame:UnregisterAllEvents(); self.frame = nil end
+    self.active = false
+    if self.frame then
+        if type(InCombatLockdown) == "function" and InCombatLockdown() == true then
+            self.deferredStop = true
+        else
+            pcall(self.frame.UnregisterAllEvents, self.frame)
+            self.frame, self.deferredStop = nil, nil
+        end
+    end
     self.reports, self.seen, self.incoming = {}, {}, {}
 end

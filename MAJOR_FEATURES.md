@@ -1,6 +1,8 @@
 # Vignette Radar: Major Feature Blueprint
 
-Status: product and engineering design, not implemented. Baseline: 0.1.0-dev.96 on Retail 12.x. This document expands the 17 proposed features into user behavior, data requirements, settings, and release checks. It does not authorize a base-version change or deployment.
+Status: implementation in progress on Retail 12.x. This document defines the intended behavior and release checks for 17 proposed features; code presence alone does not satisfy the in-game proof gates.
+
+The dev.97 build delivered Source Fusion and the first Living Atlas view. The dev.98 integration adds an Expedition Studio and Now/Next card; opt-in Survey, Replay, and Party panels; an evidence-labeled Warband, Reset, Collection, Phase, and Quest Chain panel; optional Context Director and Sound Compass controls; and a Closest-route filter for Warband-completed quest starts. These paths have local Lua validation, but require visual and performance checks inside WoW before a release claim. Exact in-world Beacon Constellation placement, verified travel transitions, reward links, chain prerequisites, reset metadata, and phase conditions remain dependent on trustworthy client or pack data; their views show a limited or Unknown state when that data is absent.
 
 ## Shared Product Contract
 

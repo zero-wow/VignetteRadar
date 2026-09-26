@@ -105,6 +105,13 @@ local function Changed(key, value, subkey)
     elseif key == "vignetteRadarHoverTools" or key == "vignetteRadarControlsVisible" then
         addon.VignetteRadarViewProfiles.Record(db)
     end
+    if key == "vignetteRadarSoundCompassEnabled"
+        or key == "vignetteRadarSoundCompassMode"
+        or key == "vignetteRadarSoundCompassCooldown"
+        or key == "vignetteRadarContextDirectorEnabled" then
+        local runtime = addon.VignetteRadarFeatureRuntime
+        if runtime and runtime.Configure then runtime.Configure() end
+    end
     if addon.RefreshVignetteRadarOptions then addon.RefreshVignetteRadarOptions() end
     API.Refresh()
 end
@@ -570,8 +577,139 @@ local function Build()
             addon.VignetteRadarAPI.ToggleAtlas()
         end
     end)
-    Button(radar, "How to read the radar", 14, -253, 260, function()
+    Button(radar, "Radar Guide", 14, -253, 124, function()
         if API.ShowGuide then API.ShowGuide(anchor) end
+    end)
+    Button(radar, "More Tools", 150, -253, 124, function()
+        SelectPage("Tools")
+    end)
+
+    local toolsPage = CreateFrame("Frame", nil, quick)
+    toolsPage:SetSize(WIDTH, HEIGHT - 137)
+    toolsPage:SetPoint("TOPLEFT", quick, "TOPLEFT", 0, -137)
+    toolsPage.searchPage = "Tools"
+    toolsPage:Hide()
+    quick.pages.Tools = toolsPage
+    Section(toolsPage, "PLAN & INVESTIGATE", -3)
+    Label(toolsPage, "Open a larger view for planning or reviewing evidence.",
+        14, -23, 9, 260)
+    Button(toolsPage, "Expedition Studio", 14, -48, 124, function()
+        local studio, radar = addon.VignetteRadarExpeditionStudio, addon.VignetteRadarAPI
+        if studio then
+            if radar then
+                studio.SetCandidates(radar.GetRouteCandidates and radar.GetRouteCandidates() or {})
+                studio.SetPlayer(radar.GetPlayerSnapshot and radar.GetPlayerSnapshot() or nil)
+            end
+            studio.SetOnApply(function(trip)
+                if not (trip and not trip.paused) then return end
+                if not trip.currentID and addon.VignetteRadarExpeditions then
+                    local player = radar and radar.GetPlayerSnapshot and radar.GetPlayerSnapshot()
+                    addon.VignetteRadarExpeditions.Plan(trip, player or {})
+                end
+                if not trip.currentID then return end
+                local goal
+                for _, candidate in ipairs(trip.goals or {}) do
+                    if candidate.id == trip.currentID then goal = candidate; break end
+                end
+                if not goal then return end
+                local focus = addon.VignetteRadarWorldFocus
+                if not focus then return end
+                if goal.kind == "quest" and focus.SelectQuest then
+                    local questID = tonumber(tostring(goal.id):match("^quest:(%d+)"))
+                    if questID then focus.SelectQuest(questID) end
+                elseif focus.SelectPoint then
+                    focus.SelectPoint({ key = goal.id, kind = goal.kind,
+                        name = goal.name, mapID = goal.mapID, mapX = goal.mapX,
+                        mapY = goal.mapY, worldX = goal.worldX,
+                        worldY = goal.worldY, instanceID = goal.instanceID })
+                end
+            end)
+            local travel = addon.VignetteRadarTravelAware
+            if travel then
+                local graph = travel.New(addon.VignetteRadarVerifiedTravelTransitions or {})
+                studio.SetEstimateTravel(function(player, goal)
+                    return travel.Estimate(graph, player, goal,
+                        { mode = Settings().vignetteRadarAutoRouteTravel })
+                end)
+            end
+            studio.Open()
+        end
+    end)
+    Button(toolsPage, "Living Atlas", 150, -48, 124, function()
+        if addon.VignetteRadarAPI and addon.VignetteRadarAPI.ToggleAtlas then
+            addon.VignetteRadarAPI.ToggleAtlas()
+        end
+    end)
+    Button(toolsPage, "Survey & Replay", 14, -81, 124, function()
+        local survey, radar = addon.VignetteRadarSurveyParty, addon.VignetteRadarAPI
+        if survey then
+            local sighting, stop
+            local targets = radar and radar.GetTargets and radar.GetTargets() or {}
+            local mapID = radar and radar.GetCurrentMapID and radar.GetCurrentMapID()
+            for _, target in ipairs(targets) do
+                if not target.stale and target.mapID == mapID
+                    and (target.category == "rare" or target.category == "treasure")
+                    and type(target.mapX) == "number" and type(target.mapY) == "number" then
+                    sighting = { mapID = mapID, x = target.mapX, y = target.mapY,
+                        kind = target.category, identity = tostring(target.key or target.vignetteID or "live"),
+                        name = target.name or "Sighting" }
+                    break
+                end
+            end
+            local focus = addon.VignetteRadarWorldFocus
+            local step, kind = focus and focus.GetRoutePoint and focus.GetRoutePoint()
+            if step and type(step.mapX) == "number" and type(step.mapY) == "number" then
+                stop = { mapID = step.mapID, x = step.mapX, y = step.mapY,
+                    kind = (kind == "rare" or kind == "treasure" or kind == "quest")
+                        and kind or "pin",
+                    identity = tostring(step.key or step.questID or "stop"),
+                    name = step.name or "Route Stop" }
+            end
+            survey.SetShareTargets(sighting, stop)
+            survey.Open()
+        end
+    end)
+    Button(toolsPage, "Hunt Intelligence", 150, -81, 124, function()
+        local runtime = addon.VignetteRadarFeatureRuntime
+        if runtime and runtime.RefreshIntelligence then runtime.RefreshIntelligence() end
+        if addon.VignetteRadarIntelligence then addon.VignetteRadarIntelligence.Open() end
+    end)
+    Section(toolsPage, "NAVIGATION", -124)
+    Button(toolsPage, "Routes & Cues", 14, -144, 124, function()
+        SelectPage("Routes & Cues")
+    end)
+    Button(toolsPage, "Radar Guide", 150, -144, 124, function()
+        if API.ShowGuide then API.ShowGuide(anchor) end
+    end)
+    Label(toolsPage, "Historical reports never appear as live detections.",
+        14, -187, 9, 260)
+    Button(toolsPage, "Back To Radar", 14, -253, 260, function()
+        SelectPage("Radar")
+    end)
+
+    local routesCues = CreateFrame("Frame", nil, quick)
+    routesCues:SetSize(WIDTH, HEIGHT - 137)
+    routesCues:SetPoint("TOPLEFT", quick, "TOPLEFT", 0, -137)
+    routesCues.searchPage = "Routes & Cues"
+    routesCues:Hide()
+    quick.pages["Routes & Cues"] = routesCues
+    Section(routesCues, "TRAVEL ESTIMATE", -3)
+    Choice(routesCues, "vignetteRadarAutoRouteTravel", "auto", "Auto", 14, -23, 80)
+    Choice(routesCues, "vignetteRadarAutoRouteTravel", "ground", "Ground", 104, -23, 80)
+    Choice(routesCues, "vignetteRadarAutoRouteTravel", "flying", "Flying", 194, -23, 80)
+    Check(routesCues, "vignetteRadarTreasurePlaybooks", "Use Verified Treasure Steps", 14, -57)
+    Label(routesCues, "Unknown paths use direct distance; no route is guessed.",
+        14, -85, 9, 260)
+    Section(routesCues, "SOUND COMPASS", -105)
+    Check(routesCues, "vignetteRadarSoundCompassEnabled", "Direction Cues For Active Stop", 14, -123)
+    Choice(routesCues, "vignetteRadarSoundCompassMode", "text", "Text", 14, -159, 124)
+    Choice(routesCues, "vignetteRadarSoundCompassMode", "tone", "Tone", 150, -159, 124)
+    Choice(routesCues, "vignetteRadarSoundCompassCooldown", 3, "3 sec", 14, -190, 80)
+    Choice(routesCues, "vignetteRadarSoundCompassCooldown", 6, "6 sec", 104, -190, 80)
+    Choice(routesCues, "vignetteRadarSoundCompassCooldown", 12, "12 sec", 194, -190, 80)
+    Check(routesCues, "vignetteRadarContextDirectorEnabled", "Context-Aware Radar View", 14, -218)
+    Button(routesCues, "Back To Tools", 14, -260, 260, function()
+        SelectPage("Tools")
     end)
 
     local layout = quick.pages.Layout

@@ -286,7 +286,34 @@ function API.Refresh()
         and (" " .. routeIndex .. "/" .. routeCount) or ""
     local yards = rounded < 10000 and (rounded .. " yd")
         or (math.floor(rounded / 1000 + .5) .. "k yd")
-    local meta = "Now · " .. kindTitle .. progress .. " · " .. yards
+    local cueText
+    if settings.vignetteRadarSoundCompassEnabled then
+        local runtime = addon.VignetteRadarFeatureRuntime
+        local compass = runtime and runtime.GetSoundCompass and runtime.GetSoundCompass()
+        if compass then
+            local angle = atan2(dy, dx) - player.facing
+            angle = atan2(math.sin(angle), math.cos(angle)) * 180 / math.pi
+            local inCombat = type(InCombatLockdown) == "function" and InCombatLockdown() == true
+            local inInstance = type(IsInInstance) == "function" and IsInInstance() == true
+            local cueState = compass:Update({ id = tostring(step.key or step.questID or name),
+                name = name, relativeDegrees = angle, distance = distance,
+                inCombat = inCombat, inInstance = inInstance },
+                type(GetTime) == "function" and GetTime() or 0, function(cue)
+                    if cue.mode ~= "tone" or type(PlaySound) ~= "function" or not SOUNDKIT then
+                        return false
+                    end
+                    local sound = cue.kind == "left" and SOUNDKIT.IG_MAINMENU_OPTION_CHECKBOX_ON
+                        or cue.kind == "right" and SOUNDKIT.IG_MAINMENU_OPTION_CHECKBOX_OFF
+                        or SOUNDKIT.TELL_MESSAGE
+                    if not sound then return false end
+                    local ok = pcall(PlaySound, sound, "SFX")
+                    return ok
+                end)
+            cueText = cueState and cueState.directionText
+        end
+    end
+    local meta = "Now · " .. (cueText and (cueText .. " · ") or "")
+        .. kindTitle .. progress .. " · " .. yards
     if frame.nodeMeta ~= meta then
         frame.nodeMeta = meta
         frame.node.meta:SetText(meta)
