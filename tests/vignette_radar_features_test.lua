@@ -27,6 +27,26 @@ assert(F.Ignore(a, true) and db.vignetteRadarIgnored["id:101"] == true,
     "permanent ignore must be saved")
 F.ClearIgnored()
 
+local vendor = target("vendor-a", 301, "Mailbox", "other")
+local vendorElsewhere = target("vendor-b", 302, "Mailbox", "other")
+vendorElsewhere.mapID = 2
+assert(F.SetMarkerNameHidden(vendor, true) and F.IsMarkerNameHidden(vendor)
+    and F.IsIgnored(vendorElsewhere)
+    and db.vignetteRadarHiddenMarkerNames["other:mailbox"] == "Mailbox",
+    "a hidden live marker name must persist and cover matching markers across maps")
+assert(F.SetMarkerNameHidden(vendor, false) and not F.IsIgnored(vendorElsewhere),
+    "an individual marker name must be restorable without clearing other ignores")
+local mailboxNote = { name = "Mailbox", kind = "note" }
+assert(not F.IsMapNoteNameHidden(mailboxNote))
+F.SetMarkerNameHidden({ name = "Mailbox", category = "map:note" }, true)
+assert(F.IsMapNoteNameHidden(mailboxNote)
+    and db.vignetteRadarHiddenMarkerNames["map:note:mailbox"] == "Mailbox",
+    "saved map notes must support the same per-name visibility controls")
+F.SetMarkerNameHidden(vendor, true)
+F.ClearIgnored()
+assert(not F.IsIgnored(vendor) and next(F.GetHiddenMarkerNames()) == nil,
+    "clearing ignored detections must also restore hidden live names")
+
 local first, alerts = F.Update({ a }, 1, 0, live)
 assert(#first == 1 and #alerts == 0, "initial scan must seed silently")
 local b = target("b", 102, "Beta", "rare", .4)

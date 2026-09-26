@@ -1611,9 +1611,13 @@ addon.RenderVignetteRadarQuestStarts = function(player, mapID, range)
                                 if self.entry.questName and self.entry.questName ~= self.entry.questLineName then
                                     GameTooltip:AddLine(self.entry.questName, .85, .87, .85)
                                 end
-                                GameTooltip:AddLine(self.entry.isCampaign and "Campaign quest start"
-                                    or self.entry.isImportant and "Important quest start"
-                                    or "Available quest start", .62, .83, .77)
+                                local accountCompleted = SafeBoolean(Call(C_QuestLog
+                                    and C_QuestLog.IsQuestFlaggedCompletedOnAccount,
+                                    self.entry.questID)) == true
+                                GameTooltip:AddLine(accountCompleted and "Warband-Completed Quest Start"
+                                    or self.entry.isCampaign and "Campaign Quest Start"
+                                    or self.entry.isImportant and "Important Quest Start"
+                                    or "Available Quest Start", .62, .83, .77)
                                 if self.entry.floor == "above" or self.entry.floor == "below" then
                                     GameTooltip:AddLine("Blizzard marks this " .. self.entry.floor
                                         .. " your level.", .72, .79, .85)
@@ -6173,7 +6177,8 @@ ScanVignettes = function(mapID)
         pulseUntil, approachPulseKey, approachPulseUntil = 0, nil, nil
     end
     activeMapID = mapID
-    activeTargets = CollectVignettes(mapID)
+    addon._rawVignetteTargets = CollectVignettes(mapID)
+    activeTargets = addon._rawVignetteTargets
     local db = Settings()
     local questCache = addon._focusQuestCache
     local questOptions = tostring(db.vignetteRadarNextQuestStep) .. ":"
@@ -6192,15 +6197,18 @@ ScanVignettes = function(mapID)
     local startsEnabled = Settings().vignetteRadarQuestStartBadges == true
         or Settings().vignetteRadarAutoRouteQuestStarts == true
     local startsNow = Now()
+    local accountTracking = SafeBoolean(Call(C_Minimap and C_Minimap.IsTrackingAccountCompletedQuests))
     if addon.VignetteRadarStartsMapID ~= mapID
         or addon.VignetteRadarStartsEnabled ~= startsEnabled
         or addon.VignetteRadarStartsBadges ~= Settings().vignetteRadarQuestStartBadges
+        or addon.VignetteRadarStartsAccountTracking ~= accountTracking
         or not addon.VignetteRadarStartsNextAt
         or startsNow >= addon.VignetteRadarStartsNextAt then
         addon.VignetteRadarAvailableStarts = {}
         addon.VignetteRadarStartsMapID = mapID
         addon.VignetteRadarStartsEnabled = startsEnabled
         addon.VignetteRadarStartsBadges = Settings().vignetteRadarQuestStartBadges
+        addon.VignetteRadarStartsAccountTracking = accountTracking
         addon.VignetteRadarStartsNextAt = startsNow + 5
         if mapID and startsEnabled and addon.VignetteRadarQuestData then
             local starts = addon.VignetteRadarQuestData.GetAvailableQuestStarts(mapID)
@@ -6243,7 +6251,7 @@ ScanVignettes = function(mapID)
     end
     local sourceKey = fusionKey or source
     if (source == "none" and not fusionKey) or not mapID then
-        activeMapNotes = {}
+        addon._mapNoteSourceCache = {}
         mapNotesMapID, mapNotesSource, mapNotesUpdatedAt = nil, nil, nil
     elseif mapNotesMapID ~= mapID or mapNotesSource ~= sourceKey
         or not mapNotesUpdatedAt or now - mapNotesUpdatedAt >=
@@ -6252,7 +6260,7 @@ ScanVignettes = function(mapID)
         local pois = addon.VignetteRadarPOIs
         local fusion = addon.VignetteRadarSourceFusion
         if fusionKey and fusion and type(fusion.Collect) == "function" then
-            activeMapNotes = fusion.Collect(mapID, fusionSources, MapToWorld, MapVector, {
+            addon._mapNoteSourceCache = fusion.Collect(mapID, fusionSources, MapToWorld, MapVector, {
                 preferredSource = type(db.vignetteRadarFusionPreferred) == "table"
                     and db.vignetteRadarFusionPreferred[tostring(mapID)] or nil,
                 conflictDistance = db.vignetteRadarFusionDistance,
@@ -6260,17 +6268,29 @@ ScanVignettes = function(mapID)
         else
             local selected, dataMapID
             if pois then selected, dataMapID = pois.ResolveSource(mapID, source) end
-            activeMapNotes = selected and pois.Collect(dataMapID, selected, MapToWorld, MapVector) or {}
+            addon._mapNoteSourceCache = selected
+                and pois.Collect(dataMapID, selected, MapToWorld, MapVector) or {}
         end
         mapNotesMapID, mapNotesSource, mapNotesUpdatedAt = mapID, sourceKey, now
     end
-    for index = #activeMapNotes, 1, -1 do
-        if activeMapNotes[index].kind == "guide" then table.remove(activeMapNotes, index) end
+    activeMapNotes = {}
+    for _, note in ipairs(addon._mapNoteSourceCache or {}) do
+        if note.kind ~= "guide" then activeMapNotes[#activeMapNotes + 1] = note end
     end
     local worldFocus = addon.VignetteRadarWorldFocus
     if worldFocus and mapID then
         local guide = worldFocus.ZygorNote(mapID, MapToWorld, MapVector)
         if guide then activeMapNotes[#activeMapNotes + 1] = guide end
+    end
+    addon._rawMapNotes = activeMapNotes
+    if Features() and next(Features().GetHiddenMarkerNames()) then
+        local shown = {}
+        for _, note in ipairs(activeMapNotes) do
+            if not Features().IsMapNoteNameHidden(note) then
+                shown[#shown + 1] = note
+            end
+        end
+        activeMapNotes = shown
     end
     if #activeMapNotes > 1 then
         local player = PlayerSnapshot(mapID)
@@ -6487,6 +6507,8 @@ addon.ToggleVignetteRadarQuestKey = function()
 end
 addon.VignetteRadarAPI = {
     GetTargets = function() return activeTargets end,
+    GetRawTargets = function() return addon._rawVignetteTargets or {} end,
+    GetRawMapNotes = function() return addon._rawMapNotes or {} end,
     GetCurrentMapID = CurrentMapID,
     ToggleAtlas = function()
         local atlas = addon.VignetteRadarAtlas
@@ -6960,7 +6982,8 @@ end
 
 addon.VignetteRadarPopupNames = {
     "VignetteRadarTargetPickerPanel", "VignetteRadarLegendPanel",
-    "VignetteRadarQuestLegendPanel", "VignetteRadarTrailStylePopup",
+    "VignetteRadarQuestLegendPanel", "VignetteRadarMarkerLegendPanel",
+    "VignetteRadarTrailStylePopup",
     "VignetteRadarRouteChooserPopup",
     "VignetteRadarQuickConfigPanel", "VignetteRadarExplorePanel",
     "VignetteRadarGuidePanel",

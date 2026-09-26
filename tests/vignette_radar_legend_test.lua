@@ -137,7 +137,7 @@ local anchor = CreateFrame("Frame", nil, UIParent)
 anchor.right = 500
 assert(legend.Toggle(anchor) == true and legend.IsShown(), "toggle must open the attached legend")
 local panel = assert(_G.VignetteRadarLegendPanel, "legend panel must have a stable global frame name")
-assert(panel.width == 232 and panel.height == 412 and panel.clamped == true
+assert(panel.width == 232 and panel.height == 446 and panel.clamped == true
     and not panel.accent, "legend must fit without a left edge rail")
 assert(panel.mouseEnabled == true and panel.divider.height == 1,
     "legend surface must capture input and preserve a visible header gutter")
@@ -145,10 +145,10 @@ assert(panel.point[1] == "TOPLEFT" and panel.point[3] == "TOPRIGHT" and panel.po
     "legend must sit outside the radar with an explicit gutter")
 assert(panel.title.font[1] == EllesmereUI.EXPRESSWAY and panel.title.text == "RADAR LEGEND",
     "legend must use native EllesmereUI typography")
-assert(panel.liveHint.text == "CLICK LIVE TYPE TO SPOTLIGHT"
+assert(panel.liveHint.text == "CLICK ROW TO SPOTLIGHT"
     and panel.showHint.text == "SHOW" and panel.all.label.text == "CLEAR"
     and panel.mapHeading.text == "MAP NOTES" and panel.mapToggle.label.text == "ON"
-    and panel.otherHeading.text == "OTHER MARKS · REFERENCE ONLY",
+    and panel.otherHeading.text == "SYMBOL KEY · REFERENCE ONLY",
     "the legend must identify spotlightable rows, visibility switches, and reference-only symbols")
 assert(panel.mapHeading.point[4] + panel.mapHeading.width < panel.width - 9 - panel.mapToggle.width
     and -panel.mapToggle.point[3] + panel.mapToggle.height < 189,
@@ -191,7 +191,7 @@ for _, guide in pairs(panel.guides) do
         and -guide.point[5] + guide.height < panel.height - 20,
         "guide entries must stay inside the panel with a footer gutter")
 end
-assert(panel.rows.rare.label.text == "RARE / BOSS" and panel.rows.rare.label.width == 90
+assert(panel.rows.rare.label.text == "Rare / Boss" and panel.rows.rare.label.width == 90
     and panel.rows.rare.label.point[2] == 39 and panel.rows.rare.label.maxLines == 1,
     "the rare and boss label must stay bounded before its toggle")
 assert(panel.rows.rare.swatch.texture == "Interface\\TargetingFrame\\UI-TargetingFrame-Skull"
@@ -209,6 +209,79 @@ assert(table.concat(tooltipLines, "\n"):find(
 assert(panel.rows.event.scripts.OnMouseDown and panel.rows.event.scripts.OnMouseUp,
     "category controls must expose native pressed feedback")
 assert(panel.rows.rare.toggle.label.text == "OFF", "the UI must reflect persisted filter state")
+
+local liveMarkers = {}
+for index = 1, 10 do
+    liveMarkers[index] = { name = "Marker " .. index, category = "other" }
+end
+liveMarkers[1].name = "Mailbox"
+local hiddenNames, rescans = {}, 0
+addon.VignetteRadarFeatures = {
+    GetHiddenMarkerNames = function() return hiddenNames end,
+    IsMarkerNameHidden = function(entry)
+        return hiddenNames[entry.category .. ":" .. entry.name:lower()] ~= nil
+    end,
+    SetMarkerNameHidden = function(entry, hidden)
+        hiddenNames[entry.category .. ":" .. entry.name:lower()] = hidden and entry.name or nil
+    end,
+}
+addon.VignetteRadarAPI = {
+    GetRawTargets = function() return liveMarkers end,
+    Refresh = function(rescan) assert(rescan); rescans = rescans + 1 end,
+}
+assert(panel.markerButton.width == 212 and -panel.markerButton.point[3] >= 390
+    and -panel.markerButton.point[3] + panel.markerButton.height < 421,
+    "marker controls must sit between the guide content and footer")
+panel.markerButton.scripts.OnClick(panel.markerButton)
+local markerPanel = assert(legend.Testing.GetMarkerPanel())
+assert(markerPanel:IsShown() and not panel:IsShown() and legend.IsShown()
+    and markerPanel.width == 232 and markerPanel.height == 290,
+    "individual live marker switches must open in the legend's place")
+assert(markerPanel.rows[1].entry.name == "Mailbox" and markerPanel.rows[8]:IsShown()
+    and markerPanel.count.text == "10 NAMES", "marker list must include current live names")
+for _, row in ipairs(markerPanel.rows) do
+    assert(row.point[2] >= 10 and row.point[2] + row.width <= markerPanel.width - 10
+        and -row.point[3] + row.height <= markerPanel.height - 34,
+        "marker rows must retain side and footer gutters at the smallest panel size")
+end
+assert(markerPanel.back.point[2] + markerPanel.back.width + 8
+    <= markerPanel.width - 10 - markerPanel.status.width,
+    "the back button and status text must not overlap")
+markerPanel.rows[1].toggle.scripts.OnClick(markerPanel.rows[1].toggle)
+assert(hiddenNames["other:mailbox"] == "Mailbox" and rescans == 1
+    and markerPanel.rows[1].toggle.label.text == "OFF",
+    "hiding one marker name must persist and rescan without hiding its whole category")
+liveMarkers = {}
+legend.ToggleMarkers()
+legend.ToggleMarkers()
+assert(markerPanel.rows[1].entry.name == "Mailbox"
+    and markerPanel.rows[1].toggle.label.text == "OFF",
+    "hidden names must remain restorable after their markers disappear")
+markerPanel.rows[1].toggle.scripts.OnClick(markerPanel.rows[1].toggle)
+assert(hiddenNames["other:mailbox"] == nil and rescans == 2,
+    "turning the individual switch back on must restore the name")
+local savedNotes = { { name = "Vendor", kind = "note" } }
+addon.VignetteRadarAPI.GetRawMapNotes = function() return savedNotes end
+legend.ToggleMarkers()
+legend.ToggleMarkers()
+local vendorRow
+for _, row in ipairs(markerPanel.rows) do
+    if row.entry and row.entry.name == "Vendor" then vendorRow = row; break end
+end
+assert(vendorRow and vendorRow.entry.category == "map:note",
+    "named map-pack notes must appear beside live detections")
+vendorRow.toggle.scripts.OnClick(vendorRow.toggle)
+assert(hiddenNames["map:note:vendor"] == "Vendor",
+    "a named map note must be switchable without hiding its whole type")
+savedNotes = {}
+legend.ToggleMarkers()
+legend.ToggleMarkers()
+assert(markerPanel.rows[1].entry.name == "Vendor"
+    and markerPanel.rows[1].toggle.label.text == "OFF",
+    "a hidden map note must stay in the list for restoration")
+markerPanel.back.scripts.OnClick(markerPanel.back)
+assert(panel:IsShown() and not markerPanel:IsShown(),
+    "the marker list must return to the main legend")
 
 settings.vignetteRadarPOISource = "none"
 settings.vignetteRadarMapNotesVisible = false

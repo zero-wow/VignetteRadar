@@ -803,6 +803,19 @@ do
     focus.Sync(123, player, {}, {}, {})
     assert(waypoint == nil and not focus.HasFocus(),
         "when no eligible point remains, the completed quest pin must clear")
+    focus.Clear()
+    showWarbandCompleted = false
+    focus.Sync(123, player, {}, {}, {})
+    assert(not focus.StartNearest("quest"),
+        "Quest routing must also skip a warband-completed quest start when tracking is off")
+    showWarbandCompleted = true
+    focus.Sync(123, player, {}, {}, {})
+    assert(focus.StartNearest("quest") and waypoint.position.x == .31,
+        "Quest routing may use that start again when warband tracking is on")
+    showWarbandCompleted = false
+    focus.Sync(123, player, {}, {}, {})
+    assert(not focus.HasFocus(),
+        "disabling warband tracking must clear an already active Quest route to that start")
 end
 
 do

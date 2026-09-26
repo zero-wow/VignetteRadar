@@ -88,6 +88,24 @@ assert(calls.requests == 1 and calls.starts == 1,
 starts[1].questName = "overwritten"
 assert(Q.GetAvailableQuestStarts(77)[1].questName == "Campaign start" and calls.starts == 1,
     "cached starts must not be mutable by a caller")
+local trackWarband = false
+C_Minimap = { IsTrackingAccountCompletedQuests = function() return trackWarband end }
+C_QuestLog.IsQuestFlaggedCompletedOnAccount = function(id) return id == 501 end
+assert(Q.IsWarbandCompletedStartHidden(501)
+    and #Q.GetAvailableQuestStarts(77) == 1
+    and Q.GetAvailableQuestStarts(77)[1].questID == 502 and calls.starts == 1,
+    "warband-completed starts must disappear even from the short cache when tracking is off")
+trackWarband = true
+assert(not Q.IsWarbandCompletedStartHidden(501)
+    and #Q.GetAvailableQuestStarts(77) == 2 and calls.starts == 1,
+    "switching Blizzard warband tracking on must restore starts without a data reread")
+trackWarband = false
+C_QuestLog.IsOnQuest = function(id) return id == 501 end
+assert(#Q.GetAvailableQuestStarts(77) == 2,
+    "an accepted quest must remain available to objective tracking")
+C_QuestLog.IsOnQuest = nil
+C_QuestLog.IsQuestFlaggedCompletedOnAccount = nil
+C_Minimap = nil
 now = 115
 assert(#Q.GetAvailableQuestStarts(77) == 2 and calls.starts == 2 and calls.requests == 1,
     "quest-line data must refresh without repeating the map request")

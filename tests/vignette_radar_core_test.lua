@@ -278,6 +278,7 @@ assert(defaults.vignetteRadarAlerts == true and defaults.vignetteRadarAlertSound
     and defaults.vignetteRadarAlertCooldown == 60,
     "alert preferences need safe standalone defaults")
 assert(type(defaults.vignetteRadarFavorites) == "table" and type(defaults.vignetteRadarIgnored) == "table"
+    and type(defaults.vignetteRadarHiddenMarkerNames) == "table"
     and defaults.vignetteRadarLastSeen == true and defaults.vignetteRadarLastSeenSeconds == 10
     and defaults.vignetteRadarQuietCombat == true and defaults.vignetteRadarQuietInstances == true
     and defaults.vignetteRadarKeepVisibleCombat == false

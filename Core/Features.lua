@@ -58,6 +58,19 @@ local function Identity(target)
     return "name:" .. tostring(mapID or "unknown") .. ":" .. category .. ":" .. name:lower()
 end
 
+local function MarkerNameKey(target)
+    local name = String(Field(target, "name"))
+    if not name then return nil end
+    local category = String(Field(target, "category")) or "other"
+    return category:lower() .. ":" .. name:lower()
+end
+
+local function MapNoteNameKey(note)
+    local name = String(Field(note, "name"))
+    local kind = String(Field(note, "kind"))
+    return name and kind and "map:" .. kind:lower() .. ":" .. name:lower() or nil
+end
+
 local function TableSetting(settings, key)
     local value = settings[key]
     if type(value) ~= "table" or IsSecret(value) then
@@ -83,10 +96,34 @@ end
 
 function API.IsIgnored(target)
     local identity = Identity(target)
-    if not identity then return false end
-    return sessionIgnored[identity] == true
-        or Field(TableSetting(Settings(), "vignetteRadarIgnored"), identity) == true
+    local markerName = MarkerNameKey(target)
+    return markerName ~= nil
+            and Field(TableSetting(Settings(), "vignetteRadarHiddenMarkerNames"), markerName) ~= nil
+        or identity ~= nil and (sessionIgnored[identity] == true
+            or Field(TableSetting(Settings(), "vignetteRadarIgnored"), identity) == true)
         or false
+end
+
+function API.IsMarkerNameHidden(target)
+    local key = MarkerNameKey(target)
+    return key ~= nil and Field(TableSetting(Settings(), "vignetteRadarHiddenMarkerNames"), key) ~= nil or false
+end
+
+function API.IsMapNoteNameHidden(note)
+    local key = MapNoteNameKey(note)
+    return key ~= nil and Field(TableSetting(Settings(), "vignetteRadarHiddenMarkerNames"), key) ~= nil or false
+end
+
+function API.SetMarkerNameHidden(target, hidden)
+    local key = MarkerNameKey(target)
+    if not key then return false, "no-marker-name" end
+    local names = TableSetting(Settings(), "vignetteRadarHiddenMarkerNames")
+    names[key] = hidden == true and Field(target, "name") or nil
+    return true
+end
+
+function API.GetHiddenMarkerNames()
+    return TableSetting(Settings(), "vignetteRadarHiddenMarkerNames")
 end
 
 function API.Ignore(target, permanent)
@@ -108,6 +145,7 @@ end
 
 function API.ClearIgnored()
     Settings().vignetteRadarIgnored = {}
+    Settings().vignetteRadarHiddenMarkerNames = {}
     sessionIgnored = {}
 end
 

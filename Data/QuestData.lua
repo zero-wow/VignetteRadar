@@ -223,15 +223,39 @@ end
 
 -- Blizzard supplies only lines currently available on this map. It may return
 -- an empty list until its own map request has loaded; never invent quest starts.
+local function WarbandCompletedStartHidden(questID, tracking)
+    questID = ID(questID)
+    if not questID then return false end
+    if IsSecret(tracking) or tracking ~= false then return false end
+    local completed = Call(C_QuestLog, "IsQuestFlaggedCompletedOnAccount", questID)
+    if IsSecret(completed) or completed ~= true then return false end
+    local onQuest = Call(C_QuestLog, "IsOnQuest", questID)
+    return not IsSecret(onQuest) and onQuest ~= true
+end
+
+function API.IsWarbandCompletedStartHidden(questID)
+    return WarbandCompletedStartHidden(questID,
+        Call(C_Minimap, "IsTrackingAccountCompletedQuests"))
+end
+
+local function VisibleStarts(entries)
+    local copy = {}
+    local tracking = Call(C_Minimap, "IsTrackingAccountCompletedQuests")
+    for _, entry in ipairs(entries) do
+        if not WarbandCompletedStartHidden(entry.questID, tracking) then
+            copy[#copy + 1] = Copy(entry)
+        end
+    end
+    return copy
+end
+
 function API.GetAvailableQuestStarts(mapID)
     mapID = ID(mapID)
     if not mapID then return {} end
     local now = Now()
     local cached = startsCache[mapID]
     if cached and now - cached.at < STARTS_AGE then
-        local copy = {}
-        for index, entry in ipairs(cached.value) do copy[index] = Copy(entry) end
-        return copy
+        return VisibleStarts(cached.value)
     end
     if not requestedMaps[mapID] then
         Call(C_QuestLine, "RequestQuestLinesForMap", mapID)
@@ -241,7 +265,5 @@ function API.GetAvailableQuestStarts(mapID)
     if startsCacheCount >= MAX_CACHED_MAPS then startsCache, startsCacheCount = {}, 0 end
     if not startsCache[mapID] then startsCacheCount = startsCacheCount + 1 end
     startsCache[mapID] = { at = now, value = result }
-    local copy = {}
-    for index, entry in ipairs(result) do copy[index] = Copy(entry) end
-    return copy
+    return VisibleStarts(result)
 end

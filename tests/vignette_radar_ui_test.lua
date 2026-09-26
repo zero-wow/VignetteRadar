@@ -583,6 +583,27 @@ assert(next(settings.vignetteRadarIgnored) ~= nil and #addon.VignetteRadarAPI.Ge
 addon.VignetteRadarFeatures.ClearIgnored()
 addon.VignetteRadarAPI.Refresh(true)
 assert(#addon.VignetteRadarAPI.GetSelectableTargets() == 2, "clearing ignores must restore current detections")
+do
+if not addon.VignetteRadarLegend.IsShown() then addon.VignetteRadarLegend.Toggle(panel.legend) end
+assert(addon.VignetteRadarLegend.ToggleMarkers(), "the Radar Legend must open individual live marker controls")
+local markerPanel = assert(_G.VignetteRadarMarkerLegendPanel)
+local treasureMarkerRow
+for _, row in ipairs(markerPanel.rows) do
+    if row.entry and row.entry.name == "Nearby treasure" then treasureMarkerRow = row; break end
+end
+assert(treasureMarkerRow and treasureMarkerRow.toggle.label.text == "ON",
+    "live marker names must be listed separately from category visibility")
+treasureMarkerRow.toggle.scripts.OnClick(treasureMarkerRow.toggle)
+assert(settings.vignetteRadarHiddenMarkerNames["treasure:nearby treasure"] == "Nearby treasure"
+    and not panel.blipByKey.treasure and panel.blipByKey.rare
+    and #addon.VignetteRadarAPI.GetRawTargets() == 2,
+    "hiding one name must rescan while retaining it for restoration")
+treasureMarkerRow.toggle.scripts.OnClick(treasureMarkerRow.toggle)
+assert(settings.vignetteRadarHiddenMarkerNames["treasure:nearby treasure"] == nil
+    and panel.blipByKey.treasure,
+    "turning a marker name back on must immediately restore its blip")
+markerPanel.back.scripts.OnClick(markerPanel.back)
+end
 settings.vignetteRadarMarkerSize = 9
 addon.VignetteRadarAPI.Refresh(true)
 for _, blip in pairs(panel.blipByKey) do
@@ -1581,6 +1602,25 @@ addon.VignetteRadarAPI.Refresh(true)
 assert(panel.questStartDots[1] and panel.questStartDots[1]:IsShown()
     and panel.questStartDots[1].entry.floor == "above",
     "available quest-line starts need a distinct projected badge and floor hint")
+do
+    local oldMinimap, oldCompleted = C_Minimap, C_QuestLog.IsQuestFlaggedCompletedOnAccount
+    C_Minimap = { IsTrackingAccountCompletedQuests = function() return false end }
+    C_QuestLog.IsQuestFlaggedCompletedOnAccount = function(id) return id == 90001 end
+    addon.VignetteRadarAPI.Refresh(true)
+    assert(not panel.questStartDots[1]:IsShown()
+        and #addon.VignetteRadarAvailableStarts == 0,
+        "warband-completed starts must disappear from the radar when Blizzard tracking is off")
+    C_Minimap.IsTrackingAccountCompletedQuests = function() return true end
+    addon.VignetteRadarAPI.Refresh(true)
+    assert(panel.questStartDots[1]:IsShown()
+        and #addon.VignetteRadarAvailableStarts == 1,
+        "turning warband tracking on must restore the start without a reload")
+    panel.questStartDots[1].scripts.OnEnter(panel.questStartDots[1])
+    assert(table.concat(GameTooltip.lines, " | "):find("Warband-Completed Quest Start", 1, true),
+        "a shown account-completed start must identify itself clearly in the tooltip")
+    panel.questStartDots[1].scripts.OnLeave(panel.questStartDots[1])
+    C_Minimap, C_QuestLog.IsQuestFlaggedCompletedOnAccount = oldMinimap, oldCompleted
+end
 settings.vignetteRadarLensEnabled = true
 settings.vignetteRadarLensCategory = "rare"
 VignetteRadar_HoldLens("down")
@@ -3179,6 +3219,28 @@ addon.VignetteRadarAPI.Refresh(true)
 assert(panel:IsShown() and panel.mapNotes[1] and panel.mapNotes[1]:IsShown()
     and panel.mapNotes[1].note.kind == "note" and panel.mapNotes[1].note.source == "TestPack",
     "the chosen pack must draw its map note")
+do
+    if not addon.VignetteRadarLegend.IsShown() then addon.VignetteRadarLegend.Toggle(panel.legend) end
+    assert(addon.VignetteRadarLegend.ToggleMarkers())
+    local markerPanel = assert(_G.VignetteRadarMarkerLegendPanel)
+    local noteRow
+    for _, row in ipairs(markerPanel.rows) do
+        if row.entry and row.entry.name == "A map note" then noteRow = row; break end
+    end
+    assert(noteRow and noteRow.entry.category == "map:note"
+        and #addon.VignetteRadarAPI.GetRawMapNotes() == 1,
+        "the marker list must include individual notes from the chosen map pack")
+    noteRow.toggle.scripts.OnClick(noteRow.toggle)
+    assert(settings.vignetteRadarHiddenMarkerNames["map:note:a map note"] == "A map note"
+        and not panel.mapNotes[1]:IsShown()
+        and #addon.VignetteRadarAPI.GetRawMapNotes() == 1,
+        "hiding one map note name must remove its dot without discarding the source data")
+    noteRow.toggle.scripts.OnClick(noteRow.toggle)
+    assert(settings.vignetteRadarHiddenMarkerNames["map:note:a map note"] == nil
+        and panel.mapNotes[1]:IsShown(),
+        "restoring a map note name must redraw its dot immediately")
+    markerPanel.back.scripts.OnClick(markerPanel.back)
+end
 legendPanel.mapToggle.scripts.OnClick(legendPanel.mapToggle)
 assert(settings.vignetteRadarMapNotesVisible == false
     and settings.vignetteRadarPOISource == "TestPack"

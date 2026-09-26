@@ -295,6 +295,7 @@ function addon.GetSettings()
     end
     if type(db.vignetteRadarFavorites) ~= "table" then db.vignetteRadarFavorites = {} end
     if type(db.vignetteRadarIgnored) ~= "table" then db.vignetteRadarIgnored = {} end
+    if type(db.vignetteRadarHiddenMarkerNames) ~= "table" then db.vignetteRadarHiddenMarkerNames = {} end
     if type(db.vignetteRadarLastSeen) ~= "boolean" then db.vignetteRadarLastSeen = true end
     if type(db.vignetteRadarLastSeenSeconds) ~= "number" or db.vignetteRadarLastSeenSeconds ~= db.vignetteRadarLastSeenSeconds then
         db.vignetteRadarLastSeenSeconds = 10

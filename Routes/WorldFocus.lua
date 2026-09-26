@@ -357,8 +357,7 @@ local function NextRouteStop()
     local settings = addon.GetSettings()
     local questDone = {}
     local warbandDone = {}
-    local trackingAccountQuests = kind == "closest"
-        and Call(C_Minimap, "IsTrackingAccountCompletedQuests")
+    local trackingAccountQuests = Call(C_Minimap, "IsTrackingAccountCompletedQuests")
     local exploration = addon.VignetteRadarExploration
     local focusedQuestID = kind == "quest" and exploration
         and type(exploration.GetFocusedQuest) == "function"
@@ -386,7 +385,7 @@ local function NextRouteStop()
                 or kind == "quest" and settings.vignetteRadarAutoRouteQuestNearest == false
                     and route.questID and item.questID ~= route.questID)) then return end
         if itemKind == "quest" then
-            if kind == "closest" and HiddenWarbandQuestStart(item, trackingAccountQuests,
+            if HiddenWarbandQuestStart(item, trackingAccountQuests,
                 warbandDone) then
                 return
             end
@@ -1066,7 +1065,7 @@ function API.Sync(mapID, snapshot, liveTargets, questPoints, mapNotes)
         end
         return
     end
-    if route and route.kind == "closest" and active.item
+    if route and (route.kind == "closest" or route.kind == "quest") and active.item
         and HiddenWarbandQuestStart(active.item,
             Call(C_Minimap, "IsTrackingAccountCompletedQuests")) then
         local nextItem = NextRouteStop()
