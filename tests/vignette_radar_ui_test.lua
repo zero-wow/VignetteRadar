@@ -1810,9 +1810,18 @@ for _, layoutName in ipairs({ "classic", "compact", "squat" }) do
     assert(CornerTool("north").art.texCoord[3] > .5,
         "north-up must use an on image distinct from the normal state")
     local side, center = panel.field:GetWidth(), panel.field:GetWidth() / 2
+    local occupied = {}
     for _, tool in ipairs(panel.hoverTools) do
         local point, x, y = tool.point[1], tool.point[4], tool.point[5]
         local width, height = tool:GetWidth(), tool:GetHeight()
+        local slot = table.concat({ point, x, y }, ":")
+        assert(width == 16 and height == 16 and tool.art.width == 18
+            and tool.art.height == 18
+            and (math.abs(x) == 12 or math.abs(x) == 32)
+            and (math.abs(y) == 12 or math.abs(y) == 32)
+            and not occupied[slot],
+            "hover control " .. tostring(tool.toolID) .. " must share the aligned corner grid")
+        occupied[slot] = true
         local left = point:find("RIGHT") and side + x - width or x
         local top = point:find("BOTTOM") and side - y - height or -y
         local nearestX = math.max(left, math.min(center, left + width))
