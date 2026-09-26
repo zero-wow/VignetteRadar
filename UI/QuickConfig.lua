@@ -663,7 +663,8 @@ local function Build()
     quick.pages["Auto Route"] = autoRoute
     Section(autoRoute, "AUTO ROUTE", -3)
     Check(autoRoute, "vignetteRadarAutoRouteOnSelect", "Start When I Click a Point", 14, -21)
-    Check(autoRoute, "vignetteRadarAutoRouteMapNotes", "Include Current Map Data Pack", 14, -49)
+    Check(autoRoute, "vignetteRadarAutoRouteMapNotes", "Include Map Pack", 14, -49, nil, 94)
+    Check(autoRoute, "vignetteRadarWorldFocusSmoothWaypoint", "Smooth Pin", 150, -49, nil, 92)
     Check(autoRoute, "vignetteRadarRouteArrow", "Mini Route Arrow", 14, -77, nil, 94)
     Check(autoRoute, "vignetteRadarWorldFocusThemedWaypoint", "Color World Pin", 150, -77, nil, 92)
     Section(autoRoute, "TRAVEL MODE", -111)
@@ -713,13 +714,16 @@ local function Build()
         "Include Available Quest Starts", 14, -58)
     Check(questRouting, "vignetteRadarAutoRouteNearbyZones",
         "Continue Into Nearby Zones", 14, -94)
-    Section(questRouting, "HOW IT WORKS", -139)
+    Section(questRouting, "LEARNED LOCATIONS", -130)
+    Check(questRouting, "vignetteRadarLearnedQuestHints",
+        "Use Learned Objective Hints", 14, -154)
+    Section(questRouting, "HOW IT WORKS", -192)
     local questRoutingInfo = Label(questRouting,
-        "The current stop stays pinned until an objective finishes or a quest is accepted. Nearby zones are checked gradually to keep the radar responsive.",
-        14, -160, 10, 260)
-    questRoutingInfo:SetHeight(55)
+        "Pins stay until progress changes. Two matching completions can locate an unmapped objective.",
+        14, -216, 10, 260)
+    questRoutingInfo:SetHeight(36)
     questRoutingInfo:SetWordWrap(true)
-    Button(questRouting, "Back to Auto Route", 14, -242, 260, function()
+    Button(questRouting, "Back to Auto Route", 14, -264, 260, function()
         SelectPage("Auto Route")
     end)
 

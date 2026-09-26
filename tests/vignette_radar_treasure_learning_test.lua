@@ -41,6 +41,16 @@ clock = 106
 assert(not learning.OnLootEvent("LOOT_SLOT_CLEARED") and #entry.samples == 1,
     "an expired loot window must not save a stale position")
 clock = 110
+addon.VignetteRadarOutcomeLearning = {
+    PlayerHeight = function(current)
+        assert(current == snapshot)
+        return 74
+    end,
+}
+learning.OnLootEvent("LOOT_OPENED")
+assert(learning.OnLootEvent("LOOT_SLOT_CLEARED")
+    and entry.samples[#entry.samples].z == 74,
+    "confirmed treasure loot should keep a validated player height when exposed")
 for index = 1, 260 do
     local item = { key = "Pack:123:" .. index, source = "Pack", kind = "treasure",
         name = "Chest", objectID = 777, mapID = 123, mapX = .5, mapY = .5,

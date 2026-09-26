@@ -496,6 +496,10 @@ local function CollectVignettes(mapID)
         if guid ~= nil and not IsSecret(guid) then
             local info = Call(C_VignetteInfo.GetVignetteInfo, guid)
             if info and SafeBoolean(SafeField(info, "isDead")) == true
+                and addon.VignetteRadarOutcomeLearning then
+                addon.VignetteRadarOutcomeLearning.OnDeadVignette(guid, info)
+            end
+            if info and SafeBoolean(SafeField(info, "isDead")) == true
                 and addon.VignetteRadarRecent then
                 local kind = ClassifyVignette(info)
                 if kind == "rare" or kind == "treasure"
@@ -582,7 +586,7 @@ local function CollectQuests(mapID, force)
     if type(records) ~= "table" then records = {} end
     local seen = {}
     local seenQuest = {}
-    local function AddPoint(questID, x, y, name, nextStep)
+    local function AddPoint(questID, x, y, name, nextStep, learned, objectiveText)
         if not (questID and questID > 0 and x and y and x >= 0 and x <= 1
             and y >= 0 and y <= 1) then return end
         -- A quest may have several objective locations on one map. Only fold
@@ -596,6 +600,7 @@ local function CollectQuests(mapID, force)
         seenQuest[questID] = true
         quests[#quests + 1] = {
             questID = questID, mapID = mapID, mapX = x, mapY = y, nextStep = nextStep,
+            learned = learned, objectiveText = objectiveText,
             worldX = worldX, worldY = worldY, instanceID = instanceID,
             completed = SafeBoolean(Call(C_QuestLog.IsComplete, questID)) == true,
             name = name or SafeString(Call(C_QuestLog.GetTitleForQuestID, questID))
@@ -633,7 +638,17 @@ local function CollectQuests(mapID, force)
             local questID = SafeNumber(Call(C_QuestLog.GetQuestIDForQuestWatchIndex, index))
             if questID and questID > 0 and not seenQuest[questID] then
                 local x, y = Call(C_QuestLog.GetNextWaypointForMap, questID, mapID)
-                AddPoint(questID, SafeNumber(x), SafeNumber(y))
+                x, y = SafeNumber(x), SafeNumber(y)
+                if x and y then
+                    AddPoint(questID, x, y)
+                elseif Settings().vignetteRadarLearnedQuestHints
+                    and addon.VignetteRadarOutcomeLearning then
+                    local hint = addon.VignetteRadarOutcomeLearning.GetQuestHint(questID, mapID)
+                    if hint then
+                        AddPoint(questID, hint.mapX, hint.mapY, nil, nil,
+                            true, hint.text)
+                    end
+                end
             end
         end
     end
@@ -1298,7 +1313,7 @@ local function RenderMapNotes(player, range, targets)
                     dot.note, dot.distance = note, distance
                     dot:ClearAllPoints()
                     dot:SetPoint("CENTER", panel.field, "CENTER", x, y)
-                    addon.VignetteRadarTurn.TrackPoint(dot, x, y, player.facing)
+                    addon.VignetteRadarTurn.TrackPoint(dot, x, y, ViewFacing(player.facing))
                     dot:Show()
                 end
             end
@@ -1379,6 +1394,13 @@ local function RenderQuestDots(player, range)
                                     GameTooltip:AddLine(self.quest.nextStep.text, .84, .87, .83, true)
                                 end
                             end
+                            if self.quest.learned then
+                                GameTooltip:AddLine("Learned location from repeated objective progress.",
+                                    .58, .83, .73, true)
+                                if self.quest.objectiveText then
+                                    GameTooltip:AddLine(self.quest.objectiveText, .84, .87, .83, true)
+                                end
+                            end
                             if self.halo and self.halo:IsShown() then
                                 GameTooltip:AddLine(legend and legend.SourceDescription
                                     and legend.SourceDescription("estimated")
@@ -1435,7 +1457,7 @@ local function RenderQuestDots(player, range)
                     dot.screenX, dot.screenY = x, y
                     dot:ClearAllPoints()
                     dot:SetPoint("CENTER", panel.field, "CENTER", x, y)
-                    addon.VignetteRadarTurn.TrackPoint(dot, x, y, player.facing)
+                    addon.VignetteRadarTurn.TrackPoint(dot, x, y, ViewFacing(player.facing))
                     dot:SetShown(showDots)
                     if showHalos then
                         if not dot.halo then
@@ -1452,7 +1474,7 @@ local function RenderQuestDots(player, range)
                         dot.halo:SetSize(haloRadius * 2, haloRadius * 2)
                         dot.halo:ClearAllPoints()
                         dot.halo:SetPoint("CENTER", panel.field, "CENTER", x, y)
-                        addon.VignetteRadarTurn.TrackPoint(dot.halo, x, y, player.facing)
+                        addon.VignetteRadarTurn.TrackPoint(dot.halo, x, y, ViewFacing(player.facing))
                         local haloColor = Settings().vignetteRadarQuestColors
                             and Settings().vignetteRadarQuestAreaColors
                             and QUEST_COLORS[quest.colorSlot or 1] or QUEST_AREA_BLUE
@@ -1589,7 +1611,7 @@ addon.RenderVignetteRadarQuestStarts = function(player, mapID, range)
                             or entry.floor == "below" and "↓" or "!")
                         dot:ClearAllPoints()
                         dot:SetPoint("CENTER", panel.field, "CENTER", x, y)
-                        addon.VignetteRadarTurn.TrackPoint(dot, x, y, player.facing)
+                        addon.VignetteRadarTurn.TrackPoint(dot, x, y, ViewFacing(player.facing))
                         dot:Show()
                     end
                 end
@@ -1886,7 +1908,7 @@ local function RenderExploration(player, range)
         line:SetColorTexture(r, g, b, a)
         line:SetStartPoint("CENTER", panel.field, x1, y1)
         line:SetEndPoint("CENTER", panel.field, x2, y2)
-        addon.VignetteRadarTurn.TrackLine(line, x1, y1, x2, y2, player.facing)
+        addon.VignetteRadarTurn.TrackLine(line, x1, y1, x2, y2, ViewFacing(player.facing))
         line:Show()
     end
     local function Dot(item, x, y, label, r, g, b, onClick)
@@ -1926,7 +1948,7 @@ local function RenderExploration(player, range)
         dot.text:SetText(label)
         dot:ClearAllPoints()
         dot:SetPoint("CENTER", panel.field, "CENTER", x, y)
-        addon.VignetteRadarTurn.TrackPoint(dot, x, y, player.facing)
+        addon.VignetteRadarTurn.TrackPoint(dot, x, y, ViewFacing(player.facing))
         dot:Show()
     end
     local trail, trailMap = exploration.GetTrail()
@@ -2033,7 +2055,7 @@ local function RenderExploration(player, range)
                     dot._trailTexture = texture
                 end
                 DrawTrailGlyph(definition, dot, nil, panel.field, sample.x, sample.y,
-                    sample.ux, sample.uy, r, g, b, markAlpha, index, sizeScale, player.facing)
+                    sample.ux, sample.uy, r, g, b, markAlpha, index, sizeScale, ViewFacing(player.facing))
             else
                 local mark = panel.trailMarks[index]
                 if not mark then
@@ -2050,7 +2072,7 @@ local function RenderExploration(player, range)
                     extraParts[part - 1] = extra
                 end
                 DrawTrailGlyph(definition, mark, extraParts, panel.field, sample.x, sample.y,
-                    sample.ux, sample.uy, r, g, b, markAlpha, index, sizeScale, player.facing)
+                    sample.ux, sample.uy, r, g, b, markAlpha, index, sizeScale, ViewFacing(player.facing))
             end
         end
     end
@@ -3829,7 +3851,13 @@ function addon.GetVignetteRadarDiagnostics()
         "Live detections: " .. #activeTargets .. "  ·  quest points: " .. #activeQuests,
         "Map notes: " .. #activeMapNotes,
         "Treasure loot observations: " .. (addon.VignetteRadarTreasureLearning
-            and addon.VignetteRadarTreasureLearning.Count() or 0) .. " (XY only)",
+            and addon.VignetteRadarTreasureLearning.Count() or 0),
+        "Rare and quest observations: " .. (function()
+            local learning = addon.VignetteRadarOutcomeLearning
+            if not learning then return "0 / 0" end
+            local counts = learning.Count()
+            return counts.rare .. " / " .. counts.quest
+        end)(),
         "CPU guard: " .. (#pausedNames > 0 and ("paused " .. table.concat(pausedNames, ", ")
             .. " (auto-retrying)") or "running"),
         "Update rate: " .. (settings.vignetteRadarPerformance or "standard"),
@@ -3945,7 +3973,7 @@ local function RenderEdgeCues(player, range, targets)
         if x and y then
             cue:ClearAllPoints()
             cue:SetPoint("CENTER", panel.field, "CENTER", x, y)
-            addon.VignetteRadarTurn.TrackPoint(cue, x, y, player.facing)
+            addon.VignetteRadarTurn.TrackPoint(cue, x, y, ViewFacing(player.facing))
             cue:Show()
         else cue:Hide() end
     end
@@ -4113,7 +4141,7 @@ Render = function()
         local r, g, b = addon.VignetteRadarStyle.Color(activeKind or "quest")
         panel.activeCue:ClearAllPoints()
         panel.activeCue:SetPoint("CENTER", panel.field, "CENTER", cueX, cueY)
-        addon.VignetteRadarTurn.TrackPoint(panel.activeCue, cueX, cueY, player.facing)
+        addon.VignetteRadarTurn.TrackPoint(panel.activeCue, cueX, cueY, ViewFacing(player.facing))
         panel.activeCue:SetVertexColor(r, g, b, .16)
         panel.activeCue:Show()
     else
@@ -4206,7 +4234,7 @@ Render = function()
                         x, y = x*factor, y*factor
                     end
                 end
-                PlaceBlip(entry.target.key, x, y, entry.target, player.facing)
+                PlaceBlip(entry.target.key, x, y, entry.target, ViewFacing(player.facing))
                 local blip = panel.blipByKey[entry.target.key]
                 if blip and size > 1 then
                     blip.clusterKey = items[1].target.key
@@ -4732,7 +4760,7 @@ UpdateLauncher = function(elapsed, updateTargets)
         dot:SetSize(size + 2, size + 2)
         dot:ClearAllPoints()
         dot:SetPoint("CENTER", launcher.instrument, "CENTER", x, y)
-        if player then addon.VignetteRadarTurn.TrackPoint(dot, x, y, player.facing) end
+        if player then addon.VignetteRadarTurn.TrackPoint(dot, x, y, ViewFacing(player.facing)) end
         dot:Show()
         return shown < #launcher.miniBlips
     end
@@ -4947,6 +4975,7 @@ EnsureLauncher = function()
         self._turnElapsed = (self._turnElapsed or 0) + elapsed
         if self._turnElapsed >= turn.Interval(self, addon.VignetteRadarBudget
             and addon.VignetteRadarBudget.softThrottle) then
+            local turnElapsed = self._turnElapsed
             self._turnElapsed = 0
             if not preview and Settings().vignetteRadarEnabled
                 and type(GetPlayerFacing) == "function" then
@@ -4956,7 +4985,8 @@ EnsureLauncher = function()
                     if Settings().vignetteRadarNorthUp then
                         DrawPlayerHeading(self.direction, self.instrument, facing, 6, 12)
                         DrawLauncherChevron(self.chevron, self.instrument, facing)
-                    else turn.UpdateLauncher(self, facing) end
+                    end
+                    turn.UpdateLauncher(self, ViewFacing(facing), turnElapsed)
                 end
             end
         end
@@ -5904,6 +5934,7 @@ local function EnsurePanel()
         self._turnElapsed = (self._turnElapsed or 0) + elapsed
         if self._turnElapsed >= turn.Interval(self, addon.VignetteRadarBudget
             and addon.VignetteRadarBudget.softThrottle) then
+            local turnElapsed = self._turnElapsed
             self._turnElapsed = 0
             if not preview and Settings().vignetteRadarEnabled
                 and type(GetPlayerFacing) == "function" then
@@ -5914,7 +5945,8 @@ local function EnsurePanel()
                         local tip, outer = HeadingGeometry(self.plotRadius)
                         DrawPlayerHeading(self.direction, self.field, facing, tip, outer)
                         DrawPlayerChevron(self.headingChevron, self.field, facing)
-                    else turn.UpdateRadar(self, facing) end
+                    end
+                    turn.UpdateRadar(self, ViewFacing(facing), turnElapsed)
                 end
             end
         end
@@ -6054,6 +6086,7 @@ ScanVignettes = function(mapID)
     local questOptions = tostring(db.vignetteRadarNextQuestStep) .. ":"
         .. tostring(db.vignetteRadarQuestDots) .. ":" .. tostring(db.vignetteRadarQuestAreas)
         .. ":" .. tostring(db.vignetteRadarWorldFocusEnabled) .. ":"
+        .. tostring(db.vignetteRadarLearnedQuestHints) .. ":"
         .. tostring(db.vignetteRadarBeaconsEnabled and db.vignetteRadarBeaconQuests)
     if questCache and questCache.mapID == mapID and questCache.options == questOptions
         and now - questCache.at < 5 then
@@ -6205,6 +6238,8 @@ ScanVignettes = function(mapID)
         worldFocus.Sync(mapID, routePlayer, activeTargets, activeQuests, activeMapNotes)
         local learning = addon.VignetteRadarTreasureLearning
         if learning then learning.Sync(mapID, routePlayer, activeTargets, activeMapNotes) end
+        local outcomes = addon.VignetteRadarOutcomeLearning
+        if outcomes then outcomes.Sync(activeTargets, activeQuests) end
     end
 end
 
@@ -6746,15 +6781,21 @@ local events = CreateFrame("Frame")
 function events:RefreshAfterQuestUpdate()
     if self._questRefreshQueued then return end
     self._questRefreshQueued = true
+    local outcomes = addon.VignetteRadarOutcomeLearning
+    self._outcomeSnapshot = outcomes and outcomes.CapturePlayer()
     if C_Timer and C_Timer.After then
         -- Quest objectives and their map POIs can settle in separate events.
         -- Merge a burst into one fresh scan instead of scanning every event.
         C_Timer.After(0.12, function()
             self._questRefreshQueued = false
+            if outcomes then outcomes.OnQuestEvent(true, self._outcomeSnapshot) end
+            self._outcomeSnapshot = nil
             RefreshRadar(true)
         end)
     else
         self._questRefreshQueued = false
+        if outcomes then outcomes.OnQuestEvent(true, self._outcomeSnapshot) end
+        self._outcomeSnapshot = nil
         RefreshRadar(true)
     end
 end

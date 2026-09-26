@@ -89,9 +89,11 @@ The addon also appears under the game's AddOns settings when the current Retail 
 
 Preview samples support focus without changing favorites, ignores, or navigation. All live information still comes from Blizzard's exposed vignettes; the optional HandyNotes layer is saved map information and does not by itself determine whether a location is active, killed, or looted.
 
+Confirmed treasure loots, nearby live-rare death or reward transitions, and watched quest objective progress save bounded player-at-event observations. The addon records map XY and, when the client exposes a matching UnitPosition, height; these are not exact object or NPC coordinates. Rare samples stay alongside their original spawn pins rather than moving a known pin to where the player stood. After two nearby completions, Use Learned Objective Hints can guide an unmapped objective; its diamond tooltip identifies the approximate source. With WaypointUI installed, Smooth Pin eases brief screen jumps of Vignette Radar's own floating waypoint while preserving its map destination. Both options are on by default.
+
 ## Development validation
 
-Current development build: `0.1.0-dev.91` (base version `0.1.0`).
+Current development build: `0.1.0-dev.92` (base version `0.1.0`).
 
 Repeating launcher, radar, and idle updates have a session-only CPU guard. A stalled update, or three consecutive slow updates, pauses that repeating work and prints a chat warning. `/reload` retries it.
 

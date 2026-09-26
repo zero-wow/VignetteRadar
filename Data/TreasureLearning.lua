@@ -142,11 +142,14 @@ local function Record(matched, snapshot)
     entry.lastAt = now
     if type(entry.samples) ~= "table" then entry.samples = {} end
     local samples = entry.samples
+    local outcomes = addon.VignetteRadarOutcomeLearning
+    local z = outcomes and outcomes.PlayerHeight and outcomes.PlayerHeight(snapshot)
     samples[#samples + 1] = {
         -- This is where the player stood when a loot slot cleared, not the
-        -- treasure's exact center. No Z is exposed by this observation.
+        -- treasure's exact center. Height is retained only when UnitPosition
+        -- agrees with the map API's horizontal coordinates.
         mapID = snapshot.mapID, mapX = snapshot.mapX, mapY = snapshot.mapY,
-        worldX = snapshot.worldX, worldY = snapshot.worldY,
+        worldX = snapshot.worldX, worldY = snapshot.worldY, z = z,
         match = matched.rank == 3 and "object-guid"
             or matched.rank == 2 and "object-id" or "nearby-gameobject",
         at = now,

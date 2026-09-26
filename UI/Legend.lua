@@ -126,6 +126,7 @@ end
 
 function API.QuestPointSource(quest)
     if type(quest) ~= "table" then return nil end
+    if quest.learned then return "learnedObjective" end
     local step = quest.nextStep
     return type(step) == "table" and step.onCurrentMap == true
         and type(step.x) == "number" and type(step.y) == "number"
@@ -140,6 +141,7 @@ local SOURCE_DESCRIPTION = {
     saved = "Saved map-pack location; not a live detection.",
     objective = "Blizzard's next quest waypoint on this map.",
     questMap = "Blizzard quest map point; it may represent a wider area.",
+    learnedObjective = "Player-observed objective area from repeated completions; approximate.",
     estimated = "Soft circle: estimated location around a quest point; not a Blizzard quest area.",
     nativeArea = "Quest area drawn from Blizzard's map data.",
 }

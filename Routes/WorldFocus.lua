@@ -91,9 +91,20 @@ local function Place(step, item)
                 name = item.name or "World Focus", mapID = mapID, x = x * 100, y = y * 100,
                 r = r, g = g, b = b, requestRecolor = true, suppressAudio = true,
             })
-            if named and result and not (issecretvalue and issecretvalue(result)) then return true end
+            if named and result and not (issecretvalue and issecretvalue(result)) then
+                local stability = addon.VignetteRadarWaypointStability
+                local budget = addon.VignetteRadarBudget
+                if stability and addon.GetSettings().vignetteRadarWorldFocusSmoothWaypoint
+                    and not (budget and budget.paused
+                        and (budget.paused.radar or budget.paused.background)) then
+                    stability.Enable()
+                elseif stability then stability.Disable() end
+                return true
+            end
         end
     end
+    local stability = addon.VignetteRadarWaypointStability
+    if stability then stability.Disable() end
     local placed, result = pcall(C_Map.SetUserWaypoint, point)
     if not placed or result == false or (issecretvalue and issecretvalue(result)) then
         return false, "Waypoint could not be set"
@@ -691,6 +702,9 @@ function API.Clear(silent)
         addon.VignetteRadarZygor.PauseForManual("Guide waypoint cleared")
     end
     active, route, pausedRoute, lastSelected, lootSession = nil, nil, nil, nil, nil
+    if addon.VignetteRadarWaypointStability then
+        addon.VignetteRadarWaypointStability.Disable()
+    end
     if not silent then RouteNote("WORLD FOCUS", "Cleared · " .. (name or "Waypoint")) end
     return true
 end
@@ -937,14 +951,33 @@ function API.Sync(mapID, snapshot, liveTargets, questPoints, mapNotes)
             active, route, pausedRoute = nil, nil, nil
         end
     end
-    if not (active and player) then return end
+    if not (active and player) then
+        if addon.VignetteRadarWaypointStability then
+            addon.VignetteRadarWaypointStability.Disable()
+        end
+        return
+    end
     local step = active.steps[active.index]
     if not step or not SameWaypoint(step) then
         if active.kind == "guide" and addon.VignetteRadarZygor then
             addon.VignetteRadarZygor.PauseForManual("Waypoint changed outside the radar")
         end
         active, route, pausedRoute = nil, nil, nil
+        if addon.VignetteRadarWaypointStability then
+            addon.VignetteRadarWaypointStability.Disable()
+        end
         return
+    end
+    local stability = addon.VignetteRadarWaypointStability
+    if stability then
+        local smooth = addon.GetSettings().vignetteRadarWorldFocusSmoothWaypoint
+            and addon.GetSettings().vignetteRadarWorldFocusThemedWaypoint
+            and _G.WaypointUIAPI and _G.WaypointUIAPI.Navigation
+            and not (addon.VignetteRadarBudget and addon.VignetteRadarBudget.paused
+                and (addon.VignetteRadarBudget.paused.radar
+                    or addon.VignetteRadarBudget.paused.background))
+        if smooth and not stability.IsEnabled() then stability.Enable()
+        elseif not smooth then stability.Disable() end
     end
     if not (Number(player.worldX) and Number(player.worldY)) then return end
     if route and route.locked then return end

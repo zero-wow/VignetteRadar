@@ -237,6 +237,16 @@ do
         and not turn.UpdateRadar(radar, math.pi / 2)
         and turn.Interval(radar, true) == .10,
         "turn-only updates must rotate cached markers without a full render and obey CPU throttling")
+    point:SetPoint("CENTER", radar.field, "CENTER", 20, 0)
+    turn.TrackPoint(point, 20, 0, math.pi / 2)
+    assert(math.abs(point.x - 10) < .001 and radar.field._turnPending,
+        "a redraw should preserve the previously displayed position before easing a small move")
+    assert(turn.UpdateRadar(radar, math.pi / 2, .05)
+        and math.abs(point.x - 15) < .001
+        and turn.UpdateRadar(radar, math.pi / 2, .05)
+        and math.abs(point.x - 20) < .001
+        and not turn.UpdateRadar(radar, math.pi / 2),
+        "the existing turn pass should smooth straight-line movement without a new update loop")
 end
 assert(loadfile(sourcePath))("VignetteRadar", addon)
 assert(loadfile("Routes/RouteArrow.lua"))("VignetteRadar", addon)

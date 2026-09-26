@@ -125,7 +125,9 @@ function addon.GetSettings()
     if type(db.vignetteRadarAutoRouteNearbyZones) ~= "boolean" then db.vignetteRadarAutoRouteNearbyZones = true end
     if type(db.vignetteRadarAutoRouteQuestStarts) ~= "boolean" then db.vignetteRadarAutoRouteQuestStarts = true end
     if type(db.vignetteRadarAutoRouteQuestNearest) ~= "boolean" then db.vignetteRadarAutoRouteQuestNearest = true end
+    if type(db.vignetteRadarLearnedQuestHints) ~= "boolean" then db.vignetteRadarLearnedQuestHints = true end
     if type(db.vignetteRadarWorldFocusThemedWaypoint) ~= "boolean" then db.vignetteRadarWorldFocusThemedWaypoint = true end
+    if type(db.vignetteRadarWorldFocusSmoothWaypoint) ~= "boolean" then db.vignetteRadarWorldFocusSmoothWaypoint = true end
     if db.vignetteRadarAutoRouteArrivalRadius ~= 10 and db.vignetteRadarAutoRouteArrivalRadius ~= 20
         and db.vignetteRadarAutoRouteArrivalRadius ~= 40 then
         db.vignetteRadarAutoRouteArrivalRadius = 10
