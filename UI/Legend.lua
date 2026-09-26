@@ -864,18 +864,26 @@ local function EnsureQuestPanel()
             if not (self.entry and GameTooltip) then return end
             GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
             GameTooltip:SetText(self.entry.name, 1, .89, .78)
-            GameTooltip:AddLine(self.entry.completed and "Complete · solid diamond"
-                or "In progress · hollow diamond", .68, .82, .8)
+            local status = self.entry.completed and "Complete" or "Quest"
             if self.entry.distance then
-                GameTooltip:AddLine(math.floor(self.entry.distance + .5) .. " yd from you", .72, .76, .78)
+                status = status .. " · " .. math.floor(self.entry.distance + .5) .. " yd"
             end
-            local exploration = addon.VignetteRadarExploration
-            if exploration and exploration.ObjectiveLines then
-                for _, objective in ipairs(exploration.ObjectiveLines(self.entry.questID)) do
-                    GameTooltip:AddLine(objective, .75, .82, .83, true)
+            GameTooltip:AddLine(status, .72, .76, .78)
+            if not self.entry.completed then
+                local questData = addon.VignetteRadarQuestData
+                local summary = questData and questData.GetObjectiveSummary
+                    and questData.GetObjectiveSummary(self.entry.questID)
+                if summary and summary.label then
+                    GameTooltip:AddLine((summary.count and summary.count .. " " or "") .. summary.label,
+                        1, .86, .52, true)
+                else
+                    local exploration = addon.VignetteRadarExploration
+                    local lines = exploration and exploration.ObjectiveLines
+                        and exploration.ObjectiveLines(self.entry.questID)
+                    if lines and lines[1] then GameTooltip:AddLine(lines[1], 1, .86, .52, true) end
                 end
             end
-            GameTooltip:AddLine("Click to spotlight; click again to clear.", .6, .8, .72, true)
+            GameTooltip:AddLine("Click to Spotlight", .6, .8, .72)
             GameTooltip:Show()
         end)
         row:SetScript("OnLeave", function(self)

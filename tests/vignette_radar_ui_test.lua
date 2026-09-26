@@ -1349,10 +1349,12 @@ assert(not questDot.quest.completed and not questDot.fill:IsShown(),
     "an unfinished quest must return to a hollow diamond")
 questDot.scripts.OnEnter(questDot)
 assert(GameTooltip.text == "Nearby quest"
-    and table.concat(GameTooltip.lines, " | "):find("Collect supplies: 1/3", 1, true)
-    and table.concat(GameTooltip.lines, " | "):find("estimated location", 1, true)
+    and table.concat(GameTooltip.lines, " | "):find("1/3 Collect supplies", 1, true)
     and not table.concat(GameTooltip.lines, " | "):find("Find the camp", 1, true),
-    "quest dots must name the quest and list only unfinished objectives")
+    "quest dots must name the quest and show its next unfinished objective")
+assert(#GameTooltip.lines <= 3
+    and not table.concat(GameTooltip.lines, " | "):find("Blizzard quest map point", 1, true),
+    "quest-dot tooltips must stay brief and leave map-source explanations to the legend")
 questDot.scripts.OnLeave(questDot)
 assert(questDot:IsShown() and questDot.quest.questID == 12345 and questDot.point[4] > 0
     and panel.summary.text == "1 QUEST IN RANGE", "quest dots should show live positions and a readable count")
@@ -1371,7 +1373,7 @@ panel.field.hovered = true
 panel.scripts.OnUpdate(panel, .16)
 assert(not questDot:IsShown() and questDot.halo:IsShown()
     and GameTooltip:IsShown() and GameTooltip:GetOwner() == panel.field
-    and table.concat(GameTooltip.lines, " | "):find("Estimated quest location", 1, true),
+    and table.concat(GameTooltip.lines, " | "):find("Estimated Area", 1, true),
     "an unselected quest must show a usable estimated area even with diamonds hidden")
 panel.field.scripts.OnMouseUp(panel.field, "LeftButton")
 assert(addon.VignetteRadarExploration.GetFocusedQuest() == 12345,
@@ -1780,8 +1782,8 @@ GetCursorPosition = function() return panel.field:GetWidth() / 2, panel.field:Ge
 panel.questBlob.hovered = true
 panel.scripts.OnUpdate(panel, .16)
 assert(GameTooltip:IsShown() and GameTooltip:GetOwner() == panel.questBlob
-    and GameTooltip.text == "Nearby quest" and GameTooltip.line:find("Click to spotlight", 1, true)
-    and table.concat(GameTooltip.lines, " | "):find("Collect supplies: 1/3", 1, true),
+    and GameTooltip.text == "Nearby quest" and GameTooltip.line:find("Click to Spotlight", 1, true)
+    and table.concat(GameTooltip.lines, " | "):find("1/3 Collect supplies", 1, true),
     "hovering a native quest shape must identify the quest and its unfinished objectives")
 panel.questBlob.hovered = false
 panel.field.scripts.OnMouseUp(panel.field, "LeftButton")

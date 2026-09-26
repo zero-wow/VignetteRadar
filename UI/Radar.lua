@@ -1149,16 +1149,20 @@ local function HideQuestDots()
     end
 end
 
-local function AddQuestTooltipObjectives(questID)
-    local exploration = addon.VignetteRadarExploration
-    if not (exploration and GameTooltip) then return end
-    local lines = exploration.ObjectiveLines and exploration.ObjectiveLines(questID) or {}
-    if #lines > 0 then
-        GameTooltip:AddLine("Still needed", .58, .83, .73)
-        for _, line in ipairs(lines) do GameTooltip:AddLine(line, 1, .86, .52, true) end
+local function AddQuestTooltipObjective(questID, hint)
+    if not GameTooltip then return end
+    local questData = addon.VignetteRadarQuestData
+    local summary = questData and questData.GetObjectiveSummary
+        and questData.GetObjectiveSummary(questID, hint)
+    if summary and summary.label then
+        GameTooltip:AddLine((summary.count and summary.count .. " " or "") .. summary.label,
+            1, .86, .52, true)
+        return
     end
-    local progress = exploration.ObjectiveProgress and exploration.ObjectiveProgress(questID)
-    if progress then GameTooltip:AddLine(progress, .7, .75, .78) end
+    local exploration = addon.VignetteRadarExploration
+    local lines = exploration and exploration.ObjectiveLines and exploration.ObjectiveLines(questID)
+    local objective = lines and lines[1] or hint
+    if objective then GameTooltip:AddLine(objective, 1, .86, .52, true) end
 end
 
 local function HideMapNotes()
@@ -1433,42 +1437,16 @@ local function RenderQuestDots(player, range)
                             if not GameTooltip then return end
                             GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
                             GameTooltip:SetText(self.quest.name, 1, 0.82, 0.35)
-                            if self.quest.taskType then
-                                GameTooltip:AddLine(self.quest.taskType == "world" and "World Quest"
-                                    or "Bonus Objective", .68, .82, .95)
+                            local kind = self.quest.completed and "Complete"
+                                or self.quest.taskType == "world" and "World Quest"
+                                or self.quest.taskType == "bonus" and "Bonus Objective" or "Quest"
+                            GameTooltip:AddLine(kind .. " · " .. math.floor(self.distance + .5) .. " yd",
+                                .72, .76, .78)
+                            if not self.quest.completed then
+                                AddQuestTooltipObjective(self.quest.questID,
+                                    self.quest.objectiveText or (self.quest.nextStep and self.quest.nextStep.text))
                             end
-                            GameTooltip:AddLine(self.quest.completed and "Complete · solid diamond"
-                                or "In progress · hollow diamond", .68, .82, .8)
-                            local legend = LegendAPI()
-                            if legend and legend.QuestPointSource and legend.SourceDescription then
-                                GameTooltip:AddLine(legend.SourceDescription(legend.QuestPointSource(self.quest)),
-                                    .58, .83, .73, true)
-                            end
-                            GameTooltip:AddLine(math.floor(self.distance + 0.5) .. " yd from you", 0.72, 0.76, 0.78)
-                            if self.quest.nextStep then
-                                GameTooltip:AddLine("Blizzard's next quest step", .58, .83, .73)
-                                if self.quest.nextStep.onCurrentMap == false then
-                                    GameTooltip:AddLine("Next waypoint is on another map; this diamond shows the current quest location.",
-                                        .72, .76, .78, true)
-                                end
-                                if self.quest.nextStep.text then
-                                    GameTooltip:AddLine(self.quest.nextStep.text, .84, .87, .83, true)
-                                end
-                            end
-                            if self.quest.learned then
-                                GameTooltip:AddLine("Learned location from repeated objective progress.",
-                                    .58, .83, .73, true)
-                                if self.quest.objectiveText then
-                                    GameTooltip:AddLine(self.quest.objectiveText, .84, .87, .83, true)
-                                end
-                            end
-                            if self.halo and self.halo:IsShown() then
-                                GameTooltip:AddLine(legend and legend.SourceDescription
-                                    and legend.SourceDescription("estimated")
-                                    or "Approximate quest radius.", .72, .76, .78, true)
-                            end
-                            AddQuestTooltipObjectives(self.quest.questID)
-                            GameTooltip:AddLine("Click to spotlight; click again to clear.", .6, .8, .72, true)
+                            GameTooltip:AddLine("Click to Spotlight", .6, .8, .72)
                             GameTooltip:Show()
                         end)
                         dot:SetScript("OnLeave", function() if GameTooltip then GameTooltip:Hide() end end)
@@ -1802,9 +1780,9 @@ local function UpdateQuestAreaTooltip()
     panel.hoverQuestID = questID
     GameTooltip:SetOwner(tooltipOwner, "ANCHOR_CURSOR_RIGHT", 5, 2)
     GameTooltip:SetText(quest.name, 1, .82, .35)
-    GameTooltip:AddLine(estimated and "Estimated quest location" or "Quest area", .72, .76, .78)
-    AddQuestTooltipObjectives(quest.questID)
-    GameTooltip:AddLine("Click to spotlight; click again to clear.", .6, .8, .72, true)
+    GameTooltip:AddLine(estimated and "Estimated Area" or "Quest Area", .72, .76, .78)
+    if not quest.completed then AddQuestTooltipObjective(quest.questID, quest.objectiveText) end
+    GameTooltip:AddLine("Click to Spotlight", .6, .8, .72)
     GameTooltip:Show()
 end
 
@@ -4039,7 +4017,8 @@ local function RenderEdgeCues(player, range, targets)
                 GameTooltip:SetText(self.entry.name or "Nearby location", 1, 1, 1)
                 GameTooltip:AddLine(math.floor(self.entry.distance + .5) .. " yd away; outside radar range.", .7, .8, .78)
                 if self.entry.kind == "quest" then
-                    AddQuestTooltipObjectives(self.entry.item.questID)
+                    AddQuestTooltipObjective(self.entry.item.questID,
+                        self.entry.item.objectiveText)
                 else
                     GameTooltip:AddLine(self.entry.stale and "Last seen; not a live detection."
                         or "Known vignette from Blizzard's map data.", .65, .75, .75)
