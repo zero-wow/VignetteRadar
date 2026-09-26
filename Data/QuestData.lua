@@ -69,6 +69,17 @@ local function Call(owner, name, ...)
     return a, b, c
 end
 
+local function ObjectiveLabelAndCount(label)
+    local current, required = label:match("^%s*(%d+)%s*/%s*(%d+)%s*[:%-]?%s*")
+    if current then
+        label = label:gsub("^%s*%d+%s*/%s*%d+%s*[:%-]?%s*", "", 1)
+    else
+        current, required = label:match("(%d+)%s*/%s*(%d+)%s*$")
+        if current then label = label:gsub("%s*:?%s*%d+%s*/%s*%d+%s*$", "") end
+    end
+    return label, tonumber(current), tonumber(required)
+end
+
 function API.Invalidate(reason)
     stepCache, stepCacheCount, stepCacheMap = {}, 0, nil
     startsCache, startsCacheCount = {}, 0
@@ -95,10 +106,10 @@ function API.GetObjectiveSummary(questID, hint)
                     if label then
                         local current = Number(Field(objective, "numFulfilled"))
                         local required = Number(Field(objective, "numRequired"))
-                        local fromText, totalText = label:match("(%d+)%s*/%s*(%d+)%s*$")
+                        local fromText, totalText
+                        label, fromText, totalText = ObjectiveLabelAndCount(label)
                         current = current or tonumber(fromText)
                         required = required or tonumber(totalText)
-                        label = label:gsub("%s*:?%s*%d+%s*/%s*%d+%s*$", "")
                         if label == "" then label = "Quest Objective" end
                         rows[#rows + 1] = { label = label,
                             count = current and required and required > 0
@@ -114,7 +125,7 @@ function API.GetObjectiveSummary(questID, hint)
         objectiveCache[questID] = cached
     end
     local wanted = Text(hint, 160)
-    if wanted then wanted = wanted:lower():gsub("%s*:?%s*%d+%s*/%s*%d+%s*$", "") end
+    if wanted then wanted = ObjectiveLabelAndCount(wanted); wanted = wanted:lower() end
     local first
     for _, row in ipairs(cached.rows) do
         if not row.finished then
@@ -126,8 +137,8 @@ function API.GetObjectiveSummary(questID, hint)
     if not first and #cached.rows == 0 then
         local fallback = Text(hint, 150)
         if fallback then
-            local current, required = fallback:match("(%d+)%s*/%s*(%d+)%s*$")
-            fallback = fallback:gsub("%s*:?%s*%d+%s*/%s*%d+%s*$", "")
+            local current, required
+            fallback, current, required = ObjectiveLabelAndCount(fallback)
             return { label = fallback ~= "" and fallback or "Quest Objective",
                 count = current and required and (current .. "/" .. required) or nil }
         end

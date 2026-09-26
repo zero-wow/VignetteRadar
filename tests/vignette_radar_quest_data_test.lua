@@ -128,10 +128,23 @@ Q.Invalidate("quest")
 assert(Q.GetObjectiveSummary(501, "Collect crystals").count == "3/5"
     and objectiveReads == 2,
     "quest events should refresh the objective count immediately")
+C_QuestLog.GetQuestObjectives = function()
+    return { { text = "0/1 Participate in the Brewfest Chowdown",
+        numFulfilled = 0, numRequired = 1, finished = false } }
+end
+Q.Invalidate("quest")
+local prefixed = Q.GetObjectiveSummary(501)
+assert(prefixed and prefixed.label == "Participate in the Brewfest Chowdown"
+    and prefixed.count == "0/1",
+    "a leading Blizzard progress count must not appear twice in objective notes")
 C_QuestLog.GetQuestObjectives = function() return nil end
 Q.Invalidate("quest")
 local fallback = Q.GetObjectiveSummary(501, "Scout the cave: 1/3")
 assert(fallback and fallback.label == "Scout the cave" and fallback.count == "1/3",
     "Blizzard waypoint text should keep the objective note useful before objective rows load")
+local prefixedFallback = Q.GetObjectiveSummary(501, "0/1 Participate in the Brewfest Chowdown")
+assert(prefixedFallback and prefixedFallback.label == "Participate in the Brewfest Chowdown"
+    and prefixedFallback.count == "0/1",
+    "leading progress counts in waypoint text must also remain single")
 
 print("vignette radar quest data tests passed")
