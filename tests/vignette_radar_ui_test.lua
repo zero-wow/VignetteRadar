@@ -757,11 +757,32 @@ assert(panel.routeToggle.backdrop == nil and panel.routeToggle.art.texture
     and not panel.routeToggle.glow:IsShown()
     and panel.routeToggle.clickButtons[2] == "RightButtonUp",
     "Auto Route must use the shared themed icon states and accept a right-click")
-local routeHover = panel.hoverTools[8]
+function CornerTool(id)
+    for _, tool in ipairs(panel.hoverTools) do
+        if tool.toolID == id then return tool end
+    end
+end
+local routeHover = assert(CornerTool("route"))
 assert(routeHover.toolID == "route" and routeHover.artColumn == 10
     and routeHover.art.texture == panel.routeToggle.art.texture
-    and panel.hoverTools[10].artColumn == 7 and panel.hoverTools[11].artColumn == 8,
+    and CornerTool("eye").artColumn == 7 and CornerTool("help").artColumn == 8,
     "Route, eye, and help must use their intended cells in the shared icon atlas")
+do
+    local tracker = addon.VignetteRadarQuestTracker
+    local toggles = 0
+    addon.VignetteRadarQuestTracker = {
+        ToggleTray = function() toggles = toggles + 1 end,
+        IsExpanded = function() return toggles % 2 == 1 end,
+    }
+    local button = assert(CornerTool("tracker"))
+    assert(button.artColumn == 11 and button.art.texture == routeHover.art.texture,
+        "the Quest Tracker button must use the matching corner-control artwork")
+    button.scripts.OnClick(button, "LeftButton")
+    assert(toggles == 1 and button.art.texCoord[3] > .5,
+        "the radar control must open the tray and show its selected state")
+    addon.VignetteRadarQuestTracker = tracker
+    panel.RefreshCornerTools()
+end
 do
     local normalState = panel.routeToggle.art.texCoord[3]
     panel.routeToggle.scripts.OnEnter(panel.routeToggle)
@@ -1763,12 +1784,11 @@ for _, layoutName in ipairs({ "classic", "compact", "squat" }) do
     addon.SetVignetteRadarCircleOnly(true)
     panel.field.hovered = true
     panel.field.scripts.OnEnter(panel.field)
-    assert(#panel.hoverTools >= 13 and panel.hoverTools[8].toolID == "route"
-        and panel.hoverTools[9].toolID == "arrow"
-        and panel.hoverTools[#panel.hoverTools - 2].toolID == "clear"
-        and panel.hoverTools[#panel.hoverTools - 2].reference == panel.clearToggle
+    assert(#panel.hoverTools >= 15 and CornerTool("route") == routeHover
+        and CornerTool("arrow").reference == panel.arrowToggle
+        and CornerTool("clear").reference == panel.clearToggle
         and panel.hoverTools[#panel.hoverTools - 1].toolID == "minimize"
-        and panel.hoverTools[#panel.hoverTools - 1].artColumn == 3
+        and panel.hoverTools[#panel.hoverTools - 1].artColumn == 14
         and panel.hoverTools[#panel.hoverTools].toolID == "close"
         and panel.hoverTools[1]:IsShown()
         and not panel.settingsDot:IsShown(),
@@ -1787,7 +1807,7 @@ for _, layoutName in ipairs({ "classic", "compact", "squat" }) do
     configTool.scripts.OnLeave(configTool)
     assert(configTool.art.texCoord[3] == normalRow,
         "mouse leave must restore the normal image")
-    assert(panel.hoverTools[6].art.texCoord[3] > .5,
+    assert(CornerTool("north").art.texCoord[3] > .5,
         "north-up must use an on image distinct from the normal state")
     local side, center = panel.field:GetWidth(), panel.field:GetWidth() / 2
     for _, tool in ipairs(panel.hoverTools) do
@@ -2680,27 +2700,31 @@ do
     end
     settings.vignetteRadarRouteArrow = true
     addon.VignetteRadarAPI.Refresh(false)
-    local cornerRoute = panel.hoverTools[8]
+    local cornerRoute = routeHover
     assert(panel.routeToggle.trackingIcon:IsShown()
-        and panel.routeToggle.trackingIcon.atlas == "VignetteLoot"
+        and panel.routeToggle.trackingIcon.texture
+            == "Interface\\AddOns\\VignetteRadar\\Media\\radar-route-types.tga"
+        and panel.routeToggle.trackingIcon.texCoord[1] > .25
+        and panel.routeToggle.trackingIcon.texCoord[1] < .5
         and not panel.routeToggle.art:IsShown()
         and cornerRoute.trackingIcon:IsShown()
-        and cornerRoute.trackingIcon.atlas == "VignetteLoot",
-        "both Auto Route buttons should show the current treasure symbol")
+        and cornerRoute.trackingIcon.texCoord[1] > .25,
+        "both Auto Route buttons should show the themed treasure symbol")
     focus.GetTrackedRouteKind = function() return "quest" end
     addon.VignetteRadarAPI.Refresh(false)
-    assert(panel.routeToggle.trackingIcon.texture == addon.VignetteRadarQuestHollowTexture
-        and cornerRoute.trackingIcon.texture == addon.VignetteRadarQuestHollowTexture,
+    assert(panel.routeToggle.trackingIcon.texCoord[1] > .5
+        and panel.routeToggle.trackingIcon.texCoord[1] < .75
+        and cornerRoute.trackingIcon.texCoord[1] > .5,
         "the route symbol should follow a new quest stop")
     focus.GetTrackedRouteKind = function() return "rare" end
     addon.VignetteRadarAPI.Refresh(false)
-    assert(panel.routeToggle.trackingIcon.texture == "Interface\\TargetingFrame\\UI-TargetingFrame-Skull"
-        and cornerRoute.trackingIcon.texture == "Interface\\TargetingFrame\\UI-TargetingFrame-Skull",
+    assert(panel.routeToggle.trackingIcon.texCoord[1] < .25
+        and cornerRoute.trackingIcon.texCoord[1] < .25,
         "the route symbol should follow a rare stop")
     focus.GetTrackedRouteKind = function() return "zygor" end
     addon.VignetteRadarAPI.Refresh(false)
-    assert(panel.routeToggle.trackingIcon.texture == panel.routeToggle.art.texture
-        and cornerRoute.trackingIcon.texture == cornerRoute.art.texture,
+    assert(panel.routeToggle.trackingIcon.texCoord[1] > .75
+        and cornerRoute.trackingIcon.texCoord[1] > .75,
         "the route symbol should retain the themed guide mark for Zygor")
     focus.GetTrackedRouteKind = function() return "treasure" end
     addon.VignetteRadarAPI.Refresh(false)
@@ -2720,7 +2744,7 @@ do
     assert(math.abs(widget.pointer.rotation - initialRotation + .5) < .01,
         "bearing-only updates must turn the arrow between full route refreshes")
     GetPlayerFacing = originalFacing
-    local arrowTool = panel.hoverTools[9]
+    local arrowTool = CornerTool("arrow")
     assert(arrowTool.toolID == "arrow" and arrowTool.reference == panel.arrowToggle)
     arrowTool.scripts.OnClick(arrowTool, "LeftButton")
     assert(settings.vignetteRadarRouteArrow == false and not widget:IsShown(),

@@ -63,19 +63,14 @@ local radarPeekActive, radarPeekPreviousManual, radarPeekPreviousPosition
 local EndLauncherPeek
 local trailPopup, HideTrailPopup, ToggleTrailPopup, RefreshTrailPopup
 local routeMenu = {}
-function routeMenu.SetTrackedRouteTexture(texture, kind)
-    if kind == "rare" then
-        texture:SetTexture(SKULL_TEXTURE)
-        texture:SetTexCoord(0, 1, 0, 1)
-    elseif kind == "treasure" then
-        texture:SetAtlas("VignetteLoot")
-    elseif kind == "quest" then
-        texture:SetTexture(addon.VignetteRadarQuestHollowTexture)
-        texture:SetTexCoord(0, 1, 0, 1)
-    elseif kind == "zygor" then
-        texture:SetTexture("Interface\\AddOns\\VignetteRadar\\Media\\radar-corner-controls.tga")
-        texture:SetTexCoord((10 * 64 + 1) / 1024,
-            (10 * 64 + 63) / 1024, 1 / 256, 63 / 256)
+function routeMenu.SetTrackedRouteTexture(texture, kind, state)
+    local column = kind == "rare" and 0 or kind == "treasure" and 1
+        or kind == "quest" and 2 or kind == "zygor" and 3
+    if column then
+        local row = state or 0
+        texture:SetTexture("Interface\\AddOns\\VignetteRadar\\Media\\radar-route-types.tga")
+        texture:SetTexCoord((column * 64 + 1) / 256, (column * 64 + 63) / 256,
+            (row * 64 + 1) / 256, (row * 64 + 63) / 256)
     end
 end
 function routeMenu.TrackedRouteColor(kind)
@@ -5970,6 +5965,8 @@ local function EnsurePanel()
         for _, tool in ipairs(panel.hoverTools) do
             local id = tool.toolID
             local active = id == "north" and settings.vignetteRadarNorthUp == true
+                or id == "tracker" and addon.VignetteRadarQuestTracker
+                    and addon.VignetteRadarQuestTracker.IsExpanded()
                 or id == "trail" and settings.vignetteRadarBreadcrumbs == true
                 or id == "route" and addon.VignetteRadarWorldFocus
                     and addon.VignetteRadarWorldFocus.IsRouteActive()
@@ -5982,20 +5979,18 @@ local function EnsurePanel()
                     ((legend.IsShown and legend.IsShown()) or (legend.IsQuestShown and legend.IsQuestShown()))
             local state = (active and 2 or 0) + (tool._hovered and 1 or 0)
             if state ~= tool._artState then
-                if id ~= "arrow" and id ~= "clear" then
-                    local column = tool.artColumn
-                    tool.art:SetTexCoord((column * 64 + 1) / 1024, (column * 64 + 63) / 1024,
-                        (state * 64 + 1) / 256, (state * 64 + 63) / 256)
-                end
+                local column = tool.artColumn
+                tool.art:SetTexCoord((column * 64 + 1) / 1024, (column * 64 + 63) / 1024,
+                    (state * 64 + 1) / 256, (state * 64 + 63) / 256)
                 tool._artState = state
             end
-            if id == "arrow" or id == "clear" then
-                tool.art:SetVertexColor(ACCENT[1], ACCENT[2], ACCENT[3],
-                    active and 1 or tool._hovered and .9 or .42)
-            elseif id == "route" and tool.trackingIcon then
-                if tool._trackingKind ~= trackedKind then
+            if id == "route" and tool.trackingIcon then
+                if tool._trackingKind ~= trackedKind or tool._trackingState ~= state then
                     tool._trackingKind = trackedKind
-                    if trackedKind then routeMenu.SetTrackedRouteTexture(tool.trackingIcon, trackedKind) end
+                    tool._trackingState = state
+                    if trackedKind then
+                        routeMenu.SetTrackedRouteTexture(tool.trackingIcon, trackedKind, state)
+                    end
                 end
                 tool.art:SetShown(trackedKind == nil)
                 tool.art:SetVertexColor(ACCENT[1], ACCENT[2], ACCENT[3], 1)
@@ -6014,26 +6009,24 @@ local function EnsurePanel()
     end
     local function HoverTool(id, title, reference, point, x, y)
         local tool = CreateFrame("Button", nil, panel.field)
-        local small = id == "arrow" or id == "clear"
-        tool:SetSize(small and 12 or 16, small and 12 or 16)
+        local satellite = id == "tracker"
+            or id == "trail" or id == "arrow"
+        tool:SetSize(satellite and 12 or 16, satellite and 12 or 16)
         tool:SetFrameLevel(panel.field:GetFrameLevel() + 8)
         tool:SetPoint(point, panel.field, point, x, y)
         tool:RegisterForClicks("LeftButtonUp", "RightButtonUp")
         tool.toolID, tool.reference = id, reference
-        tool.artColumn = id == "route" and 10 or id == "eye" and 7
-            or id == "help" and 8 or id == "minimize" and 3
-            or id == "close" and 9 or #panel.hoverTools
+        tool.artColumn = ({ config = 0, target = 1, legend = 2, minus = 3,
+            plus = 4, north = 5, trail = 6, eye = 7, help = 8, close = 9,
+            route = 10, tracker = 11, clear = 12, arrow = 13,
+            minimize = 14 })[id]
         tool.art = tool:CreateTexture(nil, "ARTWORK")
-        tool.art:SetTexture(id == "clear"
-            and addon.VignetteRadarQuestHollowTexture
-            or id == "arrow"
-            and "Interface\\AddOns\\VignetteRadar\\Media\\route-crystal-pointer.tga"
-            or "Interface\\AddOns\\VignetteRadar\\Media\\radar-corner-controls.tga")
-        tool.art:SetSize(small and 12 or 18, small and 12 or 18)
+        tool.art:SetTexture("Interface\\AddOns\\VignetteRadar\\Media\\radar-corner-controls.tga")
+        tool.art:SetSize(satellite and 14 or 18, satellite and 14 or 18)
         tool.art:SetPoint("CENTER")
         if id == "route" then
             tool.trackingIcon = tool:CreateTexture(nil, "OVERLAY")
-            tool.trackingIcon:SetSize(14, 14)
+            tool.trackingIcon:SetSize(18, 18)
             tool.trackingIcon:SetPoint("CENTER")
             tool.trackingIcon:Hide()
         end
@@ -6059,10 +6052,16 @@ local function EnsurePanel()
             end) end
         end)
         tool:SetScript("OnClick", function(self, button)
+            if id == "tracker" then
+                local tracker = addon.VignetteRadarQuestTracker
+                if tracker then tracker.ToggleTray() end
+                panel.RefreshCornerTools()
+                return
+            end
             if id == "help" then
                 if GameTooltip then
                     GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
-                    GameTooltip:SetText("Radar status", 1, 1, 1)
+                    GameTooltip:SetText("Radar Status", 1, 1, 1)
                     if panel.emptyReason then
                         GameTooltip:AddLine(panel.emptyReason, .7, .83, .79, true)
                     end
@@ -6086,17 +6085,23 @@ local function EnsurePanel()
         tool:Hide()
         panel.hoverTools[#panel.hoverTools + 1] = tool
     end
-    HoverTool("config", "Quick settings", panel.settingsDot, "TOPLEFT", 10, -10)
-    HoverTool("target", "Choose a target", panel.target, "TOPLEFT", 30, -10)
-    HoverTool("legend", "Legend · right-click for quest key", panel.legend, "TOPLEFT", 10, -30)
-    HoverTool("minus", "Zoom out", panel.zoomOut, "TOPRIGHT", -10, -10)
-    HoverTool("plus", "Zoom in", panel.zoomIn, "TOPRIGHT", -30, -10)
-    HoverTool("north", "North up / facing up", panel.compass, "TOPRIGHT", -10, -30)
-    HoverTool("trail", "Trail: left toggle, right style", panel.trailToggle, "BOTTOMLEFT", 10, 10)
-    HoverTool("route", "Auto Route: start, pause, or resume; right-click to choose",
-        panel.routeToggle, "BOTTOMRIGHT", -10, 30)
-    HoverTool("arrow", "Mini Route Arrow: show or hide", panel.arrowToggle,
-        "BOTTOMRIGHT", -48, 10)
+    HoverTool("config", "Quick Settings", panel.settingsDot, "TOPLEFT", 12, -12)
+    HoverTool("target", "Choose A Target", panel.target, "TOPLEFT", 32, -12)
+    HoverTool("legend", "Radar Legend · Right-Click For Quest Key",
+        panel.legend, "TOPLEFT", 12, -32)
+    HoverTool("tracker", "Quest Tracker · Slide Out Or In", nil, "TOPLEFT", 52, -10)
+    HoverTool("minus", "Zoom Out", panel.zoomOut, "TOPRIGHT", -12, -12)
+    HoverTool("plus", "Zoom In", panel.zoomIn, "TOPRIGHT", -32, -12)
+    HoverTool("north", "North Up / Facing Up", panel.compass, "TOPRIGHT", -12, -32)
+    HoverTool("eye", "Stay Fully Visible", panel.combatToggle, "BOTTOMLEFT", 12, 12)
+    HoverTool("clear", "Keep Center Clear", panel.clearToggle, "BOTTOMLEFT", 32, 12)
+    HoverTool("trail", "Trail · Left-Click To Toggle, Right-Click For Style",
+        panel.trailToggle, "BOTTOMLEFT", 52, 10)
+    HoverTool("help", "Radar Status", nil, "BOTTOMLEFT", 12, 32)
+    HoverTool("route", "Auto Route · Click To Toggle, Right-Click To Choose",
+        panel.routeToggle, "BOTTOMRIGHT", -12, 32)
+    HoverTool("arrow", "Mini Route Arrow · Show Or Hide", panel.arrowToggle,
+        "BOTTOMRIGHT", -10, 52)
     for _, tool in ipairs(panel.hoverTools) do
         if tool.toolID == "route" then
             tool:HookScript("OnEnter", function(self) routeMenu.ShowGuideStrip(self) end)
@@ -6110,11 +6115,9 @@ local function EnsurePanel()
             break
         end
     end
-    HoverTool("eye", "Stay fully visible", panel.combatToggle, "BOTTOMLEFT", 30, 10)
-    HoverTool("help", "Radar status", nil, "BOTTOMLEFT", 10, 30)
-    HoverTool("clear", "Keep Center Clear", panel.clearToggle, "BOTTOMLEFT", 68, 9)
-    HoverTool("minimize", "Minimize to launcher", panel.minimize, "BOTTOMRIGHT", -30, 10)
-    HoverTool("close", "Turn radar off", panel.close, "BOTTOMRIGHT", -10, 10)
+    HoverTool("minimize", "Minimize To Launcher", panel.minimize,
+        "BOTTOMRIGHT", -32, 12)
+    HoverTool("close", "Turn Radar Off", panel.close, "BOTTOMRIGHT", -12, 12)
     panel.RefreshCornerTools()
     panel.field:SetScript("OnEnter", function()
         panel._hoverToolsShown = true

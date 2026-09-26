@@ -30,6 +30,7 @@ function methods:SetFont(...) self.font = { ... } end
 function methods:SetJustifyH(value) self.justify = value end
 function methods:SetWordWrap(value) self.wrap = value end
 function methods:SetTexture(value) self.texture = value end
+function methods:SetTexCoord(...) self.texCoord = { ... } end
 function methods:SetVertexColor(...) self.vertex = { ... } end
 function methods:SetColorTexture(...) self.color = { ... } end
 function methods:IsShown() return self.shown == true end
@@ -57,6 +58,9 @@ UIParent:SetSize(1600, 900)
 local radarPanel = CreateFrame("Frame", nil, UIParent)
 radarPanel:SetSize(246, 278)
 radarPanel.left, radarPanel.top = 30, 380
+radarPanel.field = CreateFrame("Frame", nil, radarPanel)
+radarPanel.field:SetSize(200, 200)
+radarPanel.field.left, radarPanel.field.top = 52, 350
 STANDARD_TEXT_FONT = "Fonts\\FRIZQT__.TTF"
 local settings = { vignetteRadarQuestTrackerVisible = true,
     vignetteRadarQuestTrackerScope = "local", vignetteRadarQuestTrackerCollapsed = {},
@@ -73,7 +77,12 @@ local addon = {
             button:SetText(label)
             return button
         end,
-        RoundedStatusSurface = function(frame) frame.statusSurface = true end,
+        RoundedStatusSurface = function(frame)
+            frame.statusSurface = { edge = {} }
+            for index = 1, 9 do
+                frame.statusSurface.edge[index] = frame:CreateTexture()
+            end
+        end,
         RefreshRoundedStatusSurface = function() end,
     },
     VignetteRadarQuestData = { GetObjectiveSummary = function(id)
@@ -152,8 +161,9 @@ assert(panel.rows[2].entry.questID == 11 and panel.rows[2].name.textColor[2] == 
     "difficulty title and radar diamond must use independent colors")
 assert(panel.rows[2].center.shown and panel.rows[2].slot.text == "2"
     and panel.rows[2].slot.font[3] == "OUTLINE"
-    and panel.rows[2].slot.point[2] == panel.rows[2].diamond,
-    "the outlined quest number must sit inside a dark-tinted incomplete diamond")
+    and panel.rows[2].slot.point[2] == panel.rows[2].diamond
+    and panel.rows[2].slot.point[4] == 1.5,
+    "the outlined quest number must be optically centered in the diamond")
 panel.rows[2].scripts.OnEnter(panel.rows[2])
 assert(highlights[#highlights] == 11, "hover should highlight matching radar diamonds")
 panel.rows[2].scripts.OnLeave(panel.rows[2])
@@ -178,42 +188,64 @@ assert(settings.vignetteRadarQuestDots == false and refreshes == 1)
 Choose("vignetteRadarQuestNumbers", true)
 assert(settings.vignetteRadarQuestNumbers == true and refreshes == 2)
 Choose("vignetteRadarQuestTrackerView", "tray")
+panel.scripts.OnUpdate(panel, .23)
 assert(settings.vignetteRadarQuestTrackerView == "tray"
-    and panel.point[1] == "LEFT" and panel.point[3] == "RIGHT"
-    and panel.point[4] == 0 and not panel.trayBorders.left.shown
-    and panel.trayBorders.right.shown,
-    "Tray must meet the radar flush with its attached border open")
+    and panel.point[1] == "TOPLEFT" and panel.point[2] == radarPanel.field
+    and panel.point[3] == "TOPRIGHT" and panel.point[4] == -2
+    and panel.point[5] == -2 and panel.height == 196
+    and panel.handle:IsShown() and not panel.close:IsShown()
+    and not panel.statusSurface.edge[1].shown and panel.statusSurface.edge[3].shown
+    and not panel.handle.statusSurface.edge[1].shown,
+    "Tray must slide from the visible radar edge with an exposed handle and open join")
+radarPanel.field:SetSize(164, 164)
+tracker.Refresh()
+assert(panel.height == 160 and panel.footer:IsShown()
+    and panel.rows[3]:IsShown() and not panel.rows[4]:IsShown(),
+    "the smallest radar tray must scroll before quest rows reach its bottom edge")
+radarPanel.field:SetSize(200, 200)
+tracker.Refresh()
+panel.handle.scripts.OnClick(panel.handle)
+panel.scripts.OnUpdate(panel, .23)
+assert(settings.vignetteRadarQuestTrackerRetracted == true
+    and panel:IsShown() and panel.handle:IsShown()
+    and panel.point[4] == -2 - (306 - 20),
+    "a retracted tray must leave its clickable edge outside the radar")
+assert(tracker.ToggleTray())
+panel.scripts.OnUpdate(panel, .23)
+assert(settings.vignetteRadarQuestTrackerRetracted == false and panel.point[4] == -2,
+    "the radar button must slide the same tray back out")
 Choose("vignetteRadarQuestTrackerSide", "top")
 assert(panel.point[1] == "BOTTOM" and panel.point[3] == "TOP"
-    and not panel.trayBorders.bottom.shown and panel.trayBorders.top.shown,
+    and not panel.statusSurface.edge[7].shown and panel.statusSurface.edge[1].shown,
     "the upper tray should attach directly above the radar")
 settings.vignetteRadarQuestTrackerCollapsed = {
     ["Dragon Isles"] = true, ["Old World"] = true, ["World Quests"] = true,
 }
-radarPanel.left, radarPanel.top = 700, 540
+radarPanel.field.left, radarPanel.field.top = 700, 600
 Choose("vignetteRadarQuestTrackerSide", "bottom")
-assert(panel.height == 115 and panel.point[1] == "TOP"
-    and panel.point[3] == "BOTTOM" and not panel.trayBorders.top.shown,
-    "the lower tray should fit below the radar with folded quest headers")
+assert(panel.height == 196 and panel.point[1] == "TOP"
+    and panel.point[3] == "BOTTOM" and not panel.statusSurface.edge[1].shown,
+    "the lower tray should keep its edge aligned with the radar")
 Choose("vignetteRadarQuestTrackerSide", "left")
-assert(panel.point[1] == "RIGHT" and panel.point[3] == "LEFT"
-    and not panel.trayBorders.right.shown,
+assert(panel.point[1] == "TOPRIGHT" and panel.point[3] == "TOPLEFT"
+    and not panel.statusSurface.edge[3].shown,
     "the left tray should emerge horizontally from the radar")
-radarPanel.left = 1300
+radarPanel.field.left = 1300
 Choose("vignetteRadarQuestTrackerSide", "right")
-assert(panel.actualSide == "left" and panel.point[1] == "RIGHT",
+assert(panel.actualSide == "left" and panel.point[1] == "TOPRIGHT",
     "Tray must switch to an edge that fits rather than cover the radar")
 radarPanel:Hide()
 panel.scripts.OnUpdate(panel, 1)
-assert(panel.point[2] == UIParent and not panel.trayBorders.left.shown,
+assert(panel.point[2] == UIParent and panel.close:IsShown()
+    and not panel.handle:IsShown() and panel.statusSurface.edge[1].shown,
     "Tray should use the saved floating position while the radar is hidden")
 radarPanel:Show()
 panel.scripts.OnUpdate(panel, 1)
-assert(panel.point[2] == radarPanel and panel.trayBorders.left.shown,
+assert(panel.point[2] == radarPanel.field and panel.handle:IsShown(),
     "Tray should redock as soon as the radar is visible again")
 Choose("vignetteRadarQuestTrackerView", "floating")
-assert(settings.vignetteRadarQuestTrackerView == "floating"
-    and panel.point[2] == UIParent and not panel.trayBorders.top.shown,
+assert(settings.vignetteRadarQuestTrackerView == "floating" and panel.close:IsShown()
+    and panel.point[2] == UIParent and not panel.handle:IsShown(),
     "Floating view should restore its independent saved placement")
 panel.close.scripts.OnClick(panel.close)
 assert(not panel:IsShown() and settings.vignetteRadarQuestTrackerVisible == false)

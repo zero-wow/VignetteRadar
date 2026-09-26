@@ -6,6 +6,7 @@ addon.VignetteRadarQuestTracker = API
 
 local WIDTH, HEADER_HEIGHT, HEADER_ROW_HEIGHT, QUEST_ROW_HEIGHT = 306, 47, 20, 32
 local VISIBLE_ROWS, FOOTER_HEIGHT = 8, 17
+local TRAY_TAB, SLIDE_SECONDS = 20, .22
 local DIAMOND = "Interface\\AddOns\\VignetteRadar\\Media\\quest-diamond.tga"
 local HOLLOW = "Interface\\AddOns\\VignetteRadar\\Media\\quest-diamond-hollow.tga"
 local WHITE = "Interface\\Buttons\\WHITE8X8"
@@ -244,13 +245,18 @@ local function SavePosition()
     end
 end
 
+local function RadarAnchor()
+    local radar = addon.VignetteRadarAPI
+    local root = radar and radar.GetPanel and radar.GetPanel()
+    return root and (root.field or root), root
+end
+
 local function Place()
     if not frame then return end
     local db = Settings()
-    local radar = addon.VignetteRadarAPI
-    local anchor = radar and radar.GetPanel and radar.GetPanel()
-    local dock = db.vignetteRadarQuestTrackerView == "tray" and anchor and anchor.IsShown
-        and anchor:IsShown()
+    local anchor, root = RadarAnchor()
+    local dock = db.vignetteRadarQuestTrackerView == "tray" and root and root.IsShown
+        and root:IsShown() and anchor and anchor.IsShown and anchor:IsShown()
     local side = db.vignetteRadarQuestTrackerSide or "right"
     if dock then
         local screenW, screenH = UIParent:GetWidth(), UIParent:GetHeight()
@@ -276,31 +282,30 @@ local function Place()
             end
             if not fits[side] then dock = false end
             if dock then
-                -- Center the compact tray on the mating edge; it shares that edge
-                -- with the radar instead of floating beside a decorative connector.
                 local xOffset, yOffset = 0, 0
-                if side == "right" or side == "left" then
-                    local center = math.max(frame:GetHeight() / 2 + 8,
-                        math.min(screenH - frame:GetHeight() / 2 - 8, (top + bottom) / 2))
-                    yOffset = center - (top + bottom) / 2
-                else
+                if side == "top" or side == "bottom" then
                     local center = math.max(WIDTH / 2 + 8,
                         math.min(screenW - WIDTH / 2 - 8, (left + right) / 2))
                     xOffset = center - (left + right) / 2
                 end
+                local progress = frame.slideProgress or 1
+                local retreat = (1 - progress) *
+                    ((side == "right" or side == "left") and (WIDTH - TRAY_TAB)
+                        or (frame:GetHeight() - TRAY_TAB))
                 local key = table.concat({ "tray", side, math.floor(left), math.floor(right),
-                    math.floor(top), math.floor(bottom), frame:GetHeight(), xOffset, yOffset }, ":")
+                    math.floor(top), math.floor(bottom), frame:GetHeight(), xOffset,
+                    math.floor(retreat * 10 + .5) }, ":")
                 if frame._placementKey ~= key then
                     frame._placementKey = key
                     frame:ClearAllPoints()
                     if side == "right" then
-                        frame:SetPoint("LEFT", anchor, "RIGHT", 0, yOffset)
+                        frame:SetPoint("TOPLEFT", anchor, "TOPRIGHT", -2 - retreat, -2)
                     elseif side == "left" then
-                        frame:SetPoint("RIGHT", anchor, "LEFT", 0, yOffset)
+                        frame:SetPoint("TOPRIGHT", anchor, "TOPLEFT", 2 + retreat, -2)
                     elseif side == "top" then
-                        frame:SetPoint("BOTTOM", anchor, "TOP", xOffset, 0)
+                        frame:SetPoint("BOTTOM", anchor, "TOP", xOffset, -retreat)
                     else
-                        frame:SetPoint("TOP", anchor, "BOTTOM", xOffset, 0)
+                        frame:SetPoint("TOP", anchor, "BOTTOM", xOffset, retreat)
                     end
                 end
             end
@@ -317,29 +322,52 @@ local function Place()
         end
     end
     frame.actualSide = dock and side or nil
-    if type(frame.statusSurface) == "table" then
-        for _, texture in ipairs(frame.statusSurface.edge or {}) do
-            texture:SetShown(not dock)
+    local strata = dock and "LOW" or "MEDIUM"
+    if frame._strata ~= strata then frame._strata = strata; frame:SetFrameStrata(strata) end
+    frame.close:SetShown(not dock)
+    frame.handle:SetShown(dock)
+    if dock and frame.handleSide ~= side then
+        frame.handleSide = side
+        frame.handle:ClearAllPoints()
+        if side == "right" or side == "left" then
+            frame.handle:SetSize(TRAY_TAB, 68)
+            frame.handle:SetPoint(side == "right" and "RIGHT" or "LEFT", frame,
+                side == "right" and "RIGHT" or "LEFT")
+        else
+            frame.handle:SetSize(68, TRAY_TAB)
+            frame.handle:SetPoint(side == "top" and "TOP" or "BOTTOM", frame,
+                side == "top" and "TOP" or "BOTTOM")
         end
     end
-    local joinEdge = { right = "left", left = "right", top = "bottom", bottom = "top" }
-    for edge, texture in pairs(frame.trayBorders or {}) do
-        texture:SetShown(dock and edge ~= joinEdge[side])
+    if type(frame.statusSurface) == "table" then
+        local join = { right = { [1] = true, [4] = true, [7] = true },
+            left = { [3] = true, [6] = true, [9] = true },
+            top = { [7] = true, [8] = true, [9] = true },
+            bottom = { [1] = true, [2] = true, [3] = true } }
+        for index, texture in ipairs(frame.statusSurface.edge or {}) do
+            texture:SetShown(not dock or not join[side][index])
+        end
+        if type(frame.handle.statusSurface) == "table" then
+            for index, texture in ipairs(frame.handle.statusSurface.edge or {}) do
+                texture:SetShown(dock and not join[side][index])
+            end
+        end
     end
 end
 
 local function Draw()
     if not frame then return end
     local controls = addon.VignetteRadarControls
-    if controls then controls.RefreshRoundedStatusSurface(frame) end
+    if controls then
+        controls.RefreshRoundedStatusSurface(frame)
+        controls.RefreshRoundedStatusSurface(frame.handle)
+    end
     local style = addon.VignetteRadarStyle
     local ar, ag, ab = .05, .82, .62
     if style then ar, ag, ab = style.Color("accent") end
     frame.title:SetTextColor(ar, ag, ab, 1)
     frame.rule:SetColorTexture(ar, ag, ab, .2)
-    for _, texture in pairs(frame.trayBorders or {}) do
-        texture:SetColorTexture(ar, ag, ab, .64)
-    end
+    if frame.handleIcon then frame.handleIcon:SetVertexColor(ar, ag, ab, 1) end
     local count = 0
     for _, entry in ipairs(entries) do if entry.kind == "quest" then count = count + 1 end end
     local scope = Settings().vignetteRadarQuestTrackerScope
@@ -357,7 +385,23 @@ local function Draw()
         end
     end
     frame.visibleEntries = visible
-    local capacity = Settings().vignetteRadarQuestTrackerView == "tray" and 6 or VISIBLE_ROWS
+    local anchor, root = RadarAnchor()
+    local trayHeight = Settings().vignetteRadarQuestTrackerView == "tray"
+        and root and root.IsShown and root:IsShown() and anchor
+        and Number(anchor:GetHeight()) and math.max(110, anchor:GetHeight() - 4)
+    offset = math.max(0, math.min(offset, math.max(0, #visible - 1)))
+    local capacity = VISIBLE_ROWS
+    if trayHeight then
+        capacity = 0
+        local room, used = trayHeight - HEADER_HEIGHT - FOOTER_HEIGHT - 7, 0
+        for index = offset + 1, math.min(#visible, offset + VISIBLE_ROWS) do
+            local height = visible[index].kind == "header" and HEADER_ROW_HEIGHT
+                or QUEST_ROW_HEIGHT
+            if capacity > 0 and used + height > room then break end
+            used, capacity = used + height, capacity + 1
+        end
+        capacity = math.max(1, capacity)
+    end
     offset = math.max(0, math.min(offset, math.max(0, #visible - capacity)))
     local shown = math.min(#visible - offset, capacity)
     local contentHeight = 0
@@ -367,8 +411,8 @@ local function Draw()
             or QUEST_ROW_HEIGHT)
     end
     local overflow = #visible > capacity
-    frame:SetHeight(HEADER_HEIGHT + math.max(24, contentHeight)
-        + (overflow and FOOTER_HEIGHT or 8))
+    frame:SetHeight(trayHeight or (HEADER_HEIGHT + math.max(24, contentHeight)
+        + (overflow and FOOTER_HEIGHT or 8)))
     frame.empty:SetShown(#visible == 0)
     frame.empty:SetText(scope == "local" and "No Local Quests On This Map"
         or scope == "watched" and "No Watched Quests" or "No Quests In Your Log")
@@ -446,7 +490,11 @@ local function EnsureMenu()
             else
                 local db = Settings()
                 if key == "vignetteRadarQuestTrackerView" and value == "tray"
-                    and db[key] == "floating" then SavePosition() end
+                    and db[key] == "floating" then
+                    SavePosition()
+                    if frame then frame.slideProgress = 0; frame.slideTarget = nil end
+                    db.vignetteRadarQuestTrackerRetracted = false
+                end
                 db[key] = value
                 if key == "vignetteRadarQuestDots" and addon.RefreshVignetteRadar then
                     addon.RefreshVignetteRadar(true)
@@ -522,30 +570,24 @@ local function EnsureFrame()
     frame:EnableMouse(true)
     frame:EnableMouseWheel(true)
     addon.VignetteRadarControls.RoundedStatusSurface(frame)
-    frame.trayBorders = {}
-    for _, edge in ipairs({ "left", "right", "top", "bottom" }) do
-        local border = frame:CreateTexture(nil, "BORDER")
-        border:SetTexture(WHITE)
-        if edge == "left" then
-            border:SetPoint("TOPLEFT", 0, -1)
-            border:SetPoint("BOTTOMLEFT", 0, 1)
-            border:SetWidth(2)
-        elseif edge == "right" then
-            border:SetPoint("TOPRIGHT", 0, -1)
-            border:SetPoint("BOTTOMRIGHT", 0, 1)
-            border:SetWidth(2)
-        elseif edge == "top" then
-            border:SetPoint("TOPLEFT", 1, 0)
-            border:SetPoint("TOPRIGHT", -1, 0)
-            border:SetHeight(2)
-        else
-            border:SetPoint("BOTTOMLEFT", 1, 0)
-            border:SetPoint("BOTTOMRIGHT", -1, 0)
-            border:SetHeight(2)
+    frame.slideProgress = Settings().vignetteRadarQuestTrackerRetracted == true and 0 or 1
+    frame.handle = CreateFrame("Button", nil, frame)
+    frame.handle:EnableMouse(true)
+    addon.VignetteRadarControls.RoundedStatusSurface(frame.handle)
+    if type(frame.handle.statusSurface) == "table" then
+        for _, texture in ipairs(frame.handle.statusSurface.face or {}) do
+            texture:Hide()
         end
-        border:Hide()
-        frame.trayBorders[edge] = border
     end
+    frame.handleIcon = frame.handle:CreateTexture(nil, "OVERLAY")
+    frame.handleIcon:SetTexture("Interface\\AddOns\\VignetteRadar\\Media\\radar-corner-controls.tga")
+    frame.handleIcon:SetTexCoord((11 * 64 + 1) / 1024, (12 * 64 - 1) / 1024,
+        1 / 256, 63 / 256)
+    frame.handleIcon:SetSize(18, 18)
+    frame.handleIcon:SetPoint("CENTER")
+    frame.handle:SetScript("OnClick", function() API.ToggleTray() end)
+    Hint(frame.handle, "Quest Tracker", "Click To Slide The Tray In Or Out.")
+    frame.handle:Hide()
     local position = Settings().vignetteRadarQuestTrackerPosition
     frame:SetPoint("TOPLEFT", UIParent, "TOPLEFT",
         type(position) == "table" and Number(position.x) or 290,
@@ -681,6 +723,21 @@ local function EnsureFrame()
         Draw()
     end)
     frame:SetScript("OnUpdate", function(self, elapsed)
+        if Settings().vignetteRadarQuestTrackerView == "tray" then
+            local target = Settings().vignetteRadarQuestTrackerRetracted == true and 0 or 1
+            if self.slideTarget ~= target then
+                self.slideTarget, self.slideFrom, self.slideElapsed =
+                    target, self.slideProgress or target, 0
+            end
+            if self.slideProgress ~= target then
+                self.slideElapsed = math.min(SLIDE_SECONDS, self.slideElapsed + elapsed)
+                local t = self.slideElapsed / SLIDE_SECONDS
+                self.slideProgress = self.slideFrom + (target - self.slideFrom)
+                    * (1 - (1 - t) * (1 - t) * (1 - t))
+                if t == 1 then self.slideProgress = target end
+                Place()
+            end
+        end
         self.themeElapsed = (self.themeElapsed or 0) + elapsed
         if self.themeElapsed < 1 then return end
         self.themeElapsed = 0
@@ -712,9 +769,39 @@ function API.Hide()
 end
 
 function API.Toggle()
-    Settings().vignetteRadarQuestTrackerVisible = not Settings().vignetteRadarQuestTrackerVisible
+    local db = Settings()
+    if db.vignetteRadarQuestTrackerView == "tray" then
+        db.vignetteRadarQuestTrackerRetracted = db.vignetteRadarQuestTrackerVisible == true
+            and not db.vignetteRadarQuestTrackerRetracted
+        db.vignetteRadarQuestTrackerVisible = true
+    else
+        db.vignetteRadarQuestTrackerVisible = not db.vignetteRadarQuestTrackerVisible
+    end
     API.Refresh()
-    return Settings().vignetteRadarQuestTrackerVisible
+    local _, root = RadarAnchor()
+    if root and root.RefreshCornerTools then root.RefreshCornerTools() end
+    return db.vignetteRadarQuestTrackerVisible
+end
+
+function API.ToggleTray()
+    local db = Settings()
+    if db.vignetteRadarQuestTrackerView ~= "tray" then
+        if frame then frame.slideProgress = 0; frame.slideTarget = nil end
+        db.vignetteRadarQuestTrackerView = "tray"
+        db.vignetteRadarQuestTrackerRetracted = false
+        db.vignetteRadarQuestTrackerVisible = true
+        API.Refresh()
+    else
+        API.Toggle()
+    end
+    local _, root = RadarAnchor()
+    if root and root.RefreshCornerTools then root.RefreshCornerTools() end
+    return db.vignetteRadarQuestTrackerRetracted ~= true
+end
+
+function API.IsExpanded()
+    local db = Settings()
+    return frame and frame:IsShown() and db.vignetteRadarQuestTrackerRetracted ~= true
 end
 
 function API.IsShown() return frame and frame:IsShown() or false end
