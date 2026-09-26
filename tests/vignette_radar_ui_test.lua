@@ -2197,6 +2197,23 @@ for _ in pairs(quick.tabs) do tabCount = tabCount + 1 end
 assert(tabCount == 12 and quick.pages.Themes and quick.pages.Guides and quick.pages.Explore
     and quick.pages.Wayfinding and quick.pages["Map Data"],
     "compact settings must visibly include exploration controls")
+do
+    local openPlayerTracker, openings
+    for _, object in ipairs(objects) do
+        if object.parent == quick.pages.Tools and object.text == "Player Tracker" then
+            openPlayerTracker = object
+            break
+        end
+    end
+    local original = addon.VignetteRadarPlayerTracker
+    addon.VignetteRadarPlayerTracker = { Open = function() openings = (openings or 0) + 1 end }
+    assert(openPlayerTracker and openPlayerTracker.point[4] >= 12
+        and openPlayerTracker.point[4] + openPlayerTracker.width <= quick.width - 12,
+        "Player Tracker must have a visible, correctly placed Tools action")
+    openPlayerTracker.scripts.OnClick()
+    assert(openings == 1, "the Tools action must open Player Tracker")
+    addon.VignetteRadarPlayerTracker = original
+end
 local openBeacons, previewBeacons, backFromBeacons
 for _, object in ipairs(objects) do
     if object.parent == quick.pages.Markers and object.text == "Bearing Bar..." then

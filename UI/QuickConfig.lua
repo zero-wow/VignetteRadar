@@ -688,8 +688,11 @@ local function Build()
     Button(toolsPage, "Radar Guide", 150, -144, 124, function()
         if API.ShowGuide then API.ShowGuide(anchor) end
     end)
+    Button(toolsPage, "Player Tracker", 14, -177, 260, function()
+        if addon.VignetteRadarPlayerTracker then addon.VignetteRadarPlayerTracker.Open() end
+    end)
     Label(toolsPage, "Historical reports never appear as live detections.",
-        14, -187, 9, 260)
+        14, -212, 9, 260)
     Button(toolsPage, "Back To Radar", 14, -253, 260, function()
         SelectPage("Radar")
     end)

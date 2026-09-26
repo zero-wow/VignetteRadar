@@ -4228,6 +4228,7 @@ Render = function()
                 PlaceBlip(target.key, x * scale, y * scale, target)
             end
         end
+        if addon.VignetteRadarPlayerTracker then addon.VignetteRadarPlayerTracker.HideRadar() end
         EndBlips()
         return
     end
@@ -4253,6 +4254,7 @@ Render = function()
         RenderCardinals(0)
         panel.direction:Hide()
         for _, line in ipairs(panel.headingChevron) do line:Hide() end
+        if addon.VignetteRadarPlayerTracker then addon.VignetteRadarPlayerTracker.HideRadar() end
         EndBlips()
         return
     end
@@ -4445,6 +4447,10 @@ Render = function()
     end
     if panel.layout == "squat" and shown == 0 and panel.emptyReason then
         panel.layoutHint:SetText(panel.emptyReason)
+    end
+    if addon.VignetteRadarPlayerTracker then
+        addon.VignetteRadarPlayerTracker.RenderRadar(panel.field, player, range,
+            panel.plotRadius, ViewFacing(player.facing), Project)
     end
     EndBlips()
 end
