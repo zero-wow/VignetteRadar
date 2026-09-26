@@ -111,4 +111,27 @@ C_QuestLog.GetNextWaypointText = function() return { secret=true } end
 Q.Invalidate()
 assert(Q.GetNextStep(501, 77) == nil, "secret coordinates and API errors must not leak")
 
+local objectiveReads, objectiveCount = 0, 2
+C_QuestLog.GetQuestObjectives = function()
+    objectiveReads = objectiveReads + 1
+    return { { text = "Collect crystals: " .. objectiveCount .. "/5",
+        numFulfilled = objectiveCount, numRequired = 5, finished = false },
+        { text = "Speak to the keeper", finished = false } }
+end
+local objective = Q.GetObjectiveSummary(501, "Collect crystals")
+assert(objective and objective.label == "Collect crystals" and objective.count == "2/5"
+    and Q.GetObjectiveSummary(501, "Collect crystals").count == "2/5"
+    and objectiveReads == 1,
+    "objective notes should show the selected count without polling on every redraw")
+objectiveCount = 3
+Q.Invalidate("quest")
+assert(Q.GetObjectiveSummary(501, "Collect crystals").count == "3/5"
+    and objectiveReads == 2,
+    "quest events should refresh the objective count immediately")
+C_QuestLog.GetQuestObjectives = function() return nil end
+Q.Invalidate("quest")
+local fallback = Q.GetObjectiveSummary(501, "Scout the cave: 1/3")
+assert(fallback and fallback.label == "Scout the cave" and fallback.count == "1/3",
+    "Blizzard waypoint text should keep the objective note useful before objective rows load")
+
 print("vignette radar quest data tests passed")

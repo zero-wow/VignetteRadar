@@ -8,6 +8,7 @@ addon.VignetteRadarQuestData = API
 
 local stepCache, stepCacheCount, stepCacheMap = {}, 0, nil
 local startsCache, requestedMaps, startsCacheCount = {}, {}, 0
+local objectiveCache, objectiveCacheCount = {}, 0
 local STEP_AGE, STARTS_AGE, MAX_STEPS, MAX_STARTS = 2, 5, 64, 80
 local MAX_CACHED_MAPS = 64
 
@@ -71,7 +72,67 @@ end
 function API.Invalidate(reason)
     stepCache, stepCacheCount, stepCacheMap = {}, 0, nil
     startsCache, startsCacheCount = {}, 0
+    objectiveCache, objectiveCacheCount = {}, 0
     if reason ~= "quest" then requestedMaps = {} end
+end
+
+-- Quest objectives are read at most once per two seconds between quest events,
+-- even though the movable arrow redraws much more often.
+function API.GetObjectiveSummary(questID, hint)
+    questID = ID(questID)
+    if not questID then return nil end
+    local now = Now()
+    local cached = objectiveCache[questID]
+    if not cached or now - cached.at >= STEP_AGE then
+        local raw = Call(C_QuestLog, "GetQuestObjectives", questID)
+        local rows = {}
+        if not IsSecret(raw) and type(raw) == "table" then
+            local ok, count = pcall(function() return #raw end)
+            if ok and Number(count) then
+                for index = 1, math.min(count, 16) do
+                    local objective = Field(raw, index)
+                    local label = Text(Field(objective, "text"), 150)
+                    if label then
+                        local current = Number(Field(objective, "numFulfilled"))
+                        local required = Number(Field(objective, "numRequired"))
+                        local fromText, totalText = label:match("(%d+)%s*/%s*(%d+)%s*$")
+                        current = current or tonumber(fromText)
+                        required = required or tonumber(totalText)
+                        label = label:gsub("%s*:?%s*%d+%s*/%s*%d+%s*$", "")
+                        if label == "" then label = "Quest Objective" end
+                        rows[#rows + 1] = { label = label,
+                            count = current and required and required > 0
+                                and (math.floor(current) .. "/" .. math.floor(required)) or nil,
+                            finished = Field(objective, "finished") == true }
+                    end
+                end
+            end
+        end
+        if objectiveCacheCount >= MAX_STEPS then objectiveCache, objectiveCacheCount = {}, 0 end
+        if not objectiveCache[questID] then objectiveCacheCount = objectiveCacheCount + 1 end
+        cached = { at = now, rows = rows }
+        objectiveCache[questID] = cached
+    end
+    local wanted = Text(hint, 160)
+    if wanted then wanted = wanted:lower():gsub("%s*:?%s*%d+%s*/%s*%d+%s*$", "") end
+    local first
+    for _, row in ipairs(cached.rows) do
+        if not row.finished then
+            if wanted and wanted ~= "" and (row.label:lower():find(wanted, 1, true)
+                or wanted:find(row.label:lower(), 1, true)) then return Copy(row) end
+            first = first or row
+        end
+    end
+    if not first and #cached.rows == 0 then
+        local fallback = Text(hint, 150)
+        if fallback then
+            local current, required = fallback:match("(%d+)%s*/%s*(%d+)%s*$")
+            fallback = fallback:gsub("%s*:?%s*%d+%s*/%s*%d+%s*$", "")
+            return { label = fallback ~= "" and fallback or "Quest Objective",
+                count = current and required and (current .. "/" .. required) or nil }
+        end
+    end
+    return Copy(first)
 end
 
 -- Returns a map point when Blizzard provides one and its separate instruction

@@ -3202,7 +3202,7 @@ routeMenu.Hide = function()
     if routeMenu.popup and routeMenu.popup:IsShown() then routeMenu.popup:Hide() end
 end
 
-function routeMenu.Note(label, message)
+function routeMenu.Note(label, message, objective)
     if type(message) ~= "string" or message == "" then return end
     local anchor = panel and panel:IsShown() and (CircleOnly() and panel.field or panel)
         or launcher and launcher:IsShown() and launcher
@@ -3221,13 +3221,25 @@ function routeMenu.Note(label, message)
         toast.message:SetHeight(30)
         toast.message:SetWordWrap(true)
         if toast.message.SetMaxLines then toast.message:SetMaxLines(2) end
+        toast.objective = Text(toast, 11, "")
+        toast.objective:SetPoint("TOPLEFT", toast, "TOPLEFT", 14, -57)
+        toast.objective:SetHeight(28)
+        toast.objective:SetWordWrap(true)
+        if toast.objective.SetMaxLines then toast.objective:SetMaxLines(2) end
+        toast.objective:Hide()
+        toast.count = Text(toast, 10, "")
+        toast.count:SetPoint("TOPLEFT", toast, "TOPLEFT", 14, -91)
+        toast.count:SetHeight(12)
+        toast.count:Hide()
         toast:SetScript("OnUpdate", function(self, elapsed)
             self.elapsed = (self.elapsed or 0) + elapsed
-            if self.elapsed >= 3.4 then
+            local fadeEnd = self.fadeEnd or 3.4
+            local fadeStart = fadeEnd - .6
+            if self.elapsed >= fadeEnd then
                 self:SetScript("OnUpdate", nil)
                 self:Hide()
-            elseif self.elapsed > 2.8 then
-                self:SetAlpha(math.max(0, (3.4 - self.elapsed) / .6))
+            elseif self.elapsed > fadeStart then
+                self:SetAlpha(math.max(0, (fadeEnd - self.elapsed) / .6))
             end
         end)
         toast.update = toast:GetScript("OnUpdate")
@@ -3238,14 +3250,30 @@ function routeMenu.Note(label, message)
     local style = addon.VignetteRadarStyle
     local ar, ag, ab = ACCENT[1], ACCENT[2], ACCENT[3]
     if style then ar, ag, ab = style.Color("accent") end
-    addon.VignetteRadarControls.RefreshRoundedStatusSurface(toast)
     toast.heading:SetText(type(label) == "string" and label or "WORLD FOCUS")
     toast.heading:SetTextColor(ar, ag, ab, 1)
     toast.message:SetText(message:gsub("|c%x%x%x%x%x%x%x%x", ""):gsub("|r", "")
         :gsub("|T.-|t", ""):gsub("[%c]", " "))
     toast.message:SetTextColor(.91, .95, .96, 1)
+    local detailed = type(objective) == "table" and type(objective.label) == "string"
+        and objective.label ~= ""
+    toast.fadeEnd = detailed and 5 or 3.4
+    toast:SetHeight(detailed and 110 or 62)
+    toast.objective:SetShown(detailed)
+    toast.count:SetShown(detailed)
+    if detailed then
+        toast.objective:SetText(objective.label:gsub("|c%x%x%x%x%x%x%x%x", "")
+            :gsub("|r", ""):gsub("|T.-|t", ""):gsub("[%c]", " "))
+        toast.objective:SetTextColor(.91, .95, .96, 1)
+        toast.count:SetText(type(objective.count) == "string"
+            and ("Objective · " .. objective.count) or "Current Objective")
+        toast.count:SetTextColor(ar, ag, ab, 1)
+    end
     toast:SetWidth(math.max(260, math.min(380, (anchor:GetWidth() or 304) - 12)))
     toast.message:SetWidth(toast:GetWidth() - 28)
+    toast.objective:SetWidth(toast:GetWidth() - 28)
+    toast.count:SetWidth(toast:GetWidth() - 28)
+    addon.VignetteRadarControls.RefreshRoundedStatusSurface(toast)
     toast:ClearAllPoints()
     local bottom = anchor.GetBottom and anchor:GetBottom()
     local anchorScale = anchor.GetEffectiveScale and anchor:GetEffectiveScale() or 1
@@ -3261,8 +3289,8 @@ function routeMenu.Note(label, message)
     toast:Show()
 end
 
-function addon.ShowVignetteRadarRouteNote(label, message)
-    routeMenu.Note(label, message)
+function addon.ShowVignetteRadarRouteNote(label, message, objective)
+    routeMenu.Note(label, message, objective)
 end
 
 function routeMenu.CategoryButton(parent, kind, label, width)
@@ -3295,7 +3323,7 @@ function routeMenu.CategoryButton(parent, kind, label, width)
         if style then r, g, b = style.Color((kind == "zygor" or kind == "closest")
             and "accent" or kind) end
         local selected, hovered = self._routeSelected == true, self._hovered == true
-        local paused = self._routeState == "paused"
+        local paused = self._routeState == "paused" or self._routeState == "waiting"
         self.label:ClearAllPoints()
         self.label:SetPoint("BOTTOM", self, "BOTTOM", 0, 5)
         self.label:SetSize(width - 2, 11)

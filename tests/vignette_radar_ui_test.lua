@@ -2633,6 +2633,41 @@ do
     widget.scripts.OnClick(widget, "RightButton")
     assert(quick.pages["Auto Route"]:IsShown(),
         "right-clicking the route widget should open its compact settings")
+    local questData = addon.VignetteRadarQuestData
+    local originalObjective = questData.GetObjectiveSummary
+    local originalSkip = focus.SkipRouteStop
+    local skipped = 0
+    questData.GetObjectiveSummary = function() return { label = "Collect Shredder Parts", count = "2/5" } end
+    focus.SkipRouteStop = function() skipped = skipped + 1; return true end
+    routeStep.questID = 991
+    focus.GetRoutePoint = function() return routeStep, "quest", "Quest Route", 1, 1 end
+    addon.VignetteRadarRouteArrow.Refresh()
+    assert(widget.width == 260 and widget.height == 139
+        and widget.node.height == 82
+        and widget.node.objective.text == "Collect Shredder Parts"
+        and widget.node.count.text == "Objective · 2/5"
+        and widget.next.point[5] == -120,
+        "a quest objective should grow the movable note and show its current count")
+    UIParent:SetSize(800, 600)
+    widget.left, widget.top = 600, 90
+    settings.vignetteRadarRouteHorizonExpanded = true
+    addon.VignetteRadarRouteArrow.Refresh()
+    assert(widget.height == 245 and widget.point[4] <= 532
+        and widget.point[5] >= -600 + 245 + 8,
+        "the expanded objective note must stay inside an 800x600 screen")
+    settings.vignetteRadarRouteHorizonExpanded = false
+    widget.left, widget.top = nil, nil
+    UIParent:SetSize(1600, 900)
+    addon.VignetteRadarRouteArrow.Refresh()
+    widget.scripts.OnClick(widget, "MiddleButton")
+    assert(skipped == 1 and widget.clickButtons[3] == "MiddleButtonUp",
+        "middle-clicking the movable note should skip one route stop")
+    focus.GetRoutePoint = function() return routeStep, "treasure", "Treasure Route", 2, 3 end
+    addon.VignetteRadarRouteArrow.Refresh()
+    assert(widget.width == 160 and widget.height == 86 and not widget.node.objective:IsShown(),
+        "the movable note should return to its compact form for other stops")
+    focus.SkipRouteStop = originalSkip
+    questData.GetObjectiveSummary = originalObjective
     settings.vignetteRadarRouteArrow = false
     addon.VignetteRadarAPI.Refresh(false)
     assert(not widget:IsShown(), "turning off the standalone route arrow must hide it")
@@ -3367,6 +3402,15 @@ do
     addon.ShowVignetteRadarRouteNote("AUTO ROUTE", "Next stop")
     assert(toast:GetWidth() == 260 and toast.message:GetWidth() == 232,
         "the smallest radar layout must retain readable text and 14-pixel side gutters")
+    addon.ShowVignetteRadarRouteNote("AUTO ROUTE", "Quest destination",
+        { label = "Collect Shredder Parts", count = "2/5" })
+    assert(toast:GetHeight() == 110 and toast.objective:GetText() == "Collect Shredder Parts"
+        and toast.count:GetText() == "Objective · 2/5"
+        and toast.objective:GetWidth() == 232 and toast.fadeEnd == 5,
+        "the temporary note should reserve its own space for objective progress")
+    addon.ShowVignetteRadarRouteNote("AUTO ROUTE", "Next stop")
+    assert(toast:GetHeight() == 62 and not toast.objective:IsShown(),
+        "a non-objective note should release the extra space")
     panel:SetWidth(originalWidth)
     UIParent:SetSize(1600, 900)
     toast:Hide()

@@ -117,6 +117,12 @@ function addon.GetSettings()
         db.vignetteRadarZygorMode = "objective"
     end
     if type(db.vignetteRadarAutoRouteOnSelect) ~= "boolean" then db.vignetteRadarAutoRouteOnSelect = false end
+    if type(db.vignetteRadarAutoRouteRestore) ~= "boolean" then db.vignetteRadarAutoRouteRestore = true end
+    if db.vignetteRadarAutoRouteLastKind ~= "closest" and db.vignetteRadarAutoRouteLastKind ~= "quest"
+        and db.vignetteRadarAutoRouteLastKind ~= "rare" and db.vignetteRadarAutoRouteLastKind ~= "treasure" then
+        db.vignetteRadarAutoRouteLastKind = nil
+    end
+    if type(db.vignetteRadarAutoRouteWasActive) ~= "boolean" then db.vignetteRadarAutoRouteWasActive = false end
     if type(db.vignetteRadarRouteArrow) ~= "boolean" then db.vignetteRadarRouteArrow = true end
     if type(db.vignetteRadarActiveCue) ~= "boolean" then db.vignetteRadarActiveCue = true end
     if type(db.vignetteRadarRouteHorizonExpanded) ~= "boolean" then db.vignetteRadarRouteHorizonExpanded = false end

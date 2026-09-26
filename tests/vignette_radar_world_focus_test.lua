@@ -11,8 +11,8 @@ local settings = {
 }
 addon.GetSettings = function() return settings end
 local routeNotes = {}
-addon.ShowVignetteRadarRouteNote = function(label, message)
-    routeNotes[#routeNotes + 1] = { label, message }
+addon.ShowVignetteRadarRouteNote = function(label, message, objective)
+    routeNotes[#routeNotes + 1] = { label, message, objective }
 end
 local waypoint, placed = nil, {}
 UiMapPoint = { CreateFromCoordinates = function(mapID, x, y)
@@ -803,6 +803,59 @@ do
     focus.Sync(123, player, {}, {}, {})
     assert(waypoint == nil and not focus.HasFocus(),
         "when no eligible point remains, the completed quest pin must clear")
+end
+
+do
+    settings.vignetteRadarAutoRouteRestore = true
+    settings.vignetteRadarAutoRouteWasActive = false
+    addon.VignetteRadarAvailableStarts = {}
+    local now = 1000
+    GetTime = function() return now end
+    local rare = Step(360)
+    rare.kind, rare.category, rare.key, rare.name = "rare", "rare", "restore-rare", "Remembered Rare"
+    player.worldX = 300
+    focus.Sync(123, player, { rare }, {}, {})
+    assert(focus.StartNearest("rare") and settings.vignetteRadarAutoRouteLastKind == "rare"
+        and settings.vignetteRadarAutoRouteWasActive,
+        "starting a route should remember its kind for reload")
+    assert(not focus.ToggleRoute() and not settings.vignetteRadarAutoRouteWasActive,
+        "a deliberately paused route must stay paused after reload")
+    assert(loadfile("Routes/WorldFocus.lua"))("VignetteRadar", addon)
+    local restored = addon.VignetteRadarWorldFocus
+    restored.Sync(123, player, { rare }, {}, {})
+    assert(not restored.IsRouteActive(), "reload must not restart a paused route")
+    assert(restored.StartNearest("rare") and settings.vignetteRadarAutoRouteWasActive)
+    assert(loadfile("Routes/WorldFocus.lua"))("VignetteRadar", addon)
+    restored = addon.VignetteRadarWorldFocus
+    restored.Sync(123, player, {}, {}, {})
+    assert(not restored.IsRouteActive() and settings.vignetteRadarAutoRouteWasActive,
+        "missing startup data should keep the remembered route pending")
+    assert(select(1, restored.GetRouteChoice()) == "rare"
+        and select(2, restored.GetRouteChoice()) == "waiting",
+        "the route chooser should still show the remembered kind while points load")
+    now = now + 5
+    restored.Sync(123, player, { rare }, {}, {})
+    assert(restored.IsRouteActive() and select(2, restored.GetRoutePoint()) == "rare"
+        and waypoint.position.x == .36,
+        "the last route kind should resume when its points become available")
+    assert(restored.Clear() and not settings.vignetteRadarAutoRouteWasActive,
+        "clearing a route should cancel future automatic restoration")
+    settings.vignetteRadarAutoRouteWasActive = true
+    settings.vignetteRadarAutoRouteRestore = false
+    assert(loadfile("Routes/WorldFocus.lua"))("VignetteRadar", addon)
+    restored = addon.VignetteRadarWorldFocus
+    restored.Sync(123, player, { rare }, {}, {})
+    assert(not restored.IsRouteActive(), "the restore setting should stop automatic restart")
+    addon.VignetteRadarQuestData = { GetObjectiveSummary = function(id, hint)
+        assert(id == 998 and hint == "Gather Parts")
+        return { label = "Gather Parts", count = "2/5" }
+    end }
+    local objective = Step(340)
+    objective.questID, objective.name, objective.objectiveText = 998, "Parts Quest", "Gather Parts"
+    restored.Sync(123, player, {}, { objective }, {})
+    assert(restored.SelectQuest(998) and routeNotes[#routeNotes][3]
+        and routeNotes[#routeNotes][3].count == "2/5",
+        "selecting a quest objective should send its progress to the rounded route note")
 end
 
 io.write("vignette radar World Focus tests passed\n")

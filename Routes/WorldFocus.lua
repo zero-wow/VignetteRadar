@@ -10,8 +10,15 @@ local active, candidates = nil, {}
 local route, pausedRoute, lastSelected = nil, nil, nil
 local horizonCache, horizonCachedAt
 local lootSession
+local nextRestoreAttempt = 0
 local ROUTE_LIMIT, ROUTE_DUPLICATE_YARDS = 192, 60
 local QuestComplete
+
+local function RememberRoute(kind, running)
+    local settings = addon.GetSettings()
+    if kind then settings.vignetteRadarAutoRouteLastKind = kind end
+    settings.vignetteRadarAutoRouteWasActive = running == true
+end
 
 local function Number(value)
     if type(issecretvalue) == "function" and issecretvalue(value) then return nil end
@@ -145,6 +152,7 @@ end
 local function QuestRouteItem(quest)
     return { kind = "quest", questID = quest.questID, name = quest.name,
         colorSlot = quest.colorSlot, taskType = quest.taskType, nextStep = quest.nextStep,
+        objectiveText = quest.objectiveText,
         mapID = quest.mapID or player.mapID, mapX = quest.mapX, mapY = quest.mapY,
         worldX = quest.worldX, worldY = quest.worldY, instanceID = quest.instanceID }
 end
@@ -506,9 +514,14 @@ local function ArmArrival()
         step.worldX, step.worldY) > radius + margin
 end
 
-local function RouteNote(label, message)
+local function RouteNote(label, message, item)
     if type(addon.ShowVignetteRadarRouteNote) == "function" then
-        addon.ShowVignetteRadarRouteNote(label, message)
+        local questData = addon.VignetteRadarQuestData
+        local objective = item and item.kind == "quest" and not item.availableStart
+            and questData and questData.GetObjectiveSummary
+            and questData.GetObjectiveSummary(item.questID,
+                item.objectiveText or item.nextStep and item.nextStep.text) or nil
+        addon.ShowVignetteRadarRouteNote(label, message, objective)
     end
 end
 
@@ -534,7 +547,7 @@ local function Activate(item)
     local detail = type(item.note) == "string" and item.note ~= "" and item.kind ~= "guide"
         and (" · " .. item.note) or ""
     RouteNote(item.kind == "guide" and "ZYGOR STEP" or route and "AUTO ROUTE" or "WORLD FOCUS",
-        active.name .. (#steps > 1 and (" · 1/" .. #steps) or "") .. detail)
+        active.name .. (#steps > 1 and (" · 1/" .. #steps) or "") .. detail, item)
     return true
 end
 
@@ -598,6 +611,7 @@ local function Select(item, directPin)
             visited = {}, visitedPlaces = {}, waiting = false,
             progress = progress, finished = finished }
     end
+    RememberRoute(route and route.kind, route ~= nil)
     ArmArrival()
     return true
 end
@@ -605,6 +619,7 @@ end
 function API.ToggleRoute()
     if route then
         pausedRoute, route = route, nil
+        RememberRoute(pausedRoute.kind, false)
         RouteNote("AUTO ROUTE", "Paused · " .. (active and active.name or "Waypoint kept"))
         return false, "Auto Route paused; waypoint kept"
     end
@@ -612,11 +627,14 @@ function API.ToggleRoute()
         if not (active and active.steps[active.index]
             and SameWaypoint(active.steps[active.index])) then
             pausedRoute = nil
+            RememberRoute(nil, false)
             return false, "Route waypoint changed; choose a point to start again"
         end
         route, pausedRoute = pausedRoute, nil
+        RememberRoute(route.kind, true)
         ArmArrival()
-        RouteNote("AUTO ROUTE", "Resumed · " .. (active and active.name or "Current waypoint"))
+        RouteNote("AUTO ROUTE", "Resumed · " .. (active and active.name or "Current waypoint"),
+            active and active.item)
         return true, "Auto Route resumed"
     end
     local item = active and active.item or lastSelected
@@ -636,8 +654,9 @@ function API.ToggleRoute()
         manualQuestID = kind == "quest" and item.questID or nil,
         visited = {}, visitedPlaces = {}, waiting = false,
         progress = progress, finished = finished }
+    RememberRoute(kind, true)
     ArmArrival()
-    RouteNote("AUTO ROUTE", "Started · " .. (active and active.name or item.name or kind))
+    RouteNote("AUTO ROUTE", "Started · " .. (active and active.name or item.name or kind), item)
     return true, "Auto Route: " .. kind
 end
 
@@ -653,7 +672,12 @@ function API.ToggleRouteLock()
 end
 function API.IsQuestRoute() return route and route.kind == "quest" or false end
 function API.WantsQuestPool()
-    return route and (route.kind == "quest" or route.kind == "closest") or false
+    if route then return route.kind == "quest" or route.kind == "closest" end
+    local settings = addon.GetSettings()
+    return settings.vignetteRadarAutoRouteRestore == true
+        and settings.vignetteRadarAutoRouteWasActive == true
+        and (settings.vignetteRadarAutoRouteLastKind == "quest"
+            or settings.vignetteRadarAutoRouteLastKind == "closest") or false
 end
 function API.GetRouteChoice()
     if route then return route.kind, "active" end
@@ -661,6 +685,11 @@ function API.GetRouteChoice()
     if active then
         if active.kind == "guide" then return "zygor", "focus" end
         return RouteKind(active.item), "focus"
+    end
+    local settings = addon.GetSettings()
+    if settings.vignetteRadarAutoRouteRestore == true
+        and settings.vignetteRadarAutoRouteWasActive == true then
+        return settings.vignetteRadarAutoRouteLastKind, "waiting"
     end
 end
 function API.HasFocus() return active ~= nil end
@@ -736,7 +765,7 @@ end
 
 function API.Clear(silent)
     horizonCache = nil
-    if not active then return false, "No focused waypoint" end
+    if not active then RememberRoute(nil, false); return false, "No focused waypoint" end
     local name = active.name
     local step = active.steps[active.index]
     if step and SameWaypoint(step) then
@@ -756,6 +785,7 @@ function API.Clear(silent)
         addon.VignetteRadarZygor.PauseForManual("Guide waypoint cleared")
     end
     active, route, pausedRoute, lastSelected, lootSession = nil, nil, nil, nil, nil
+    RememberRoute(nil, false)
     if addon.VignetteRadarWaypointStability then
         addon.VignetteRadarWaypointStability.Disable()
     end
@@ -763,7 +793,7 @@ function API.Clear(silent)
     return true
 end
 
-function API.StartNearest(kind)
+function API.StartNearest(kind, restoring)
     if kind ~= "rare" and kind ~= "treasure" and kind ~= "quest"
         and kind ~= "closest" then
         return false, "Choose Closest, Rare, Treasure, or Quest"
@@ -777,7 +807,7 @@ function API.StartNearest(kind)
             return false, "Player location is unavailable"
         end
         local pool = addon.VignetteRadarRouteQuests
-        if (kind == "closest" or kind == "quest") and pool and pool.Tick then
+        if not restoring and (kind == "closest" or kind == "quest") and pool and pool.Tick then
             pool.Tick(true)
         end
         local previous = route
@@ -800,9 +830,10 @@ function API.StartNearest(kind)
             end
         end
         ArmArrival()
+        RememberRoute(kind, true)
         RouteNote("AUTO ROUTE", (kind == "quest" and "Quest" or kind == "rare" and "Rare"
             or kind == "treasure" and "Treasure" or "Closest")
-            .. " · " .. (active and active.name or nearest.name or "Point"))
+            .. " · " .. (active and active.name or nearest.name or "Point"), nearest)
         return true, nearest
     end
 end
@@ -905,7 +936,7 @@ function API.SelectQuest(questID)
     if nearest then
         return Select({ key = "quest:" .. questID, questID = questID,
             name = nearest.name, kind = "quest", colorSlot = nearest.colorSlot,
-            nextStep = nearest.nextStep,
+            nextStep = nearest.nextStep, objectiveText = nearest.objectiveText,
             mapID = nearest.mapID, mapX = nearest.mapX, mapY = nearest.mapY,
             worldX = nearest.worldX, worldY = nearest.worldY,
             instanceID = nearest.instanceID })
@@ -1005,6 +1036,18 @@ function API.Sync(mapID, snapshot, liveTargets, questPoints, mapNotes)
             active, route, pausedRoute = nil, nil, nil
         end
     end
+    local settings = addon.GetSettings()
+    if not (route or pausedRoute or active)
+        and settings.vignetteRadarWorldFocusEnabled == true
+        and settings.vignetteRadarAutoRouteRestore == true
+        and settings.vignetteRadarAutoRouteWasActive == true
+        and player and Number(player.worldX) and Number(player.worldY) then
+        local now = type(GetTime) == "function" and GetTime() or 0
+        if now >= nextRestoreAttempt then
+            nextRestoreAttempt = now + 5
+            API.StartNearest(settings.vignetteRadarAutoRouteLastKind, true)
+        end
+    end
     if not (active and player) then
         if addon.VignetteRadarWaypointStability then
             addon.VignetteRadarWaypointStability.Disable()
@@ -1017,6 +1060,7 @@ function API.Sync(mapID, snapshot, liveTargets, questPoints, mapNotes)
             addon.VignetteRadarZygor.PauseForManual("Waypoint changed outside the radar")
         end
         active, route, pausedRoute = nil, nil, nil
+        RememberRoute(nil, false)
         if addon.VignetteRadarWaypointStability then
             addon.VignetteRadarWaypointStability.Disable()
         end
@@ -1170,6 +1214,13 @@ function API.Status()
     end
     if pausedRoute then return prefix .. "Auto Route paused · " .. (active and active.name or "Waypoint kept") end
     if active then return prefix .. active.name .. "  ·  " .. active.index .. "/" .. #active.steps end
+    local settings = addon.GetSettings()
+    if settings.vignetteRadarAutoRouteRestore == true
+        and settings.vignetteRadarAutoRouteWasActive == true then
+        local kind = settings.vignetteRadarAutoRouteLastKind or "Auto"
+        return "Resuming " .. kind:sub(1, 1):upper() .. kind:sub(2)
+            .. " Route · Waiting for Points"
+    end
     return #candidates .. " possible focus points"
 end
 

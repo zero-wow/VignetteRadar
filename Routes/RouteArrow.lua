@@ -85,7 +85,7 @@ local function Ensure()
     frame:SetMovable(true)
     frame:EnableMouse(true)
     frame:RegisterForDrag("LeftButton")
-    frame:RegisterForClicks("LeftButtonUp", "RightButtonUp")
+    frame:RegisterForClicks("LeftButtonUp", "RightButtonUp", "MiddleButtonUp")
     frame.pointer = frame:CreateTexture(nil, "OVERLAY")
     frame.pointer:SetTexture(POINTER)
     frame.pointer:SetSize(16, 16)
@@ -113,6 +113,22 @@ local function Ensure()
     frame.node.meta:SetSize(132, 11)
     frame.node.meta:SetPoint("BOTTOMLEFT", frame.node, "BOTTOMLEFT", 21, 3)
     frame.node.meta:SetJustifyH("LEFT")
+    frame.node.objective = frame.node:CreateFontString(nil, "OVERLAY")
+    frame.node.objective:SetFont(STANDARD_TEXT_FONT or "Fonts\\FRIZQT__.TTF", 10, "OUTLINE")
+    frame.node.objective:SetPoint("TOPLEFT", frame.node, "TOPLEFT", 21, -20)
+    frame.node.objective:SetSize(232, 28)
+    frame.node.objective:SetJustifyH("LEFT")
+    frame.node.objective:SetWordWrap(true)
+    if frame.node.objective.SetMaxLines then frame.node.objective:SetMaxLines(2) end
+    frame.node.objective:SetTextColor(.91, .94, .95, 1)
+    frame.node.objective:Hide()
+    frame.node.count = frame.node:CreateFontString(nil, "OVERLAY")
+    frame.node.count:SetFont(STANDARD_TEXT_FONT or "Fonts\\FRIZQT__.TTF", 9, "OUTLINE")
+    frame.node.count:SetPoint("TOPLEFT", frame.node, "TOPLEFT", 21, -53)
+    frame.node.count:SetSize(232, 12)
+    frame.node.count:SetJustifyH("LEFT")
+    frame.node.count:SetTextColor(.72, .86, .85, 1)
+    frame.node.count:Hide()
     frame.next = frame:CreateFontString(nil, "OVERLAY")
     frame.next:SetFont(STANDARD_TEXT_FONT or "Fonts\\FRIZQT__.TTF", 9, "OUTLINE")
     frame.next:SetSize(142, 15)
@@ -186,7 +202,7 @@ local function Ensure()
         if focus and focus.ExplainActive then
             GameTooltip:AddLine(focus.ExplainActive(), .67, .83, .79, true)
         end
-        GameTooltip:AddLine("Click for upcoming stops. Drag to move; right-click for Auto Route settings.", .6, .7, .72, true)
+        GameTooltip:AddLine("Click for upcoming stops. Middle-click to skip this stop. Drag to move; right-click for Auto Route settings.", .6, .7, .72, true)
         GameTooltip:Show()
     end)
     frame:SetScript("OnLeave", function() if GameTooltip then GameTooltip:Hide() end end)
@@ -199,6 +215,10 @@ local function Ensure()
         if button == "RightButton" and addon.VignetteRadarQuickConfig
             and addon.VignetteRadarQuickConfig.OpenPage then
             addon.VignetteRadarQuickConfig.OpenPage("Auto Route", self)
+        elseif button == "MiddleButton" then
+            local focus = addon.VignetteRadarWorldFocus
+            if focus and focus.SkipRouteStop then focus.SkipRouteStop() end
+            API.Refresh()
         elseif button == "LeftButton" then
             Settings().vignetteRadarRouteHorizonExpanded =
                 Settings().vignetteRadarRouteHorizonExpanded ~= true
@@ -319,9 +339,38 @@ function API.Refresh()
         frame.node.meta:SetText(meta)
     end
     local expanded = settings.vignetteRadarRouteHorizonExpanded == true
-    local wantedHeight = expanded and 192 or 86
-    if frame:GetHeight() ~= wantedHeight then
-        frame:SetHeight(wantedHeight)
+    local questData = addon.VignetteRadarQuestData
+    local objective = kind == "quest" and not step.availableStart
+        and questData and questData.GetObjectiveSummary
+        and questData.GetObjectiveSummary(step.questID,
+            step.objectiveText or step.nextStep and step.nextStep.text) or nil
+    local detailed = objective and objective.label
+    frame.node.objective:SetShown(detailed ~= nil)
+    frame.node.count:SetShown(detailed ~= nil)
+    if detailed then
+        frame.node.objective:SetText(objective.label)
+        frame.node.count:SetText(objective.count and ("Objective · " .. objective.count)
+            or "Current Objective")
+    end
+    local wantedWidth = detailed and 260 or 160
+    local wantedHeight = detailed and (expanded and 245 or 139)
+        or (expanded and 192 or 86)
+    if frame:GetWidth() ~= wantedWidth or frame:GetHeight() ~= wantedHeight then
+        frame:SetSize(wantedWidth, wantedHeight)
+        frame.node:SetSize(wantedWidth, detailed and 82 or 30)
+        frame.node.name:SetWidth(wantedWidth - 28)
+        frame.node.meta:SetWidth(wantedWidth - 28)
+        frame.next:SetWidth(wantedWidth - 18)
+        frame.next:ClearAllPoints()
+        frame.next:SetPoint("TOPLEFT", frame, "TOPLEFT", 9, detailed and -120 or -68)
+        frame.horizon:SetWidth(wantedWidth)
+        frame.horizon:ClearAllPoints()
+        frame.horizon:SetPoint("TOP", frame, "TOP", 0, detailed and -141 or -88)
+        for _, row in ipairs(frame.horizon.rows) do row:SetWidth(wantedWidth - 18) end
+        frame.node.mark:ClearAllPoints()
+        frame.node.mark:SetPoint("TOPLEFT", frame.node, "TOPLEFT", 8, detailed and -7 or -12)
+        frame.styleRevision = nil
+        SetColor(kind)
         local scale = frame:GetScale()
         local left, top = Number(frame:GetLeft()), Number(frame:GetTop())
         if left and top and Number(scale) then
