@@ -1,0 +1,87 @@
+local path = arg[1] or "Routes/PartyHunt.lua"
+local addon = {}
+assert(loadfile(path))("VignetteRadar", addon)
+local PartyHunt = assert(addon.VignetteRadarPartyHunt)
+
+local now, sent, callbacks = 100, {}, {}
+local group = "PARTY"
+local transport = {
+    register = function(prefix) return prefix == PartyHunt.PREFIX end,
+    send = function(prefix, payload, channel)
+        sent[#sent + 1] = { prefix, payload, channel }
+        return true
+    end,
+    isInParty = function() return group == "PARTY" end,
+    isInRaid = function() return group == "RAID" end,
+}
+local settings = { receive = "party", shareSightings = false, shareStop = false,
+    ignored = { ["ignored-realm"] = true } }
+local service = PartyHunt.New(settings, function(report) callbacks[#callbacks + 1] = report end,
+    transport, function() return now end)
+local sighting = { mapID = 2025, x = .437, y = .812, kind = "rare",
+    identity = "rare:123", name = "Crystal Beast" }
+
+assert(not service:PublishSighting(sighting, true) and #sent == 0,
+    "sightings must never broadcast before opt-in")
+settings.shareSightings = true
+assert(not service:PublishSighting(sighting) and #sent == 0,
+    "a sharing setting alone must not trigger a background send")
+assert(service:PublishSighting(sighting, true) and #sent == 1 and sent[1][3] == "PARTY",
+    "opted-in sightings should send one party message")
+assert(not service:PublishSighting(sighting, true) and #sent == 1,
+    "repeated clicks must respect the send cooldown")
+assert(service:HandleMessage(sent[1][1], sent[1][2], "PARTY", "Friend-Realm"),
+    "a valid group report should be accepted")
+local reports = service:GetReports()
+assert(#reports == 1 and reports[1].evidence == "group-report"
+    and reports[1].phaseCompatibility == "unknown"
+    and reports[1].instanceCompatibility == "unknown"
+    and reports[1].sender == "Friend-Realm" and reports[1].age == 0,
+    "remote evidence must be labeled and not promoted to a live local detection")
+assert(#callbacks == 1 and not service:HandleMessage(sent[1][1], sent[1][2], "PARTY", "Friend-Realm"),
+    "duplicates must not trigger a second callback")
+reports[1].name = "changed"
+assert(service:GetReports()[1].name == "Crystal Beast", "callers must get detached report copies")
+
+local malformed = {
+    "1|G|x|2025|5000|5000|rare|id", -- missing name
+    "2|G|x|2025|5000|5000|rare|id|Name", -- unknown version
+    "1|G|x|2025|10001|5000|rare|id|Name", -- out of map
+    "1|G|x|2025|5000|5000|quest|id|Name", -- quest is not a sighting
+    "1|G|x|2025|5000|5000|rare|id|Bad\nName", -- control text
+    "1|G|x|2025|5000|5000|rare|id|Name|extra", -- extra field
+}
+for _, message in ipairs(malformed) do
+    assert(not service:HandleMessage(PartyHunt.PREFIX, message, "PARTY", "Friend-Realm"),
+        "malformed messages must be ignored")
+end
+assert(not service:HandleMessage(sent[1][1], sent[1][2], "PARTY", "Ignored-Realm"),
+    "ignored senders must be rejected")
+assert(not service:HandleMessage(sent[1][1], sent[1][2], "WHISPER", "Other-Realm"),
+    "whispers must not inject group reports")
+
+now = now + 91
+assert(#service:GetReports() == 0, "reports must expire")
+settings.shareStop = true
+group = "RAID"
+assert(service:PublishStop({ mapID = 2025, x = 0, y = 1, kind = "quest",
+    identity = "quest:99", name = "Next stop" }, true) and sent[#sent][3] == "RAID",
+    "opted-in selected stops can be shared in a raid")
+assert(not service:HandleMessage(sent[#sent][1], sent[#sent][2], "RAID", "Raidmate-Realm"),
+    "party receive scope must exclude raid")
+settings.receive = "raid"
+assert(service:HandleMessage(sent[#sent][1], sent[#sent][2], "RAID", "Raidmate-Realm"),
+    "raid receive scope should accept a selected stop")
+assert(service:GetReports()[1].reportType == "stop", "the selected stop stays distinct from a sighting")
+
+group = nil
+service:OnGroupChanged()
+assert(#service:GetReports() == 0, "disconnecting must clear old reports")
+assert(not service:PublishSighting(sighting, true) and #sent == 2,
+    "outside a group the service must fall back to local-only")
+settings.receive = "off"
+service:SetSettings(settings)
+assert(not service:HandleMessage(sent[1][1], sent[1][2], "PARTY", "Friend-Realm"),
+    "receive off must reject all messages")
+
+io.write("vignette radar party hunt tests passed\n")

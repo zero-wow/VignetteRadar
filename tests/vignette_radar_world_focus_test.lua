@@ -734,4 +734,34 @@ do
     focus.Clear()
     settings.vignetteRadarWorldFocusSavedNotes = true
 end
+do
+    focus.Clear()
+    settings.vignetteRadarAutoRouteQuestNearest = true
+    settings.vignetteRadarAutoRouteQuestStarts = false
+    settings.vignetteRadarAutoRouteNearbyZones = false
+    settings.vignetteRadarWorldQuestPriority = true
+    settings.vignetteRadarWorldQuestPriorityRange = 300
+    addon.VignetteRadarAvailableStarts = {}
+    addon.VignetteRadarRouteQuests = nil
+    local ordinary, world = Step(320), Step(500)
+    ordinary.questID, ordinary.name = 801, "Nearby objective"
+    world.questID, world.name, world.taskType = 800, "World Quest", "world"
+    questActive[800], questActive[801] = true, true
+    C_QuestLog.GetQuestObjectives = function() return { { finished = false } } end
+    player.worldX = 300
+    focus.Sync(123, player, {}, { ordinary, world }, {})
+    assert(focus.StartNearest("quest") and waypoint.position.x == .5,
+        "a World Quest inside the preference radius should beat a closer regular objective")
+    focus.Clear()
+    settings.vignetteRadarWorldQuestPriorityRange = 150
+    assert(focus.StartNearest("quest") and waypoint.position.x == .32,
+        "a World Quest outside the configured radius should not preempt the closest objective")
+    focus.Clear()
+    settings.vignetteRadarWorldQuestPriorityRange = 300
+    addon.VignetteRadarExploration = { GetFocusedQuest = function() return 801 end }
+    assert(focus.StartNearest("quest") and waypoint.position.x == .32,
+        "spotlighting a quest should override the World Quest preference")
+    addon.VignetteRadarExploration = nil
+    focus.Clear()
+end
 io.write("vignette radar World Focus tests passed\n")

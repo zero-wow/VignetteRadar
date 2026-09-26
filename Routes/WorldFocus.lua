@@ -144,7 +144,7 @@ end
 
 local function QuestRouteItem(quest)
     return { kind = "quest", questID = quest.questID, name = quest.name,
-        colorSlot = quest.colorSlot, nextStep = quest.nextStep,
+        colorSlot = quest.colorSlot, taskType = quest.taskType, nextStep = quest.nextStep,
         mapID = quest.mapID or player.mapID, mapX = quest.mapX, mapY = quest.mapY,
         worldX = quest.worldX, worldY = quest.worldY, instanceID = quest.instanceID }
 end
@@ -329,12 +329,26 @@ local function NextRouteStop()
     if not (route and player) then return nil end
     local kind = route.kind
     local best, bestCost, bestRank
+    local bestWorldQuest, bestWorldQuestCost
     local inspected = 0
     local limit = (kind == "closest" or kind == "quest")
         and ROUTE_LIMIT * 3 or ROUTE_LIMIT
     local travelMode = TravelMode()
     local settings = addon.GetSettings()
     local questDone = {}
+    local exploration = addon.VignetteRadarExploration
+    local focusedQuestID = kind == "quest" and exploration
+        and type(exploration.GetFocusedQuest) == "function"
+        and exploration.GetFocusedQuest() or nil
+    if route.manualQuestID and (Call(C_QuestLog, "IsQuestFlaggedCompleted", route.manualQuestID) == true
+        or Call(C_QuestLog, "IsOnQuest", route.manualQuestID) == false) then
+        route.manualQuestID = nil
+    end
+    if focusedQuestID and (Call(C_QuestLog, "IsQuestFlaggedCompleted", focusedQuestID) == true
+        or Call(C_QuestLog, "IsOnQuest", focusedQuestID) == false) then
+        focusedQuestID = nil
+    end
+    local selectedQuestID = route.manualQuestID or focusedQuestID
     local function Consider(item)
         if inspected >= limit then return end
         inspected = inspected + 1
@@ -345,6 +359,7 @@ local function NextRouteStop()
                 and settings.vignetteRadarAutoRouteNearbyZones == false)
             or Visited(item) or (itemKind == "quest" and (
                 route.skippedQuests and route.skippedQuests[item.questID]
+                or selectedQuestID and item.questID ~= selectedQuestID
                 or kind == "quest" and settings.vignetteRadarAutoRouteQuestNearest == false
                     and route.questID and item.questID ~= route.questID)) then return end
         if itemKind == "quest" then
@@ -365,6 +380,15 @@ local function NextRouteStop()
         if itemKind ~= "quest" and recent and type(recent.IsHidden) == "function"
             and recent.IsHidden(item) then return end
         local cost = RouteCost(item, travelMode, kind == "closest")
+        if kind == "quest" and not selectedQuestID
+            and settings.vignetteRadarWorldQuestPriority ~= false
+            and item.taskType == "world" and item.mapID == player.mapID
+            and Number(item.worldX) and Number(item.worldY)
+            and Distance(player.worldX, player.worldY, item.worldX, item.worldY)
+                <= (Number(settings.vignetteRadarWorldQuestPriorityRange) or 300)
+            and (not bestWorldQuest or cost < bestWorldQuestCost) then
+            bestWorldQuest, bestWorldQuestCost = item, cost
+        end
         local rank = itemKind == "rare" and 1 or itemKind == "treasure" and 2
             or item.availableStart and 3.1 or 3
         local tied = bestCost and math.abs(cost - bestCost) <= (kind == "closest" and .5 or 0)
@@ -441,7 +465,7 @@ local function NextRouteStop()
         for _, item in ipairs(live) do Consider(item) end
         for _, note in ipairs(unpairedNotes) do Consider(note) end
     end
-    return best
+    return bestWorldQuest or best
 end
 
 local function ArrivalRadius()
@@ -550,6 +574,7 @@ local function Select(item, directPin)
         local progress, finished
         if kind == "quest" then progress, finished = QuestProgress(item.questID) end
         route = { kind = kind, questID = kind == "quest" and item.questID or nil,
+            manualQuestID = kind == "quest" and item.questID or nil,
             visited = {}, visitedPlaces = {}, waiting = false,
             progress = progress, finished = finished }
     end
@@ -588,6 +613,7 @@ function API.ToggleRoute()
     local progress, finished
     if kind == "quest" then progress, finished = QuestProgress(item.questID) end
     route = { kind = kind, questID = kind == "quest" and item.questID or nil,
+        manualQuestID = kind == "quest" and item.questID or nil,
         visited = {}, visitedPlaces = {}, waiting = false,
         progress = progress, finished = finished }
     ArmArrival()

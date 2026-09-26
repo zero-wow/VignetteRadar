@@ -299,6 +299,45 @@ local function RefreshPOISources()
         quick.poiStatus:SetText(Settings().vignetteRadarPOIIcons
             and "Pack icons · dots where unavailable." or "One pack here · hollow dots are saved notes.")
     end
+    if Settings().vignetteRadarSourceFusion then
+        quick.poiStatus:SetText("Source Fusion is on. Choose packs on its page.")
+    end
+end
+
+local function RefreshFusionSources()
+    if not quick or not quick.fusionRows then return end
+    local poi = addon.VignetteRadarPOIs
+    local mapID = addon.VignetteRadarAPI and addon.VignetteRadarAPI.GetCurrentMapID()
+    local sources = poi and poi.ZoneSources(mapID) or {}
+    local visible = {}
+    for _, source in ipairs(sources) do
+        if source.enabled then visible[#visible + 1] = source end
+    end
+    quick.fusionEntries = visible
+    quick.fusionOffset = math.max(0, math.min(quick.fusionOffset or 0,
+        math.max(0, #visible - #quick.fusionRows)))
+    local selected = Settings().vignetteRadarFusionSources
+    if type(selected) ~= "table" then selected = {} end
+    local preferred = type(Settings().vignetteRadarFusionPreferred) == "table"
+        and Settings().vignetteRadarFusionPreferred[tostring(mapID)] or nil
+    for index, row in ipairs(quick.fusionRows) do
+        local source = visible[index + quick.fusionOffset]
+        row.sourceID = source and source.id
+        row:SetShown(source ~= nil)
+        if source then
+            local picked = false
+            for _, id in ipairs(selected) do if id == source.id then picked = true; break end end
+            row:SetText((picked and "ON  " or "OFF  ")
+                .. source.id:gsub("(%l)(%u)", "%1 %2"):gsub("_", " ")
+                .. (preferred == source.id and "  · Preferred Here" or ""))
+            if picked then row:LockHighlight() else row:UnlockHighlight() end
+        end
+    end
+    if quick.fusionStatus then
+        quick.fusionStatus:SetText(#visible == 0 and "No enabled map packs found here."
+            or #selected == 0 and "Choose up to 8 packs; one-pack mode remains active."
+            or #selected .. " pack(s) selected. Right-click to prefer one here.")
+    end
 end
 
 function API.Refresh()
@@ -380,6 +419,7 @@ function API.Refresh()
         addon.VignetteRadarControls.RefreshTheme()
     end
     RefreshPOISources()
+    if quick.selectedPage == "Source Fusion" then RefreshFusionSources() end
 end
 
 local function SelectPage(name)
@@ -522,8 +562,13 @@ local function Build()
         addon.ResetVignetteRadarPositions()
         API.Reanchor()
     end)
-    Button(radar, "Explore tools", 14, -224, 260, function()
+    Button(radar, "Explore Tools", 14, -224, 124, function()
         if addon.VignetteRadarExploration then addon.VignetteRadarExploration.TogglePanel() end
+    end)
+    Button(radar, "Living Atlas", 150, -224, 124, function()
+        if addon.VignetteRadarAPI and addon.VignetteRadarAPI.ToggleAtlas then
+            addon.VignetteRadarAPI.ToggleAtlas()
+        end
     end)
     Button(radar, "How to read the radar", 14, -253, 260, function()
         if API.ShowGuide then API.ShowGuide(anchor) end
@@ -711,17 +756,20 @@ local function Build()
     Check(questRouting, "vignetteRadarAutoRouteQuestNearest",
         "Choose Closest After Each Objective", 14, -22)
     Check(questRouting, "vignetteRadarAutoRouteQuestStarts",
-        "Include Available Quest Starts", 14, -58)
+        "Include Available Quest Starts", 14, -50)
     Check(questRouting, "vignetteRadarAutoRouteNearbyZones",
-        "Continue Into Nearby Zones", 14, -94)
-    Section(questRouting, "LEARNED LOCATIONS", -130)
+        "Continue Into Nearby Zones", 14, -78)
+    Check(questRouting, "vignetteRadarWorldQuestPriority",
+        "Prefer Nearby World Quests", 14, -106)
+    Section(questRouting, "WORLD QUEST PRIORITY", -137)
+    Stepper(questRouting, "vignetteRadarWorldQuestPriorityRange",
+        "Prefer Within", -157, { 150, 300, 600 }, function(value) return value .. " yd" end)
     Check(questRouting, "vignetteRadarLearnedQuestHints",
-        "Use Learned Objective Hints", 14, -154)
-    Section(questRouting, "HOW IT WORKS", -192)
+        "Use Learned Objective Hints", 14, -190)
     local questRoutingInfo = Label(questRouting,
-        "Pins stay until progress changes. Two matching completions can locate an unmapped objective.",
-        14, -216, 10, 260)
-    questRoutingInfo:SetHeight(36)
+        "Focused Quests stay first. Pins advance when objectives change.",
+        14, -225, 10, 260)
+    questRoutingInfo:SetHeight(28)
     questRoutingInfo:SetWordWrap(true)
     Button(questRouting, "Back to Auto Route", 14, -264, 260, function()
         SelectPage("Auto Route")
@@ -932,7 +980,10 @@ local function Build()
     Choice(wayfinding, "vignetteRadarRouteArrivalRadius", 40, "40 yd", 194, -263, 80)
 
     local mapData = quick.pages["Map Data"]
-    Section(mapData, "CHOOSE ONE MAP-DATA PACK", -3)
+    Label(mapData, "MAP-DATA PACKS", 14, -3, 9, 165)
+    Button(mapData, "Source Fusion", 190, -2, 84, function()
+        SelectPage("Source Fusion")
+    end)
     mapData:EnableMouseWheel(true)
     local function ScrollPOI(_, delta)
         local maxOffset = math.max(0, #(quick.poiEntries or {}) - #quick.poiRows)
@@ -941,8 +992,8 @@ local function Build()
     end
     mapData:SetScript("OnMouseWheel", ScrollPOI)
     quick.poiRows = {}
-    for index = 1, 4 do
-        local row = Button(mapData, "", 14, -23 - (index - 1) * 27, 244, function(self, mouseButton)
+    for index = 1, 3 do
+        local row = Button(mapData, "", 14, -34 - (index - 1) * 27, 244, function(self, mouseButton)
             if not self.sourceID then return end
             if mouseButton == "RightButton" then
                 local poi = addon.VignetteRadarPOIs
@@ -971,7 +1022,7 @@ local function Build()
     end
     quick.poiTrack = mapData:CreateTexture(nil, "ARTWORK")
     quick.poiTrack:SetSize(3, 85)
-    quick.poiTrack:SetPoint("TOPLEFT", mapData, "TOPLEFT", 267, -24)
+    quick.poiTrack:SetPoint("TOPLEFT", mapData, "TOPLEFT", 267, -35)
     quick.poiTrack:SetColorTexture(1, 1, 1, .1)
     quick.poiThumb = mapData:CreateTexture(nil, "OVERLAY")
     quick.poiThumb:SetWidth(3)
@@ -993,6 +1044,63 @@ local function Build()
         end
     end)
     Check(mapData, "vignetteRadarHideCleared", "Hide cleared", 147, -259, nil, 91)
+
+    local fusion = CreateFrame("Frame", nil, quick)
+    fusion:SetSize(WIDTH, HEIGHT - 137)
+    fusion:SetPoint("TOPLEFT", quick, "TOPLEFT", 0, -137)
+    fusion.searchPage = "Source Fusion"
+    fusion:Hide()
+    quick.pages["Source Fusion"] = fusion
+    Section(fusion, "SOURCE FUSION", -3)
+    Check(fusion, "vignetteRadarSourceFusion", "Combine Selected Map Packs", 14, -21)
+    Label(fusion, "One marker per matching place; live sightings stay distinct.",
+        14, -51, 9, 260)
+    local function ScrollFusion(_, delta)
+        local maxOffset = math.max(0, #(quick.fusionEntries or {}) - #quick.fusionRows)
+        quick.fusionOffset = math.max(0, math.min(maxOffset,
+            (quick.fusionOffset or 0) - delta))
+        RefreshFusionSources()
+    end
+    fusion:EnableMouseWheel(true)
+    fusion:SetScript("OnMouseWheel", ScrollFusion)
+    quick.fusionRows = {}
+    for index = 1, 4 do
+        local row = Button(fusion, "", 14, -69 - (index - 1) * 28, 260,
+            function(self, mouseButton)
+                local id = self.sourceID
+                if not id then return end
+                local db = Settings()
+                if mouseButton == "RightButton" then
+                    db.vignetteRadarFusionPreferred[tostring(addon.VignetteRadarAPI.GetCurrentMapID())] = id
+                else
+                    local chosen, found = {}, false
+                    for _, existing in ipairs(db.vignetteRadarFusionSources) do
+                        if existing == id then found = true
+                        else chosen[#chosen + 1] = existing end
+                    end
+                    if not found then
+                        if #chosen >= 8 then return end
+                        chosen[#chosen + 1] = id
+                    end
+                    db.vignetteRadarFusionSources = chosen
+                end
+                addon.VignetteRadarAPI.Refresh(true)
+                RefreshFusionSources()
+            end)
+        row:RegisterForClicks("LeftButtonUp", "RightButtonUp")
+        row:EnableMouseWheel(true)
+        row:SetScript("OnMouseWheel", ScrollFusion)
+        row.optionKey = "vignetteRadarFusionSources"
+        quick.fusionRows[index] = row
+    end
+    Section(fusion, "MATCH NEARBY POINTS WITHIN", -187)
+    Choice(fusion, "vignetteRadarFusionDistance", .001, "Tight", 14, -207, 80)
+    Choice(fusion, "vignetteRadarFusionDistance", .002, "Normal", 104, -207, 80)
+    Choice(fusion, "vignetteRadarFusionDistance", .005, "Loose", 194, -207, 80)
+    quick.fusionStatus = Label(fusion, "", 14, -239, 9, 260)
+    Button(fusion, "Back to Map Data", 14, -264, 260, function()
+        SelectPage("Map Data")
+    end)
 
     local status = quick.pages.Status
     Section(status, "LIVE DIAGNOSTICS", -3)

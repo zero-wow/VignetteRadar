@@ -125,6 +125,12 @@ function addon.GetSettings()
     if type(db.vignetteRadarAutoRouteNearbyZones) ~= "boolean" then db.vignetteRadarAutoRouteNearbyZones = true end
     if type(db.vignetteRadarAutoRouteQuestStarts) ~= "boolean" then db.vignetteRadarAutoRouteQuestStarts = true end
     if type(db.vignetteRadarAutoRouteQuestNearest) ~= "boolean" then db.vignetteRadarAutoRouteQuestNearest = true end
+    if type(db.vignetteRadarWorldQuestPriority) ~= "boolean" then db.vignetteRadarWorldQuestPriority = true end
+    if db.vignetteRadarWorldQuestPriorityRange ~= 150
+        and db.vignetteRadarWorldQuestPriorityRange ~= 300
+        and db.vignetteRadarWorldQuestPriorityRange ~= 600 then
+        db.vignetteRadarWorldQuestPriorityRange = 300
+    end
     if type(db.vignetteRadarLearnedQuestHints) ~= "boolean" then db.vignetteRadarLearnedQuestHints = true end
     if type(db.vignetteRadarWorldFocusThemedWaypoint) ~= "boolean" then db.vignetteRadarWorldFocusThemedWaypoint = true end
     if type(db.vignetteRadarWorldFocusSmoothWaypoint) ~= "boolean" then db.vignetteRadarWorldFocusSmoothWaypoint = true end
@@ -210,6 +216,11 @@ function addon.GetSettings()
     if db.vignetteRadarRouteArrivalRadius ~= 10 and db.vignetteRadarRouteArrivalRadius ~= 20
         and db.vignetteRadarRouteArrivalRadius ~= 40 then db.vignetteRadarRouteArrivalRadius = 20 end
     if type(db.vignetteRadarPOISource) ~= "string" then db.vignetteRadarPOISource = "auto" end
+    if type(db.vignetteRadarSourceFusion) ~= "boolean" then db.vignetteRadarSourceFusion = false end
+    if type(db.vignetteRadarFusionSources) ~= "table" then db.vignetteRadarFusionSources = {} end
+    if type(db.vignetteRadarFusionPreferred) ~= "table" then db.vignetteRadarFusionPreferred = {} end
+    if db.vignetteRadarFusionDistance ~= .001 and db.vignetteRadarFusionDistance ~= .002
+        and db.vignetteRadarFusionDistance ~= .005 then db.vignetteRadarFusionDistance = .002 end
     if type(db.vignetteRadarPOIZoneSources) ~= "table" then db.vignetteRadarPOIZoneSources = {} end
     if type(db.vignetteRadarPOIIcons) ~= "boolean" then db.vignetteRadarPOIIcons = false end
     if type(db.vignetteRadarHideCleared) ~= "boolean" then db.vignetteRadarHideCleared = false end

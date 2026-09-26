@@ -70,7 +70,9 @@ assert(defaults.vignetteRadarRouteArrow == true,
     "new and migrated settings should show the mini route arrow by default")
 assert(defaults.vignetteRadarAutoRouteNearbyZones == true
     and defaults.vignetteRadarAutoRouteQuestStarts == true
-    and defaults.vignetteRadarAutoRouteQuestNearest == true,
+    and defaults.vignetteRadarAutoRouteQuestNearest == true
+    and defaults.vignetteRadarWorldQuestPriority == true
+    and defaults.vignetteRadarWorldQuestPriorityRange == 300,
     "nearby zones, available starts, and closest quest continuation should default on")
 defaults.vignetteRadarAutoRouteNearbyZones = false
 fresh.GetSettings()

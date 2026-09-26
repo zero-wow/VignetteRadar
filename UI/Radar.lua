@@ -40,6 +40,10 @@ local ROUNDED_BORDER_TEXTURE = "Interface\\AddOns\\VignetteRadar\\Media\\radar-r
 local ROUNDED_CONTROL_TEXTURE = "Interface\\AddOns\\VignetteRadar\\Media\\control-rounded-square.tga"
 local QUEST_CLIP_INSET = 4
 local QUEST_AREA_BLUE = { .34, .60, 1 }
+local TASK_AREA_COLORS = {
+    world = { .35, .81, 1 },
+    bonus = { .78, .57, 1 },
+}
 local QUEST_COLORS = {
     { 87/255, 153/255, 255/255 }, { 255/255, 179/255, 87/255 },
     { 181/255, 150/255, 255/255 }, { 255/255, 120/255, 133/255 },
@@ -575,25 +579,45 @@ end
 
 local function CollectQuests(mapID, force)
     local quests = {}
-    if not (mapID and C_QuestLog and C_QuestLog.GetQuestsOnMap
+    if not (mapID and C_QuestLog
+        and (C_QuestLog.GetQuestsOnMap or C_TaskQuest and C_TaskQuest.GetQuestsOnMap)
         and (force or Settings().vignetteRadarQuestDots or Settings().vignetteRadarQuestAreas
             or (Settings().vignetteRadarBeaconsEnabled and Settings().vignetteRadarBeaconQuests)
             or Settings().vignetteRadarWorldFocusEnabled)) then
         return quests
     end
-    local records = Call(C_QuestLog.GetQuestsOnMap, mapID)
-    if IsSecret(records) then return quests end
-    if type(records) ~= "table" then records = {} end
+    local records = C_QuestLog.GetQuestsOnMap and Call(C_QuestLog.GetQuestsOnMap, mapID)
+    if IsSecret(records) or type(records) ~= "table" then records = {} end
     local seen = {}
     local seenQuest = {}
-    local function AddPoint(questID, x, y, name, nextStep, learned, objectiveText)
+    local function QuestType(questID, taskRecord)
+        if SafeBoolean(Call(C_QuestLog.IsWorldQuest, questID)) == true
+            or SafeBoolean(SafeField(taskRecord, "isWorldQuest")) == true then
+            return "world"
+        end
+        if taskRecord or SafeBoolean(Call(C_QuestLog.IsQuestTask, questID)) == true then
+            return "bonus"
+        end
+    end
+    local function AddPoint(questID, x, y, name, nextStep, learned, objectiveText, taskRecord)
         if not (questID and questID > 0 and x and y and x >= 0 and x <= 1
             and y >= 0 and y <= 1) then return end
         -- A quest may have several objective locations on one map. Only fold
         -- identical coordinates, not every record with the same quest ID.
         local coordinate = math.floor(x * 100000 + .5) .. ":" .. math.floor(y * 100000 + .5)
         seen[questID] = seen[questID] or {}
-        if seen[questID][coordinate] then return end
+        if seen[questID][coordinate] then
+            local taskType = taskRecord and QuestType(questID, taskRecord)
+            if taskType then
+                for _, existing in ipairs(quests) do
+                    if existing.questID == questID and existing.mapX == x and existing.mapY == y then
+                        existing.taskType = taskType
+                        break
+                    end
+                end
+            end
+            return
+        end
         local worldX, worldY, instanceID = MapToWorld(mapID, MapVector(x, y))
         if not (worldX and worldY) then return end
         seen[questID][coordinate] = true
@@ -601,6 +625,7 @@ local function CollectQuests(mapID, force)
         quests[#quests + 1] = {
             questID = questID, mapID = mapID, mapX = x, mapY = y, nextStep = nextStep,
             learned = learned, objectiveText = objectiveText,
+            taskType = QuestType(questID, taskRecord),
             worldX = worldX, worldY = worldY, instanceID = instanceID,
             completed = SafeBoolean(Call(C_QuestLog.IsComplete, questID)) == true,
             name = name or SafeString(Call(C_QuestLog.GetTitleForQuestID, questID))
@@ -626,6 +651,20 @@ local function CollectQuests(mapID, force)
             AddPoint(questID, pointX, pointY, name, nextStep)
             if #quests == before and (pointX ~= x or pointY ~= y) then
                 AddPoint(questID, x, y, name, nil)
+            end
+        end
+    end
+    -- Task quests are not consistently included in the ordinary quest map API.
+    if C_TaskQuest and type(C_TaskQuest.GetQuestsOnMap) == "function" then
+        local taskRecords = Call(C_TaskQuest.GetQuestsOnMap, mapID)
+        if type(taskRecords) == "table" and not IsSecret(taskRecords) then
+            for index = 1, math.min(#taskRecords, 128) do
+                local record = taskRecords[index]
+                local questID = SafeNumber(SafeField(record, "questID"))
+                    or SafeNumber(SafeField(record, "questId"))
+                AddPoint(questID, SafeNumber(SafeField(record, "x")),
+                    SafeNumber(SafeField(record, "y")),
+                    SafeString(SafeField(record, "name")), nil, nil, nil, record)
             end
         end
     end
@@ -1165,6 +1204,7 @@ end
 local function RenderMapNotes(player, range, targets)
     local settings = Settings()
     if not (player and (settings.vignetteRadarPOISource ~= "none"
+        or settings.vignetteRadarSourceFusion
         or settings.vignetteRadarWorldFocusZygor)) then HideMapNotes(); return 0 end
     -- A 60-yard grid bounds duplicate checks even when the selected pack
     -- contains hundreds of notes and the radar redraws frequently.
@@ -1251,6 +1291,19 @@ local function RenderMapNotes(player, range, targets)
                             GameTooltip:SetText(entry.name, 1, 1, 1)
                             GameTooltip:AddLine(MAP_NOTE_LABEL[entry.kind] .. " map note · " .. entry.source,
                                 0.72, 0.8, 0.82)
+                            if type(entry.provenance) == "table" and #entry.provenance > 1 then
+                                GameTooltip:AddLine("Also listed by:", .58, .83, .73)
+                                for index = 1, math.min(#entry.provenance, 4) do
+                                    local source = entry.provenance[index]
+                                    if source.source ~= entry.source then
+                                        GameTooltip:AddLine(source.source, .7, .76, .78)
+                                    end
+                                end
+                                if entry.conflicts and (entry.conflicts.coordinates or entry.conflicts.names) then
+                                    GameTooltip:AddLine("Sources disagree; showing your preferred pack.",
+                                        .9, .72, .46, true)
+                                end
+                            end
                             GameTooltip:AddLine(math.floor(self.distance + 0.5) .. " yd from you", 0.65, 0.7, 0.73)
                             if entry.note then GameTooltip:AddLine(entry.note, 0.7, 0.76, 0.78, true) end
                             if entry.route then
@@ -1337,7 +1390,7 @@ local function RenderQuestDots(player, range)
     end
     local haloRadius = math.max(10, math.min(panel.plotRadius,
         (Settings().vignetteRadarQuestHaloRadius or 10) * panel.plotRadius / range))
-    local haloAlpha = .16 * math.max(.2, math.min(1, (SafeNumber(range) or 300) / 300))
+    local haloAlpha = .16 * math.max(.55, math.min(1, (SafeNumber(range) or 300) / 300))
     local count = 0
     local visibleQuestIDs, visibleQuestCount = {}, 0
     for _, quest in ipairs(activeQuests) do
@@ -1380,6 +1433,10 @@ local function RenderQuestDots(player, range)
                             if not GameTooltip then return end
                             GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
                             GameTooltip:SetText(self.quest.name, 1, 0.82, 0.35)
+                            if self.quest.taskType then
+                                GameTooltip:AddLine(self.quest.taskType == "world" and "World Quest"
+                                    or "Bonus Objective", .68, .82, .95)
+                            end
                             GameTooltip:AddLine(self.quest.completed and "Complete · solid diamond"
                                 or "In progress · hollow diamond", .68, .82, .8)
                             local legend = LegendAPI()
@@ -1427,7 +1484,10 @@ local function RenderQuestDots(player, range)
                     local tracked = Settings().vignetteRadarFollowTrackedQuest
                         and followedQuestID == quest.questID and followedQuestMapID == activeMapID
                     local red, green, blue
-                    if Settings().vignetteRadarQuestColors then
+                    if quest.taskType and not Settings().vignetteRadarQuestColors then
+                        local color = TASK_AREA_COLORS[quest.taskType]
+                        red, green, blue = color[1], color[2], color[3]
+                    elseif Settings().vignetteRadarQuestColors then
                         local color = QUEST_COLORS[quest.colorSlot or 1]
                         red, green, blue = color[1], color[2], color[3]
                     elseif addon.VignetteRadarStyle then
@@ -1479,9 +1539,10 @@ local function RenderQuestDots(player, range)
                         dot.halo:ClearAllPoints()
                         dot.halo:SetPoint("CENTER", panel.field, "CENTER", x, y)
                         addon.VignetteRadarTurn.TrackPoint(dot.halo, x, y, ViewFacing(player.facing))
-                        local haloColor = Settings().vignetteRadarQuestColors
-                            and Settings().vignetteRadarQuestAreaColors
-                            and QUEST_COLORS[quest.colorSlot or 1] or QUEST_AREA_BLUE
+                        local haloColor = quest.taskType and TASK_AREA_COLORS[quest.taskType]
+                            or Settings().vignetteRadarQuestColors
+                                and Settings().vignetteRadarQuestAreaColors
+                                and QUEST_COLORS[quest.colorSlot or 1] or QUEST_AREA_BLUE
                         dot.halo.fill:SetVertexColor(haloColor[1], haloColor[2],
                             haloColor[3], haloAlpha)
                         dot.halo:SetAlpha(1)
@@ -1641,8 +1702,8 @@ end
 local function StyleQuestBlob(blob, range)
     -- A close zoom can put the player inside a quest shape that covers the
     -- entire radar. Fade the native mesh itself so markers remain legible.
-    local opacity = math.max(.2, math.min(1, (SafeNumber(range) or 300) / 300))
-    local fillAlpha = math.max(3, math.floor(48 * opacity + .5))
+    local opacity = math.max(.55, math.min(1, (SafeNumber(range) or 300) / 300))
+    local fillAlpha = math.floor(48 * opacity + .5)
     if blob._radarDefaultStyle and blob._radarFillAlpha == fillAlpha
         and blob._radarBorderAlpha == 0 then return true end
     local ok = pcall(function()
@@ -4606,7 +4667,8 @@ local function LauncherTooltip(owner)
     if (owner.rares or 0) > 0 then GameTooltip:AddLine(owner.rares .. " rare enemy nearby", 0.78, 0.88, 1) end
     GameTooltip:AddLine("Silver skull: rare enemy. Larger red skull: world boss.", 0.78, 0.88, 1, true)
     GameTooltip:AddLine("Left-click to expand this mini radar.", 0.65, 0.80, 0.77, true)
-    GameTooltip:AddLine("Right-click to preview its live layout. Drag to move this launcher.", 0.65, 0.80, 0.77, true)
+    GameTooltip:AddLine("Right-click to preview. Shift-right-click opens Living Atlas. Drag to move.",
+        0.65, 0.80, 0.77, true)
     if (owner.detected or 0) == 0 then
         local reason = EmptyExplanation(PlayerSnapshot(CurrentMapID()), 0, 0, 0, false)
         if reason then GameTooltip:AddLine(reason, .7, .83, .79, true) end
@@ -4966,9 +5028,13 @@ EnsureLauncher = function()
         self._shock = 0.001
         PlayLauncherSound()
         if button == "RightButton" then
-            preview = not preview
-            manualPanelState = preview and true or nil
-            RefreshRadar(true)
+            if IsShiftKeyDown and IsShiftKeyDown() then
+                addon.VignetteRadarAPI.ToggleAtlas()
+            else
+                preview = not preview
+                manualPanelState = preview and true or nil
+                RefreshRadar(true)
+            end
         else
             ToggleRadarPanel()
         end
@@ -6076,6 +6142,39 @@ function VignetteRadar_HoldLens(keystate)
     RefreshRadar(false)
 end
 
+addon.UpdateAtlasSnapshot = function(mapID, now, changedMap)
+    local atlas = addon.VignetteRadarAtlas
+    if not (atlas and atlas.IsOpen and atlas.IsOpen())
+        or (not changedMap and addon._radarAtlasUpdatedAt
+            and now - addon._radarAtlasUpdatedAt < 2) then return end
+    local entries = {}
+    for index = 1, math.min(#activeTargets, 128) do
+        local target = activeTargets[index]
+        entries[#entries + 1] = {
+            name = target.name, mapID = target.mapID, mapX = target.mapX,
+            mapY = target.mapY, kind = target.category,
+            evidence = target.stale and "observed" or "live", targetRef = target,
+        }
+    end
+    for index = 1, math.min(#activeQuests, 128) do
+        local quest = activeQuests[index]
+        entries[#entries + 1] = {
+            name = quest.name, mapID = quest.mapID, mapX = quest.mapX,
+            mapY = quest.mapY, kind = "quest", questID = quest.questID,
+            evidence = "quest",
+        }
+    end
+    for index = 1, math.min(#activeMapNotes, 256) do
+        local note = activeMapNotes[index]
+        entries[#entries + 1] = {
+            name = note.name, mapID = note.mapID, mapX = note.mapX,
+            mapY = note.mapY, kind = note.kind, evidence = "saved", noteRef = note,
+        }
+    end
+    atlas.SetData(mapID, entries)
+    addon._radarAtlasUpdatedAt = now
+end
+
 ScanVignettes = function(mapID)
     local changedMap = activeMapID ~= mapID
     local now = Now()
@@ -6135,19 +6234,43 @@ ScanVignettes = function(mapID)
             end
         end
     end
-    local source = Settings().vignetteRadarPOISource
-    if source == "none" or not mapID then
+    local source = db.vignetteRadarPOISource
+    local fusionSources, fusionKey
+    if db.vignetteRadarSourceFusion and type(db.vignetteRadarFusionSources) == "table" then
+        fusionSources = {}
+        for index = 1, math.min(#db.vignetteRadarFusionSources, 8) do
+            local id = db.vignetteRadarFusionSources[index]
+            if type(id) == "string" and id ~= "" then fusionSources[#fusionSources + 1] = id end
+        end
+        if #fusionSources > 0 then
+            local preferred = type(db.vignetteRadarFusionPreferred) == "table"
+                and db.vignetteRadarFusionPreferred[tostring(mapID)] or nil
+            fusionKey = "fusion:" .. table.concat(fusionSources, ",") .. ":"
+                .. tostring(preferred) .. ":" .. tostring(db.vignetteRadarFusionDistance)
+        end
+    end
+    local sourceKey = fusionKey or source
+    if (source == "none" and not fusionKey) or not mapID then
         activeMapNotes = {}
         mapNotesMapID, mapNotesSource, mapNotesUpdatedAt = nil, nil, nil
-    elseif mapNotesMapID ~= mapID or mapNotesSource ~= source
+    elseif mapNotesMapID ~= mapID or mapNotesSource ~= sourceKey
         or not mapNotesUpdatedAt or now - mapNotesUpdatedAt >=
             (Settings().vignetteRadarPerformance == "low" and 20
                 or Settings().vignetteRadarPerformance == "balanced" and 10 or 5) then
         local pois = addon.VignetteRadarPOIs
-        local selected, dataMapID
-        if pois then selected, dataMapID = pois.ResolveSource(mapID, source) end
-        activeMapNotes = selected and pois.Collect(dataMapID, selected, MapToWorld, MapVector) or {}
-        mapNotesMapID, mapNotesSource, mapNotesUpdatedAt = mapID, source, now
+        local fusion = addon.VignetteRadarSourceFusion
+        if fusionKey and fusion and type(fusion.Collect) == "function" then
+            activeMapNotes = fusion.Collect(mapID, fusionSources, MapToWorld, MapVector, {
+                preferredSource = type(db.vignetteRadarFusionPreferred) == "table"
+                    and db.vignetteRadarFusionPreferred[tostring(mapID)] or nil,
+                conflictDistance = db.vignetteRadarFusionDistance,
+            })
+        else
+            local selected, dataMapID
+            if pois then selected, dataMapID = pois.ResolveSource(mapID, source) end
+            activeMapNotes = selected and pois.Collect(dataMapID, selected, MapToWorld, MapVector) or {}
+        end
+        mapNotesMapID, mapNotesSource, mapNotesUpdatedAt = mapID, sourceKey, now
     end
     for index = #activeMapNotes, 1, -1 do
         if activeMapNotes[index].kind == "guide" then table.remove(activeMapNotes, index) end
@@ -6245,6 +6368,7 @@ ScanVignettes = function(mapID)
         local outcomes = addon.VignetteRadarOutcomeLearning
         if outcomes then outcomes.Sync(activeTargets, activeQuests) end
     end
+    addon.UpdateAtlasSnapshot(mapID, now, changedMap)
 end
 
 RefreshRadar = function(rescan)
@@ -6268,6 +6392,7 @@ RefreshRadar = function(rescan)
     if rescan then ScanVignettes(CurrentMapID()) end
     local hasMapNotes = false
     if #activeMapNotes > 0 and (settings.vignetteRadarPOISource ~= "none"
+        or settings.vignetteRadarSourceFusion
         or settings.vignetteRadarWorldFocusZygor) then
         local player = PlayerSnapshot(mapID)
         local range = exploration and exploration.Range(player, nil) or settings.vignetteRadarRange
@@ -6363,6 +6488,20 @@ end
 addon.VignetteRadarAPI = {
     GetTargets = function() return activeTargets end,
     GetCurrentMapID = CurrentMapID,
+    ToggleAtlas = function()
+        local atlas = addon.VignetteRadarAtlas
+        if not atlas then return false, "Living Atlas unavailable" end
+        atlas.SetOnSelect(function(entry)
+            local focus = addon.VignetteRadarWorldFocus
+            if not focus then return end
+            if entry.questID then focus.SelectQuest(entry.questID)
+            elseif entry.targetRef then focus.SelectTarget(entry.targetRef)
+            elseif entry.noteRef then focus.SelectNote(entry.noteRef) end
+        end)
+        local opened, reason = atlas.Toggle()
+        if opened then addon._radarAtlasUpdatedAt = nil; RefreshRadar(true) end
+        return opened, reason
+    end,
     BindZygorGuide = function()
         local zygor = addon.VignetteRadarZygor
         if not (zygor and _G.ZygorGuidesViewer) then
@@ -6822,6 +6961,7 @@ for _, event in ipairs({
     "PLAYER_LOGIN", "PLAYER_ENTERING_WORLD", "ZONE_CHANGED_NEW_AREA",
     "VIGNETTES_UPDATED", "VIGNETTE_MINIMAP_UPDATED",
     "QUEST_LOG_UPDATE", "QUEST_POI_UPDATE", "QUEST_WATCH_LIST_CHANGED",
+    "QUEST_WATCH_UPDATE", "TASK_PROGRESS_UPDATE",
     "QUEST_ACCEPTED", "QUEST_REMOVED", "QUEST_TURNED_IN", "SUPER_TRACKING_CHANGED",
     "PLAYER_REGEN_DISABLED", "PLAYER_REGEN_ENABLED", "ZONE_CHANGED", "ZONE_CHANGED_INDOORS",
     "LOOT_OPENED", "LOOT_SLOT_CLEARED", "LOOT_CLOSED",
@@ -6887,7 +7027,8 @@ events:SetScript("OnEvent", function(_, event)
         return
     end
     local questUpdated = event == "QUEST_LOG_UPDATE" or event == "QUEST_POI_UPDATE"
-        or event == "QUEST_WATCH_LIST_CHANGED" or event == "QUEST_ACCEPTED"
+        or event == "QUEST_WATCH_LIST_CHANGED" or event == "QUEST_WATCH_UPDATE"
+        or event == "TASK_PROGRESS_UPDATE" or event == "QUEST_ACCEPTED"
         or event == "QUEST_REMOVED" or event == "QUEST_TURNED_IN"
     if event == "QUEST_LOG_UPDATE" and addon.VignetteRadarRecent then
         addon.VignetteRadarRecent.InvalidateQuests()

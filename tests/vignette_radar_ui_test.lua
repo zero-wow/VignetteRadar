@@ -220,12 +220,14 @@ assert(loadfile("Data/QuestData.lua"))("VignetteRadar", addon)
 assert(loadfile("Routes/RouteDraft.lua"))("VignetteRadar", addon)
 assert(loadfile("Routes/Exploration.lua"))("VignetteRadar", addon)
 assert(loadfile("Data/POIs.lua"))("VignetteRadar", addon)
+assert(loadfile("Data/SourceFusion.lua"))("VignetteRadar", addon)
 assert(loadfile("Routes/WorldFocus.lua"))("VignetteRadar", addon)
 assert(loadfile("Data/Zygor.lua"))("VignetteRadar", addon)
 assert(loadfile("Routes/Beacons.lua"))("VignetteRadar", addon)
 assert(loadfile(legendSourcePath))("VignetteRadar", addon)
 assert(loadfile(targetPickerSourcePath))("VignetteRadar", addon)
 assert(loadfile("UI/TurnSmoothing.lua"))("VignetteRadar", addon)
+assert(loadfile("UI/Atlas.lua"))("VignetteRadar", addon)
 do
     local point = { IsShown = function() return true end,
         SetPoint = function(self, _, _, _, x, y) self.x, self.y = x, y end }
@@ -1414,6 +1416,20 @@ assert(panel.questClip.clipsChildren and panel.questBlob:IsShown() and panel.que
     and panel.questBlob.drawnQuests[1] == 12345 and panel.questBlob.fillAlpha < 128
     and panel.questBlob.level < questDot.level,
     "native quest shapes must be translucent, clipped, and behind markers")
+C_TaskQuest = { GetQuestsOnMap = function() return {
+    { questID = 12347, x = .54, y = .5, name = "World task" },
+    { questID = 12348, x = .56, y = .5, name = "Bonus task" },
+} end }
+C_QuestLog.IsWorldQuest = function(questID) return questID == 12347 end
+addon.VignetteRadarAPI.Refresh(true)
+assert(panel.questDots[2]:IsShown() and panel.questDots[2].quest.taskType == "world"
+    and panel.questDots[3]:IsShown() and panel.questDots[3].quest.taskType == "bonus"
+    and panel.questDots[2].halo.fill.vertexColor[1]
+        ~= panel.questDots[3].halo.fill.vertexColor[1]
+    and #panel.questBlob.drawnQuests == 3,
+    "World Quests and bonus objectives need distinct task markers and native blobs")
+C_TaskQuest, C_QuestLog.IsWorldQuest = nil, nil
+addon.VignetteRadarAPI.Refresh(true)
 local oneQuest = C_QuestLog.GetQuestsOnMap
 C_QuestLog.GetQuestsOnMap = function() return {
     { questID = 12345, x = .52, y = .5, name = "Nearby quest" },
@@ -1470,7 +1486,7 @@ panel.plotRadius = 150
 addon.VignetteRadarAPI.Refresh(false)
 assert(panel.questBlob:IsShown() and panel.questBlob:GetScale() > 1
     and panel.questBlob:GetWidth() <= 4096 and panel.questBlob:GetHeight() <= 4096
-    and panel.questBlob.fillAlpha < regularQuestFill,
+    and panel.questBlob.fillAlpha >= 26 and panel.questBlob.fillAlpha < regularQuestFill,
     "minimum zoom must retain the exact area without an oversized native canvas")
 local scaledCanvas = panel.questBlob
 assert(math.abs(scaledCanvas:GetWidth() * scaledCanvas:GetScale()
@@ -1858,7 +1874,8 @@ end
 assert(questEvents and questEvents.events.QUEST_LOG_UPDATE and questEvents.scripts.OnEvent,
     "quest update events must be registered on the radar event frame")
 assert(questEvents.events.QUEST_ACCEPTED and questEvents.events.QUEST_REMOVED
-    and questEvents.events.QUEST_TURNED_IN,
+    and questEvents.events.QUEST_TURNED_IN and questEvents.events.TASK_PROGRESS_UPDATE
+    and questEvents.events.QUEST_WATCH_UPDATE,
     "quest acquisition and turn-in must trigger route refreshes")
 local savedDrawNone, savedDrawBlob = panel.questBlob.DrawNone, panel.questBlob.DrawBlob
 local drawNoneCount, drawBlobCount, shapeReady, shapeVersion = 0, 0, false, 1
@@ -1909,6 +1926,10 @@ do
         "the coalesced quest scan should refresh the latest objective geometry")
     C_Timer.After = savedAfter
 end
+shapeVersion = 5
+questEvents.scripts.OnEvent(questEvents, "TASK_PROGRESS_UPDATE")
+assert(panel.questBlob.renderedShape == "12345:5",
+    "World Quest progress must invalidate and redraw native quest areas")
 panel.questBlob.DrawNone, panel.questBlob.DrawBlob = savedDrawNone, savedDrawBlob
 settings.vignetteRadarQuestDots = false
 C_Map.GetWorldPosFromMapPos = originalWorldPosition
@@ -3081,6 +3102,20 @@ quick.poiRows[1].scripts.OnMouseWheel(quick.poiRows[1], -1)
 assert(quick.poiOffset == 1 and quick.poiThumb.point[5] < 0,
     "the pack list must scroll while the pointer is over a source button")
 quick.poiRows[1].scripts.OnMouseWheel(quick.poiRows[1], 1)
+assert(quick.pages["Source Fusion"]
+    and quickControl("Source Fusion", "vignetteRadarSourceFusion"),
+    "Source Fusion must have a visible settings page")
+settings.vignetteRadarFusionSources = { "TestPack", "ZPack1" }
+settings.vignetteRadarSourceFusion = true
+addon.VignetteRadarAPI.Refresh(true)
+assert(panel.mapNotes[1] and panel.mapNotes[1]:IsShown()
+    and panel.mapNotes[2] and panel.mapNotes[2]:IsShown()
+    and ((panel.mapNotes[1].note.source == "TestPack" and panel.mapNotes[2].note.source == "ZPack1")
+        or (panel.mapNotes[1].note.source == "ZPack1" and panel.mapNotes[2].note.source == "TestPack")),
+    "enabling Source Fusion must render selected packs together")
+settings.vignetteRadarSourceFusion = false
+settings.vignetteRadarFusionSources = {}
+addon.VignetteRadarAPI.Refresh(true)
 settings.vignetteRadarBreadcrumbs = false
 settings.vignetteRadarKeepVisibleCombat = false
 now, guids = 1300, {}
