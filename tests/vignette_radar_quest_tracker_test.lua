@@ -12,6 +12,9 @@ function methods:ClearAllPoints() self.point = nil end
 function methods:SetAllPoints() end
 function methods:SetFrameStrata(value) self.strata = value end
 function methods:SetClampedToScreen(value) self.clamped = value end
+function methods:SetAlpha(value) self.alpha = value end
+function methods:SetScale(value) self.scale = value end
+function methods:GetEffectiveScale() return self.scale or 1 end
 function methods:SetMovable(value) self.movable = value end
 function methods:EnableMouse(value) self.mouse = value end
 function methods:EnableMouseWheel(value) self.mouseWheel = value end
@@ -191,26 +194,29 @@ assert(settings.vignetteRadarQuestNumbers == true and refreshes == 2)
 Choose("vignetteRadarQuestTrackerView", "tray")
 panel.scripts.OnUpdate(panel, .23)
 assert(settings.vignetteRadarQuestTrackerView == "tray"
-    and panel.point[1] == "TOPLEFT" and panel.point[2] == radarPanel.field
+    and panel.point[1] == "TOPLEFT" and panel.point[2] == radarPanel
     and panel.point[3] == "TOPRIGHT" and panel.point[4] == -2
-    and panel.point[5] == -2 and panel.height == 196
+    and panel.point[5] == -10 and panel.height == 258
     and panel.handle:IsShown() and panel.handle.clickButton == "LeftButtonUp"
+    and panel.handle.parent == UIParent and panel.handle.point[2] == radarPanel
+    and panel.clamped == false
     and not panel.close:IsShown()
     and not panel.statusSurface.edge[1].shown and panel.statusSurface.edge[3].shown
     and not panel.handle.statusSurface.edge[1].shown,
     "Tray must slide from the visible radar edge with an exposed handle and open join")
-radarPanel.field:SetSize(164, 164)
+radarPanel:SetSize(246, 180)
 tracker.Refresh()
 assert(panel.height == 160 and panel.footer:IsShown()
     and panel.rows[3]:IsShown() and not panel.rows[4]:IsShown(),
     "the smallest radar tray must scroll before quest rows reach its bottom edge")
-radarPanel.field:SetSize(200, 200)
+radarPanel:SetSize(246, 278)
 tracker.Refresh()
 panel.handle.scripts.OnClick(panel.handle)
 panel.scripts.OnUpdate(panel, .23)
 assert(settings.vignetteRadarQuestTrackerRetracted == true
     and panel:IsShown() and panel.handle:IsShown()
-    and panel.point[4] == -2 - (306 - 20),
+    and panel.point[4] == -2 - (306 - 20) and panel.alpha == 0
+    and panel.options.mouse == false,
     "a retracted tray must leave its clickable edge outside the radar")
 assert(tracker.ToggleTray())
 panel.scripts.OnUpdate(panel, .23)
@@ -223,19 +229,40 @@ assert(panel.point[1] == "BOTTOM" and panel.point[3] == "TOP"
 settings.vignetteRadarQuestTrackerCollapsed = {
     ["Dragon Isles"] = true, ["Old World"] = true, ["World Quests"] = true,
 }
-radarPanel.field.left, radarPanel.field.top = 700, 600
+radarPanel.left, radarPanel.top = 700, 600
 Choose("vignetteRadarQuestTrackerSide", "bottom")
-assert(panel.height == 196 and panel.point[1] == "TOP"
+assert(panel.height == 258 and panel.point[1] == "TOP"
     and panel.point[3] == "BOTTOM" and not panel.statusSurface.edge[1].shown,
     "the lower tray should keep its edge aligned with the radar")
 Choose("vignetteRadarQuestTrackerSide", "left")
 assert(panel.point[1] == "TOPRIGHT" and panel.point[3] == "TOPLEFT"
     and not panel.statusSurface.edge[3].shown,
     "the left tray should emerge horizontally from the radar")
-radarPanel.field.left = 1300
+radarPanel.left = 1300
 Choose("vignetteRadarQuestTrackerSide", "right")
 assert(panel.actualSide == "left" and panel.point[1] == "TOPRIGHT",
     "Tray must switch to an edge that fits rather than cover the radar")
+radarPanel.left = 50
+panel.scripts.OnUpdate(panel, .06)
+assert(panel.actualSide == "right" and panel.point[2] == radarPanel,
+    "moving the radar must promptly reattach the tray on the clear side")
+UIParent:SetSize(720, 500)
+radarPanel.left, radarPanel.top = 200, 400
+panel.scripts.OnUpdate(panel, .06)
+assert(panel.actualSide == "right" and panel.scale >= .78 and panel.scale < 1
+    and panel.point[2] == radarPanel and not panel.clamped,
+    "a tight screen must fit the docked tray without clamping it over the radar")
+UIParent:SetSize(1600, 900)
+panel.scripts.OnUpdate(panel, .06)
+assert(panel.scale == 1, "restoring screen space must restore full-size tray text")
+radarPanel.scale = 1.5
+radarPanel.left, radarPanel.top = 300, 500
+tracker.Refresh()
+assert(panel.height == 397 and panel.point[2] == radarPanel
+    and panel.actualSide == "right",
+    "a scaled radar must size and dock its tray against the visible outer border")
+radarPanel.scale = nil
+tracker.Refresh()
 radarPanel:Hide()
 panel.scripts.OnUpdate(panel, 1)
 assert(panel.point[2] == UIParent and panel.close:IsShown()
@@ -243,7 +270,7 @@ assert(panel.point[2] == UIParent and panel.close:IsShown()
     "Tray should use the saved floating position while the radar is hidden")
 radarPanel:Show()
 panel.scripts.OnUpdate(panel, 1)
-assert(panel.point[2] == radarPanel.field and panel.handle:IsShown(),
+assert(panel.point[2] == radarPanel and panel.handle:IsShown(),
     "Tray should redock as soon as the radar is visible again")
 Choose("vignetteRadarQuestTrackerView", "floating")
 assert(settings.vignetteRadarQuestTrackerView == "floating" and panel.close:IsShown()

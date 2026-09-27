@@ -202,6 +202,10 @@ function API.List()
     return result
 end
 
+function API.IsDetecting()
+    return next(observed) ~= nil
+end
+
 local function WorldPosition(unit, mapID)
     if type(UnitPosition) == "function" then
         local ok, x, y, _, instance = pcall(UnitPosition, unit)

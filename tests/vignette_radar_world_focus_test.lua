@@ -153,6 +153,7 @@ settings.vignetteRadarAutoRouteNearbyZones = false
 settings.vignetteRadarAutoRouteQuestStarts = false
 questA.questID, questNext.questID, questB.questID = 11, 11, 22
 questA.name, questNext.name, questB.name = "First quest", "First quest", "Second quest"
+questA.objectiveText, questNext.objectiveText = "Meet Riftblade Maella", "Meet Riftblade Maella"
 local questDone = {}
 local questActive, questTurnedIn = { [11] = true, [22] = true }, {}
 local firstQuestObjective = { finished = false, numFulfilled = 0 }
@@ -173,6 +174,10 @@ player.worldX = 300
 focus.Sync(123, player, {}, { questA, questNext, questB }, {})
 local questStarted, questReason = focus.ToggleRoute()
 assert(questSelected and questStarted, "a clicked quest should anchor the quest route: " .. tostring(questReason))
+local questHorizon = focus.GetHorizon()
+assert(questHorizon[1] and questHorizon[1].label == "Meet Riftblade Maella"
+    and not questHorizon[2],
+    "the preview must show the objective and never repeat it as the next step")
 player.worldX = 350
 focus.Sync(123, player, {}, { questA, questNext, questB }, {})
 assert(waypoint.position.x == .35,

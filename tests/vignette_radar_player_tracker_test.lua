@@ -100,6 +100,7 @@ assert(events.events.NAME_PLATE_UNIT_ADDED and events.events.NAME_PLATE_UNIT_REM
     and events.events.PLAYER_TARGET_CHANGED and events.events.UPDATE_MOUSEOVER_UNIT,
     "tracking must react to visible unit tokens")
 events.scripts.OnEvent(events, "NAME_PLATE_UNIT_ADDED", "nameplate1")
+assert(tracker.IsDetecting(), "visible marked players must light the radar shortcut")
 local nameplateSkull
 for _, object in ipairs(objects) do
     if object.parent == plate and object.kind == "Frame" and object.width == 25 then
@@ -141,6 +142,7 @@ assert(tracker.Remove("Another-OtherRealm"))
 now = now + 1
 players.nameplate1 = nil
 events.scripts.OnEvent(events, "NAME_PLATE_UNIT_REMOVED", "nameplate1")
+assert(not tracker.IsDetecting(), "the shortcut must clear when no marked player is visible")
 assert(#tracker.GetSightings(player) == 0 and not nameplateSkull:IsShown(),
     "leaving detection range must remove both skulls without a stale location")
 tracker.HideRadar()

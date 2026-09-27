@@ -13,7 +13,7 @@ from pathlib import Path
 CELL = 64
 HEIGHT = 256
 ICONS = ("config", "target", "legend", "minus", "plus", "north",
-         "trail", "eye", "help", "close", "route", "tracker",
+         "trail", "eye", "player", "close", "route", "tracker",
          "clear", "arrow", "minimize", "constellation")
 ROUTE_ICONS = ("rare", "treasure", "quest", "zygor")
 STATES = (
@@ -86,9 +86,12 @@ def icon_distance(icon, x, y):
                    segment(x, y, 0, 6, 6, 4, 1.7),
                    segment(x, y, 6, 4, 11, 0, 1.7),
                    disk(x, y, 0, 0, 3.3))
-    if icon == "help":
-        return min(abs(math.hypot(x, y) - 11) - 1.5,
-                   disk(x, y, 0, -5, 2), segment(x, y, 0, 0, 0, 7, 2))
+    if icon == "player":
+        skull = min(disk(x, y, 0, -3, 9), max(abs(x) - 5, abs(y - 6) - 5))
+        openings = min(disk(x, y, -3, -4, 2.1), disk(x, y, 3, -4, 2.1),
+                       disk(x, y, 0, 2, 1.25), disk(x, y, -2, 9, .7),
+                       disk(x, y, 2, 9, .7))
+        return max(skull, -openings)
     if icon == "tracker":
         return min(abs(x + 9) + abs(y + 7) - 3.3,
                    segment(x, y, -2, -7, 10, -7, 1.4),

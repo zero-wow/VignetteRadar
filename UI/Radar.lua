@@ -3362,11 +3362,11 @@ function routeMenu.CategoryButton(parent, kind, label, width)
             selected and (g + 1) / 2 or .84, selected and (b + 1) / 2 or .85, 1)
         self.selection:Hide()
         for _, texture in ipairs(self.statusSurface.face) do
-            texture:SetVertexColor(r, g, b, selected and (paused and .32 or .62)
-                or hovered and .13 or .025)
+            texture:SetVertexColor(r, g, b, selected and (paused and .045 or .085)
+                or hovered and .075 or .025)
         end
         for _, texture in ipairs(self.statusSurface.edge) do
-            texture:SetVertexColor(r, g, b, selected and (paused and .70 or 1)
+            texture:SetVertexColor(r, g, b, selected and (paused and .65 or 1)
                 or hovered and .38 or .08)
         end
         self.chosenPip:SetVertexColor(r, g, b, paused and .65 or 1)
@@ -5994,6 +5994,9 @@ local function EnsurePanel()
                 or id == "arrow" and settings.vignetteRadarRouteArrow == true
                 or id == "clear" and settings.vignetteRadarKeepCenterClear == true
                 or id == "eye" and settings.vignetteRadarKeepVisibleCombat == true
+                or id == "player" and addon.VignetteRadarPlayerTracker
+                    and type(addon.VignetteRadarPlayerTracker.IsDetecting) == "function"
+                    and addon.VignetteRadarPlayerTracker.IsDetecting()
                 or id == "target" and focused ~= nil
                 or id == "config" and quick and quick.IsShown and quick.IsShown()
                 or id == "legend" and legend and
@@ -6040,7 +6043,7 @@ local function EnsurePanel()
         end
         tool.toolID, tool.reference = id, reference
         tool.artColumn = ({ config = 0, target = 1, legend = 2, minus = 3,
-            plus = 4, north = 5, trail = 6, eye = 7, help = 8, close = 9,
+            plus = 4, north = 5, trail = 6, eye = 7, player = 8, close = 9,
             route = 10, tracker = 11, clear = 12, arrow = 13,
             minimize = 14 })[id]
         tool.art = tool:CreateTexture(nil, "ARTWORK")
@@ -6087,18 +6090,17 @@ local function EnsurePanel()
                 panel.RefreshCornerTools()
                 return
             end
-            if id == "help" then
-                if GameTooltip then
-                    GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
-                    GameTooltip:SetText("Radar Status", 1, 1, 1)
-                    if panel.emptyReason then
-                        GameTooltip:AddLine(panel.emptyReason, .7, .83, .79, true)
-                    end
-                    for _, line in ipairs(addon.GetVignetteRadarStatusLines()) do
-                        GameTooltip:AddLine(line, .7, .83, .79, true)
-                    end
-                    GameTooltip:Show()
+            if id == "player" then
+                local tracker = addon.VignetteRadarPlayerTracker
+                if tracker then
+                    if button == "RightButton" then
+                        local ok, reason = tracker.MarkTarget()
+                        if not ok and UIErrorsFrame and UIErrorsFrame.AddMessage then
+                            UIErrorsFrame:AddMessage(reason, 1, .55, .45)
+                        end
+                    else tracker.Open() end
                 end
+                panel.RefreshCornerTools()
                 return
             end
             local click = reference and reference:GetScript("OnClick")
@@ -6126,7 +6128,8 @@ local function EnsurePanel()
     HoverTool("clear", "Keep Center Clear", panel.clearToggle, "BOTTOMLEFT", 32, 12)
     HoverTool("trail", "Trail · Left-Click To Toggle, Right-Click For Style",
         panel.trailToggle, "BOTTOMLEFT", 12, 32)
-    HoverTool("help", "Radar Status", nil, "BOTTOMLEFT", 32, 32)
+    HoverTool("player", "Player Tracker · Right-Click To Mark Current Target",
+        nil, "BOTTOMLEFT", 32, 32)
     HoverTool("route", "Auto Route · Click To Toggle, Right-Click To Choose",
         panel.routeToggle, "BOTTOMRIGHT", -12, 32)
     HoverTool("arrow", "Mini Route Arrow · Show Or Hide", panel.arrowToggle,

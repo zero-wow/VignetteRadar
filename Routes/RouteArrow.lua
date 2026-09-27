@@ -76,6 +76,36 @@ local function DrawBearing(dx, dy, facing)
     end
 end
 
+local function HorizonButton(parent, title, width)
+    local controls = addon.VignetteRadarControls
+    local button = controls.Button(parent, title, width, 23)
+    controls.RoundedStatusSurface(button)
+    button.face:Hide()
+    button.edge:Hide()
+    button.selection:Hide()
+    button.label:SetFont(STANDARD_TEXT_FONT or "Fonts\\FRIZQT__.TTF", 11, "OUTLINE")
+    function button:RefreshHorizonStyle()
+        local style = addon.VignetteRadarStyle
+        local revision = style and style.revision or -1
+        local hovered = self._hovered == true
+        if self._horizonRevision == revision and self._horizonHover == hovered then return end
+        self._horizonRevision, self._horizonHover = revision, hovered
+        local r, g, b = .05, .82, .62
+        if style and style.Color then r, g, b = style.Color("accent") end
+        for _, texture in ipairs(self.statusSurface.face) do
+            texture:SetVertexColor(r, g, b, hovered and .15 or .055)
+        end
+        for _, texture in ipairs(self.statusSurface.edge) do
+            texture:SetVertexColor(r, g, b, hovered and .88 or .48)
+        end
+        self.label:SetTextColor(.94, .97, .97, 1)
+    end
+    button:HookScript("OnEnter", function(self) self:RefreshHorizonStyle() end)
+    button:HookScript("OnLeave", function(self) self:RefreshHorizonStyle() end)
+    button:RefreshHorizonStyle()
+    return button
+end
+
 local function Ensure()
     if frame then return frame end
     frame = CreateFrame("Button", "VignetteRadarRouteArrow", UIParent)
@@ -137,17 +167,17 @@ local function Ensure()
     frame.next:SetWordWrap(false)
     frame.next:SetTextColor(.70, .79, .81, 1)
     frame.horizon = CreateFrame("Frame", nil, frame)
-    frame.horizon:SetSize(160, 102)
+    frame.horizon:SetSize(260, 122)
     frame.horizon:SetPoint("TOP", frame, "TOP", 0, -88)
     if controls and controls.RoundedStatusSurface then
         controls.RoundedStatusSurface(frame.horizon)
     end
     frame.horizon.title = frame.horizon:CreateFontString(nil, "OVERLAY")
-    frame.horizon.title:SetFont(STANDARD_TEXT_FONT or "Fonts\\FRIZQT__.TTF", 9, "OUTLINE")
-    frame.horizon.title:SetPoint("TOPLEFT", frame.horizon, "TOPLEFT", 9, -7)
-    frame.horizon.title:SetText("Next (Preview)")
-    frame.horizon.why = controls.Button(frame.horizon, "Why?", 38, 16)
-    frame.horizon.why:SetPoint("TOPRIGHT", frame.horizon, "TOPRIGHT", -7, -4)
+    frame.horizon.title:SetFont(STANDARD_TEXT_FONT or "Fonts\\FRIZQT__.TTF", 10, "OUTLINE")
+    frame.horizon.title:SetPoint("TOPLEFT", frame.horizon, "TOPLEFT", 10, -10)
+    frame.horizon.title:SetText("Upcoming Stops")
+    frame.horizon.why = HorizonButton(frame.horizon, "Why?", 58)
+    frame.horizon.why:SetPoint("TOPRIGHT", frame.horizon, "TOPRIGHT", -8, -6)
     frame.horizon.why:SetScript("OnClick", function()
         local focus = addon.VignetteRadarWorldFocus
         local reason = focus and focus.ExplainActive and focus.ExplainActive()
@@ -156,7 +186,7 @@ local function Ensure()
             addon.ShowVignetteRadarRouteNote("WHY THIS STOP", reason)
         end
     end)
-    frame.horizon.why:SetScript("OnEnter", function(self)
+    frame.horizon.why:HookScript("OnEnter", function(self)
         if not GameTooltip then return end
         GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
         GameTooltip:SetText("Why This Stop", 1, 1, 1)
@@ -165,28 +195,28 @@ local function Ensure()
             or "No active destination", .7, .82, .84, true)
         GameTooltip:Show()
     end)
-    frame.horizon.why:SetScript("OnLeave", function()
+    frame.horizon.why:HookScript("OnLeave", function()
         if GameTooltip then GameTooltip:Hide() end
     end)
     frame.horizon.rows = {}
     for index = 1, 3 do
         local row = frame.horizon:CreateFontString(nil, "OVERLAY")
-        row:SetFont(STANDARD_TEXT_FONT or "Fonts\\FRIZQT__.TTF", 9, "OUTLINE")
-        row:SetPoint("TOPLEFT", frame.horizon, "TOPLEFT", 9, -22 - (index - 1) * 17)
-        row:SetSize(142, 13)
+        row:SetFont(STANDARD_TEXT_FONT or "Fonts\\FRIZQT__.TTF", 11, "OUTLINE")
+        row:SetPoint("TOPLEFT", frame.horizon, "TOPLEFT", 10, -32 - (index - 1) * 19)
+        row:SetSize(240, 16)
         row:SetJustifyH("LEFT")
         row:SetWordWrap(false)
         frame.horizon.rows[index] = row
     end
-    frame.horizon.lock = controls.Button(frame.horizon, "Lock Stop", 68, 17)
-    frame.horizon.lock:SetPoint("BOTTOMLEFT", frame.horizon, "BOTTOMLEFT", 8, 5)
+    frame.horizon.lock = HorizonButton(frame.horizon, "Lock Stop", 116)
+    frame.horizon.lock:SetPoint("BOTTOMLEFT", frame.horizon, "BOTTOMLEFT", 8, 7)
     frame.horizon.lock:SetScript("OnClick", function()
         local focus = addon.VignetteRadarWorldFocus
         if focus and focus.ToggleRouteLock then focus.ToggleRouteLock() end
         API.Refresh()
     end)
-    frame.horizon.skip = controls.Button(frame.horizon, "Skip Stop", 68, 17)
-    frame.horizon.skip:SetPoint("BOTTOMRIGHT", frame.horizon, "BOTTOMRIGHT", -8, 5)
+    frame.horizon.skip = HorizonButton(frame.horizon, "Skip Stop", 116)
+    frame.horizon.skip:SetPoint("BOTTOMRIGHT", frame.horizon, "BOTTOMRIGHT", -8, 7)
     frame.horizon.skip:SetScript("OnClick", function()
         local focus = addon.VignetteRadarWorldFocus
         if focus and focus.SkipRouteStop then focus.SkipRouteStop() end
@@ -352,9 +382,9 @@ function API.Refresh()
         frame.node.count:SetText(objective.count and ("Objective · " .. objective.count)
             or "Current Objective")
     end
-    local wantedWidth = detailed and 260 or 160
-    local wantedHeight = detailed and (expanded and 245 or 139)
-        or (expanded and 192 or 86)
+    local wantedWidth = (detailed or expanded) and 260 or 160
+    local wantedHeight = detailed and (expanded and 265 or 139)
+        or (expanded and 212 or 86)
     if frame:GetWidth() ~= wantedWidth or frame:GetHeight() ~= wantedHeight then
         frame:SetSize(wantedWidth, wantedHeight)
         frame.node:SetSize(wantedWidth, detailed and 82 or 30)
@@ -379,19 +409,22 @@ function API.Refresh()
     end
     frame.horizon:SetShown(expanded)
     local upcoming = focus.GetHorizon and focus.GetHorizon() or {}
-    frame.next:SetText(upcoming[2] and ("Next  " .. (upcoming[2].name or "Route Stop"))
+    frame.next:SetText(upcoming[2] and ("Next  " .. (upcoming[2].label or upcoming[2].name or "Route Stop"))
         or "Next  —")
     if expanded then
         local controls = addon.VignetteRadarControls
         if controls and controls.RefreshRoundedStatusSurface then
             controls.RefreshRoundedStatusSurface(frame.horizon)
         end
+        frame.horizon.why:RefreshHorizonStyle()
+        frame.horizon.lock:RefreshHorizonStyle()
+        frame.horizon.skip:RefreshHorizonStyle()
         local focus = addon.VignetteRadarWorldFocus
         frame.horizon.title:SetTextColor(.88, .94, .95, 1)
         for index, row in ipairs(frame.horizon.rows) do
             local stop = upcoming[index]
-            row:SetText(stop and ((index == 1 and "NOW  " or index == 2 and "NEXT  " or "THEN  ")
-                .. (stop.name or stop.kind or "Point")) or "")
+            row:SetText(stop and ((index == 1 and "Now  " or index == 2 and "Next  " or "Then  ")
+                .. (stop.label or stop.name or stop.kind or "Point")) or "")
             row:SetTextColor(index == 1 and .96 or .7, index == 1 and .98 or .8,
                 index == 1 and 1 or .83, 1)
         end

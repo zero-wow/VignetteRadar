@@ -149,6 +149,23 @@ local function RouteID(item)
     return kind .. ":" .. tostring(item.key or item.name or "location")
 end
 
+local function HorizonLabel(item)
+    if not item then return "Route Stop" end
+    if RouteKind(item) == "quest" and not item.availableStart then
+        local objective = item.objectiveText or item.nextStep and item.nextStep.text
+        if type(objective) == "string" and objective ~= "" then return objective end
+    end
+    return item.name or "Route Stop"
+end
+
+local function HorizonIdentity(item)
+    if RouteKind(item) == "quest" then
+        return tostring(item.questID) .. ":" .. (item.availableStart and "start" or "objective")
+            .. ":" .. HorizonLabel(item):lower()
+    end
+    return RouteID(item) or HorizonLabel(item):lower()
+end
+
 local function QuestRouteItem(quest)
     return { kind = "quest", questID = quest.questID, name = quest.name,
         colorSlot = quest.colorSlot, taskType = quest.taskType, nextStep = quest.nextStep,
@@ -379,7 +396,9 @@ local function NextRouteStop()
             or not Valid(item)
             or (item.mapID ~= player.mapID and itemKind == "quest"
                 and settings.vignetteRadarAutoRouteNearbyZones == false)
-            or Visited(item) or (itemKind == "quest" and (
+            or Visited(item)
+            or route.previewIdentities and route.previewIdentities[HorizonIdentity(item)]
+            or (itemKind == "quest" and (
                 route.skippedQuests and route.skippedQuests[item.questID]
                 or selectedQuestID and item.questID ~= selectedQuestID
                 or kind == "quest" and settings.vignetteRadarAutoRouteQuestNearest == false
@@ -728,14 +747,16 @@ function API.GetHorizon()
     local now = type(GetTime) == "function" and GetTime() or 0
     if horizonCache and now >= (horizonCachedAt or 0)
         and now - (horizonCachedAt or 0) < 3 then return horizonCache end
-    local result = {}
+    local result, shown = {}, {}
     if not route.waiting then
         result[1] = { name = active.name, kind = RouteKind(active.item) or active.kind,
-            item = active.item, current = true }
+            label = HorizonLabel(active.item), item = active.item, current = true }
+        shown[HorizonIdentity(active.item)] = true
     end
     local original = route
     local previewRoute = { kind = original.kind, questID = original.questID,
-        skippedQuests = original.skippedQuests, visited = {}, visitedPlaces = {} }
+        skippedQuests = original.skippedQuests, visited = {}, visitedPlaces = {},
+        previewIdentities = shown }
     for id, seen in pairs(original.visited or {}) do previewRoute.visited[id] = seen end
     for index, place in ipairs(original.visitedPlaces or {}) do
         previewRoute.visitedPlaces[index] = place
@@ -743,11 +764,16 @@ function API.GetHorizon()
     route = previewRoute
     local ok = pcall(function()
         if not original.waiting then MarkVisited(active.item) end
+        -- Candidate pools may hold several map points for one quest objective.
+        -- Preview identities filter these before another destination is chosen.
         for _ = #result + 1, 3 do
             local nextItem = NextRouteStop()
             if not nextItem then break end
-            result[#result + 1] = { name = nextItem.name, kind = RouteKind(nextItem),
+            local identity = HorizonIdentity(nextItem)
+            result[#result + 1] = { name = nextItem.name,
+                label = HorizonLabel(nextItem), kind = RouteKind(nextItem),
                 item = nextItem, current = false }
+            shown[identity] = true
             MarkVisited(nextItem)
         end
     end)

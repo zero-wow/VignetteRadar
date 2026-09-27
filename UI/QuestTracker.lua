@@ -248,7 +248,7 @@ end
 local function RadarAnchor()
     local radar = addon.VignetteRadarAPI
     local root = radar and radar.GetPanel and radar.GetPanel()
-    return root and (root.field or root), root
+    return root, root
 end
 
 local function Place()
@@ -256,20 +256,33 @@ local function Place()
     local db = Settings()
     local anchor, root = RadarAnchor()
     local dock = db.vignetteRadarQuestTrackerView == "tray" and root and root.IsShown
-        and root:IsShown() and anchor and anchor.IsShown and anchor:IsShown()
+        and root:IsShown()
     local side = db.vignetteRadarQuestTrackerSide or "right"
     if dock then
         local screenW, screenH = UIParent:GetWidth(), UIParent:GetHeight()
+        local scale = anchor.GetEffectiveScale and anchor:GetEffectiveScale()
+            or anchor.GetScale and anchor:GetScale() or 1
+        local parentScale = UIParent.GetEffectiveScale and UIParent:GetEffectiveScale() or 1
+        scale = Number(scale) and Number(parentScale) and parentScale > 0
+            and scale / parentScale or 1
         local left, right, top, bottom = anchor:GetLeft(), anchor:GetRight(),
             anchor:GetTop(), anchor:GetBottom()
+        left, right, top, bottom = left and left * scale, right and right * scale,
+            top and top * scale, bottom and bottom * scale
         if not (Number(screenW) and Number(screenH) and Number(left) and Number(right)
             and Number(top) and Number(bottom)) then dock = false end
         if dock then
+            local room = {
+                right = (screenW - 8 - right) / WIDTH,
+                left = (left - 8) / WIDTH,
+                top = (screenH - 8 - top) / frame:GetHeight(),
+                bottom = (bottom - 8) / frame:GetHeight(),
+            }
             local fits = {
-                right = right + WIDTH <= screenW - 8,
-                left = left - WIDTH >= 8,
-                top = top + frame:GetHeight() <= screenH - 8,
-                bottom = bottom - frame:GetHeight() >= 8,
+                right = room.right >= 1,
+                left = room.left >= 1,
+                top = room.top >= 1,
+                bottom = room.bottom >= 1,
             }
             if not fits[side] then
                 local opposite = { right = "left", left = "right", top = "bottom", bottom = "top" }
@@ -280,13 +293,29 @@ local function Place()
                     end
                 end
             end
-            if not fits[side] then dock = false end
+            local trayScale = 1
+            if not fits[side] then
+                -- At a large radar scale, one side may be a few pixels short.
+                -- Reduce only the tray enough to keep both panels on screen.
+                local best = side
+                for _, candidate in ipairs({ "right", "left", "top", "bottom" }) do
+                    if room[candidate] > room[best] then best = candidate end
+                end
+                side, trayScale = best, math.min(1, room[best])
+                if trayScale < .78 then dock = false end
+            end
             if dock then
+                trayScale = math.floor(trayScale * 1000) / 1000
+                if frame._trayScale ~= trayScale then
+                    frame._trayScale = trayScale
+                    frame:SetScale(trayScale)
+                end
                 local xOffset, yOffset = 0, 0
                 if side == "top" or side == "bottom" then
-                    local center = math.max(WIDTH / 2 + 8,
-                        math.min(screenW - WIDTH / 2 - 8, (left + right) / 2))
-                    xOffset = center - (left + right) / 2
+                    local half = WIDTH * trayScale / 2
+                    local center = math.max(half + 8,
+                        math.min(screenW - half - 8, (left + right) / 2))
+                    xOffset = (center - (left + right) / 2) / trayScale
                 end
                 local progress = frame.slideProgress or 1
                 local retreat = (1 - progress) *
@@ -294,14 +323,14 @@ local function Place()
                         or (frame:GetHeight() - TRAY_TAB))
                 local key = table.concat({ "tray", side, math.floor(left), math.floor(right),
                     math.floor(top), math.floor(bottom), frame:GetHeight(), xOffset,
-                    math.floor(retreat * 10 + .5) }, ":")
+                    trayScale, math.floor(retreat * 10 + .5) }, ":")
                 if frame._placementKey ~= key then
                     frame._placementKey = key
                     frame:ClearAllPoints()
                     if side == "right" then
-                        frame:SetPoint("TOPLEFT", anchor, "TOPRIGHT", -2 - retreat, -2)
+                        frame:SetPoint("TOPLEFT", anchor, "TOPRIGHT", -2 - retreat, -10)
                     elseif side == "left" then
-                        frame:SetPoint("TOPRIGHT", anchor, "TOPLEFT", 2 + retreat, -2)
+                        frame:SetPoint("TOPRIGHT", anchor, "TOPLEFT", 2 + retreat, -10)
                     elseif side == "top" then
                         frame:SetPoint("BOTTOM", anchor, "TOP", xOffset, -retreat)
                     else
@@ -312,6 +341,7 @@ local function Place()
         end
     end
     if not dock then
+        if frame._trayScale ~= 1 then frame._trayScale = 1; frame:SetScale(1) end
         if frame._placementKey ~= "floating" then
             frame._placementKey = "floating"
             frame:ClearAllPoints()
@@ -324,6 +354,20 @@ local function Place()
     frame.actualSide = dock and side or nil
     local strata = dock and "LOW" or "MEDIUM"
     if frame._strata ~= strata then frame._strata = strata; frame:SetFrameStrata(strata) end
+    if frame._clamped ~= (not dock) then
+        frame._clamped = not dock
+        frame:SetClampedToScreen(not dock)
+    end
+    frame:SetAlpha(dock and (frame.slideProgress or 1) ^ 2 or 1)
+    local interactive = not dock or (frame.slideProgress or 1) >= .99
+    if frame._bodyInteractive ~= interactive then
+        frame._bodyInteractive = interactive
+        frame:EnableMouse(interactive)
+        frame.options:EnableMouse(interactive)
+        frame.close:EnableMouse(interactive)
+        frame.drag:EnableMouse(interactive)
+        for _, row in ipairs(frame.rows) do row:EnableMouse(interactive) end
+    end
     frame.close:SetShown(not dock)
     frame.handle:SetShown(dock)
     if dock and frame.handleSide ~= side then
@@ -331,12 +375,14 @@ local function Place()
         frame.handle:ClearAllPoints()
         if side == "right" or side == "left" then
             frame.handle:SetSize(TRAY_TAB, 68)
-            frame.handle:SetPoint(side == "right" and "RIGHT" or "LEFT", frame,
-                side == "right" and "RIGHT" or "LEFT")
+            frame.handle:SetPoint("CENTER", anchor,
+                side == "right" and "RIGHT" or "LEFT",
+                side == "right" and TRAY_TAB / 2 - 2 or -TRAY_TAB / 2 + 2, 0)
         else
             frame.handle:SetSize(68, TRAY_TAB)
-            frame.handle:SetPoint(side == "top" and "TOP" or "BOTTOM", frame,
-                side == "top" and "TOP" or "BOTTOM")
+            frame.handle:SetPoint("CENTER", anchor,
+                side == "top" and "TOP" or "BOTTOM", 0,
+                side == "top" and TRAY_TAB / 2 - 2 or -TRAY_TAB / 2 + 2)
         end
     end
     if type(frame.statusSurface) == "table" then
@@ -386,9 +432,14 @@ local function Draw()
     end
     frame.visibleEntries = visible
     local anchor, root = RadarAnchor()
+    local radarScale = root and root.GetEffectiveScale and root:GetEffectiveScale()
+        or root and root.GetScale and root:GetScale() or 1
+    local parentScale = UIParent.GetEffectiveScale and UIParent:GetEffectiveScale() or 1
+    radarScale = Number(radarScale) and Number(parentScale) and parentScale > 0
+        and radarScale / parentScale or 1
     local trayHeight = Settings().vignetteRadarQuestTrackerView == "tray"
         and root and root.IsShown and root:IsShown() and anchor
-        and Number(anchor:GetHeight()) and math.max(110, anchor:GetHeight() - 4)
+        and Number(anchor:GetHeight()) and math.max(110, anchor:GetHeight() * radarScale - 20)
     offset = math.max(0, math.min(offset, math.max(0, #visible - 1)))
     local capacity = VISIBLE_ROWS
     if trayHeight then
@@ -571,7 +622,8 @@ local function EnsureFrame()
     frame:EnableMouseWheel(true)
     addon.VignetteRadarControls.RoundedStatusSurface(frame)
     frame.slideProgress = Settings().vignetteRadarQuestTrackerRetracted == true and 0 or 1
-    frame.handle = CreateFrame("Button", nil, frame)
+    frame.handle = CreateFrame("Button", nil, UIParent)
+    frame.handle:SetFrameStrata("HIGH")
     frame.handle:EnableMouse(true)
     frame.handle:RegisterForClicks("LeftButtonUp")
     addon.VignetteRadarControls.RoundedStatusSurface(frame.handle)
@@ -738,6 +790,13 @@ local function EnsureFrame()
                 if t == 1 then self.slideProgress = target end
                 Place()
             end
+            -- The radar can be dragged independently; keep the tray joined
+            -- during that motion instead of waiting for the theme refresh.
+            self.dockElapsed = (self.dockElapsed or 0) + elapsed
+            if self.dockElapsed >= .05 then
+                self.dockElapsed = 0
+                Place()
+            end
         end
         self.themeElapsed = (self.themeElapsed or 0) + elapsed
         if self.themeElapsed < 1 then return end
@@ -755,6 +814,7 @@ function API.Refresh()
     if not panel then return end
     if Settings().vignetteRadarQuestTrackerVisible ~= true then
         panel:Hide()
+        panel.handle:Hide()
         if menu then menu:Hide() end
         return
     end
@@ -765,7 +825,7 @@ end
 
 function API.Hide()
     Settings().vignetteRadarQuestTrackerVisible = false
-    if frame then frame:Hide() end
+    if frame then frame:Hide(); frame.handle:Hide() end
     if menu then menu:Hide() end
 end
 

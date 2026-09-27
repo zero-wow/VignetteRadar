@@ -765,8 +765,23 @@ end
 local routeHover = assert(CornerTool("route"))
 assert(routeHover.toolID == "route" and routeHover.artColumn == 10
     and routeHover.art.texture == panel.routeToggle.art.texture
-    and CornerTool("eye").artColumn == 7 and CornerTool("help").artColumn == 8,
-    "Route, eye, and help must use their intended cells in the shared icon atlas")
+    and CornerTool("eye").artColumn == 7 and CornerTool("player").artColumn == 8,
+    "Route, eye, and Player Tracker must use their intended cells in the shared icon atlas")
+do
+    local original = addon.VignetteRadarPlayerTracker
+    local opened, marked = 0, 0
+    addon.VignetteRadarPlayerTracker = {
+        IsDetecting = function() return false end,
+        Open = function() opened = opened + 1 end,
+        MarkTarget = function() marked = marked + 1; return true end,
+    }
+    local playerTool = CornerTool("player")
+    playerTool.scripts.OnClick(playerTool, "LeftButton")
+    playerTool.scripts.OnClick(playerTool, "RightButton")
+    assert(opened == 1 and marked == 1,
+        "the radar Player Tracker control must open the list or mark the current target")
+    addon.VignetteRadarPlayerTracker = original
+end
 do
     local tracker = addon.VignetteRadarQuestTracker
     local toggles = 0
@@ -869,9 +884,11 @@ do
         and not chooser.choices.rare._routeSelected
         and chooser.choices.treasure.chosenPip:IsShown()
         and not chooser.choices.rare.chosenPip:IsShown()
-        and chooser.choices.treasure.statusSurface.face[1].vertexColor[4] > .5
+        and chooser.choices.treasure.statusSurface.face[1].vertexColor[4] < .12
+        and chooser.choices.treasure.statusSurface.face[1].vertexColor[4]
+            > chooser.choices.rare.statusSurface.face[1].vertexColor[4]
         and chooser.choices.treasure.statusSurface.edge[1].vertexColor[4] > .8,
-        "the active route category needs a strong themed selection")
+        "the active route category needs a clear border without an opaque fill")
     addon.VignetteRadarWorldFocus.GetRouteChoice = function() return "quest", "paused" end
     chooser.close.scripts.OnClick()
     panel.routeToggle.scripts.OnClick(panel.routeToggle, "RightButton")
@@ -2818,8 +2835,14 @@ do
     widget.left, widget.top = 500, 80
     settings.vignetteRadarRouteHorizonExpanded = true
     addon.VignetteRadarRouteArrow.Refresh()
-    assert(widget.height == 192 and widget.horizon:IsShown()
-        and widget.point[5] >= -600 + 192 + 8,
+    assert(widget.width == 260 and widget.height == 212 and widget.horizon:IsShown()
+        and widget.horizon.title.text == "Upcoming Stops"
+        and widget.horizon.why.width == 58 and widget.horizon.lock.width == 116
+        and widget.horizon.skip.width == 116
+        and widget.horizon.rows[1].text == "Now  Crystal Cache"
+        and widget.horizon.rows[2].text == "Next  Silvermaw"
+        and widget.horizon.lock.statusSurface.edge[1].vertexColor[4] >= .48
+        and widget.point[5] >= -600 + 212 + 8,
         "the expanded route horizon must rise into view when the arrow is near the bottom edge")
     settings.vignetteRadarRouteHorizonExpanded = false
     widget.left, widget.top = nil, nil
@@ -2854,12 +2877,25 @@ do
         and widget.node.count.text == "Objective · 2/5"
         and widget.next.point[5] == -120,
         "a quest objective should grow the movable note and show its current count")
+    focus.GetHorizon = function()
+        return { { name = "First Quest", label = "Meet Riftblade Maella" },
+            { name = "First Quest", label = "Collect Shredder Parts" } }
+    end
+    settings.vignetteRadarRouteHorizonExpanded = true
+    addon.VignetteRadarRouteArrow.Refresh()
+    assert(widget.horizon.rows[1].text == "Now  Meet Riftblade Maella"
+        and widget.horizon.rows[2].text == "Next  Collect Shredder Parts"
+        and widget.next.text == "Next  Collect Shredder Parts",
+        "quest routes must display distinct objective steps instead of repeating the quest title")
+    focus.GetHorizon = function()
+        return { { name = "Crystal Cache" }, { name = "Silvermaw" } }
+    end
     UIParent:SetSize(800, 600)
     widget.left, widget.top = 600, 90
     settings.vignetteRadarRouteHorizonExpanded = true
     addon.VignetteRadarRouteArrow.Refresh()
-    assert(widget.height == 245 and widget.point[4] <= 532
-        and widget.point[5] >= -600 + 245 + 8,
+    assert(widget.height == 265 and widget.point[4] <= 532
+        and widget.point[5] >= -600 + 265 + 8,
         "the expanded objective note must stay inside an 800x600 screen")
     settings.vignetteRadarRouteHorizonExpanded = false
     widget.left, widget.top = nil, nil
